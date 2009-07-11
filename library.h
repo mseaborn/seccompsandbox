@@ -102,7 +102,8 @@ class Library {
   void **getRelocation(const std::string& symbol);
   void *getSymbol(const std::string& symbol);
   void makeWritable(bool state) const;
-  void patchSystemCalls(struct SyscallTable *sycallTable, int maxSyscallNum,
+  void patchSystemCalls(const struct SyscallTable *sycallTable,
+                        int maxSyscallNum,
                         void *(*defaultHandler)(int, void*, void*, void*,
                                                 void*, void*, void*));
 
@@ -137,7 +138,7 @@ class Library {
   static char* getScratchSpace(const Maps* maps, char* near, int needed,
                                char** extraSpace, int* extraLength);
   void patchSystemCallsInFunction(const Maps* maps, char *start, char *end,
-                                  struct SyscallTable *sycallTable,
+                                  const struct SyscallTable *sycallTable,
                                   int maxSyscallNum, char** extraSpace,
                                   int* extraLength);
   int  patchVSystemCalls();

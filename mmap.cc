@@ -10,12 +10,15 @@ namespace playground {
 
 void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
                           int fd, off_t offset) {
-  write(2, "mmap()\n", 7);
+  SysCalls sys;
+  write(sys, 2, "mmap()\n", 7);
   struct {
-    int  sysnum;
-    MMap mmap_req;
+    int   sysnum;
+    pid_t tid;
+    MMap  mmap_req;
   } __attribute__((packed)) request;
   request.sysnum          = __NR_MMAP;
+  request.tid             = tid();
   request.mmap_req.start  = start;
   request.mmap_req.length = length;
   request.mmap_req.prot   = prot;
@@ -24,45 +27,36 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   request.mmap_req.offset = offset;
 
   void* rc;
-  if (write(processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
+      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward mmap() request [sandbox]");
   }
   return rc;
 }
 
-void Sandbox::thread_mmap(int fd) {
+void Sandbox::thread_mmap(int processFd, pid_t tid, int threadFd, char* mem) {
   die("thread_mmap()");
 }
 
-void Sandbox::process_mmap(int fd) {
+void Sandbox::process_mmap(int sandboxFd, int processFd, int threadFd,
+                           int cloneFd, char* mem) {
   // Read request
+  SysCalls sys;
   MMap mmap_req;
-  if (read(fd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
+  if (read(sys, processFd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
     die("Failed to read parameters for mmap() [process]");
   }
   int rc = -EINVAL;
   if (mmap_req.flags & MAP_FIXED) {
-    secureMem().abandonSystemCall(threadFd(), rc);
+    // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
+    // mappings.
+    // TODO(markus): Mark birthing place of secure memory as secure
+    SecureMem::abandonSystemCall(threadFd, rc);
   } else {
-    secureMem().sendSystemCall(threadFd(), __NR_MMAP, mmap_req.start,
+    SecureMem::sendSystemCall(threadFd, mem, __NR_MMAP, mmap_req.start,
                                mmap_req.length, mmap_req.prot, mmap_req.flags,
                                mmap_req.fd, mmap_req.offset);
   }
 }
 
 } // namespace
-
-extern "C" {
-void *sandbox_mmap(void *start, size_t length, int prot, int flags,
-                   int fd, off_t offset)
-#if __WORDSIZE == 64
-  __attribute__((alias("_ZN10playground7Sandbox12sandbox_mmapEPvmiiil")));
-#else
-  __attribute__((alias("_ZN10playground7Sandbox12sandbox_mmapEPvjiiil")));
-#endif
-void thread_mmap(int fd)
-  __attribute__((alias("_ZN10playground7Sandbox11thread_mmapEi")));
-void process_mmap(int fd)
-  __attribute__((alias("_ZN10playground7Sandbox12process_mmapEi")));
-} // extern "C"

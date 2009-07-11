@@ -16,7 +16,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "valgrind/valgrind.h"
+//#include "valgrind/valgrind.h"
+#define RUNNING_ON_VALGRIND 0 // TODO(markus): remove
 
 #include "library.h"
 #include "syscall.h"
@@ -303,7 +304,7 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
 
 void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
                                          char *end,
-                                         struct SyscallTable *sycallTable,
+                                         const struct SyscallTable*sycallTable,
                                          int maxSyscallNum, char** extraSpace,
                                          int* extraLength) {
   std::set<char *> branch_targets;
@@ -779,7 +780,7 @@ int Library::patchVSystemCalls() {
   return 0;
 }
 
-void Library::patchSystemCalls(struct SyscallTable *syscallTable,
+void Library::patchSystemCalls(const struct SyscallTable *syscallTable,
                                int maxSyscallNum, void *(*defaultHandler)(int,
                                    void*, void*, void*, void*, void*, void*)) {
   syscallTableAddr = syscallTable;

@@ -1,5 +1,5 @@
 // TODO(markus): remove. for debugging, only
-//#define STRACE_HACK
+// #define STRACE_HACK
 
 #include <elf.h>
 #include <errno.h>
@@ -220,9 +220,17 @@ int main(int argc, char *argv[]) {
              (long)bp_regs.regs32.eip : bp_regs.regs64.rip,
              entry);
       if (hdr.e32.e_ident[EI_CLASS] == ELFCLASS32) {
-        regs.regs32.eip = entry;
+        regs.regs32.eip     = entry;
+        regs.regs32.fs      = bp_regs.regs32.fs;
+        regs.regs32.__fs    = bp_regs.regs32.__fs;
+        regs.regs32.gs      = bp_regs.regs32.gs;
+        regs.regs32.__gs    = bp_regs.regs32.__gs;
       } else {
-        regs.regs64.rip = entry;
+        regs.regs64.rip     = entry;
+        regs.regs64.fs      = bp_regs.regs64.fs;
+        regs.regs64.fs_base = bp_regs.regs64.fs_base;
+        regs.regs64.gs      = bp_regs.regs64.gs;
+        regs.regs64.gs_base = bp_regs.regs64.gs_base;
       }
 #ifdef STRACE_HACK
       if (hdr.e32.e_ident[EI_CLASS] == ELFCLASS32) {
@@ -240,7 +248,7 @@ int main(int argc, char *argv[]) {
 #ifdef STRACE_HACK
     NOINTR(close(strace_fds[0]));
 
-  #if 1
+  #if 0
     char strace_buf[80];
     sprintf(strace_buf, "strace -f -o /tmp/strace.log -p %d &", parent);
     system(strace_buf);

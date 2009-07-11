@@ -1,5 +1,5 @@
 MODS := preload library maps x86_decode securemem sandbox syscall             \
-        syscall_table                                                         \
+        syscall_table trusted_thread trusted_process                          \
         clone getpid ioctl mmap mprotect munmap open stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
@@ -35,8 +35,8 @@ strace: testbin32
 	multitail -mb 1GB -CS strace strace.log*
 
 testbin64: test.cc ${OBJS64}
-	g++ -c -Werror -Wall -g -O0 -o testbin.o64 $<
-	g++ -g -o testbin64 testbin.o64 ${OBJS64} -lpthread
+	${CXX} -c -Werror -Wall -g -O0 -o testbin.o64 $<
+	${CXX} -g -o testbin64 testbin.o64 ${OBJS64} -lpthread
 
 testbin32: test.cc ${OBJS32}
 	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-g++ -c -Werror -Wall -g -O0 -o testbin.o32 $<

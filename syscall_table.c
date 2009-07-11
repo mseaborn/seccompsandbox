@@ -1,7 +1,4 @@
-#include <dirent.h>
-#include <sys/stat.h>
-
-#include "linux_syscall_support.h"
+#include <asm/unistd.h>
 #include "sandbox_impl.h"
 #include "syscall_table.h"
 
@@ -16,7 +13,7 @@
 #endif
 
 // TODO(markus): The table has to live in read-only memory
-struct SyscallTable syscallTable[] = {
+const struct SyscallTable syscallTable[] __attribute__((section(".rodata, \"a\", @progbits\n#"))) ={
   [ __NR_brk             ] = { 0, UNRESTRICTED_SYSCALL, 0 },
   [ __NR_close           ] = { 0, UNRESTRICTED_SYSCALL, 0 },
   [ __NR_clone           ] = { (void *)&sandbox_clone,
@@ -58,7 +55,7 @@ struct SyscallTable syscallTable[] = {
   [ __NR_open            ] = { (void *)&sandbox_open,
                                thread_open,
                                process_open },
-  [ __NR_set_robust_list ] = { 0, UNRESTRICTED_SYSCALL, 0 },
+  [ __NR_set_robust_list ] = { 0, UNRESTRICTED_SYSCALL, 0 }, // TODO(markus): can this system call be emulated by the trusted thread?
   [ __NR_stat            ] = { (void *)&sandbox_stat,
                                thread_stat,
                                process_stat },
@@ -69,7 +66,4 @@ struct SyscallTable syscallTable[] = {
   #endif
 };
 
-
-unsigned maxSyscall(void) {
-  return sizeof(syscallTable)/sizeof(struct SyscallTable);
-}
+const unsigned maxSyscall = sizeof(syscallTable)/sizeof(struct SyscallTable);

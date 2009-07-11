@@ -1,27 +1,55 @@
 #include <sys/types.h>
 
+// TODO(markus): remove
 struct SyscallTable *syscallTableAddr;
 int                 syscallTableSize;
 void                *defaultSystemCallHandler;
 
-// clone.cc makes assumptions about the layout of the stack after
-// being called through syscallWrapper(). If you change the layout, you
-// will have to edit clone.cc.
+// TODO(markus): change this into a function that returns the address of the assembly code. If that isn't possible for sandbox_clone, then move that function into a *.S file
 __asm__(
     ".pushsection .text, \"ax\", @progbits\n"
+
+    // This code relies on the stack layout of the system call wrapper. It
+    // passes the stack pointer as an additional argument to sandbox__clone(),
+    // so that upon starting the child, register values can be restored and
+    // the child can start executing at the correct IP, instead of trying to
+    // run in the trusted thread.
+    "sandbox_clone:"
+    ".globl sandbox_clone\n"
+    ".type sandbox_clone, @function\n"
+    ".globl sandbox__clone\n"
+    #if __WORDSIZE == 64
+    "lea 8(%rsp), %r9\n"
+    "call 1f\n"
+  "1:addq $sandbox__clone-., 0(%rsp)\n"
+    "retq\n"
+    #else
+    "lea 28(%esp), %eax\n"
+    "mov %eax, 24(%esp)\n"
+    "jmp sandbox__clone\n"
+    #endif
+    ".size sandbox_clone, .-sandbox_clone\n"
+
+
     "syscallWrapper:"
     ".globl syscallWrapper\n"
     ".type syscallWrapper, @function\n"
     #if __WORDSIZE == 64
-    // Save registers that are normally preserved by system calls
+    // Save all registers
+    "push %rbx\n"
     "push %rcx\n"
     "push %rdx\n"
     "push %rsi\n"
     "push %rdi\n"
+    "push %rbp\n"
     "push %r8\n"
     "push %r9\n"
     "push %r10\n"
     "push %r11\n"
+    "push %r12\n"
+    "push %r13\n"
+    "push %r14\n"
+    "push %r15\n"
 
     // Convert from syscall calling conventions to C calling conventions
     "mov %r10, %rcx\n"
@@ -36,7 +64,7 @@ __asm__(
     "mov %r10, %r11\n"
     "shl $1, %r10\n"
     "add %r11, %r10\n"
-    "add syscallTableAddr(%rip), %r10\n"
+    "add syscallTableAddr(%rip), %r10\n" // TODO(markus): no need to move this into a variable. Just access it directly.
     "mov 0(%r10), %r10\n"
 
     // Jump to function if non-null, otherwise jump to fallback handler
@@ -46,14 +74,20 @@ __asm__(
   "0:"
 
     // Restore CPU registers
+    "pop %r15\n"
+    "pop %r14\n"
+    "pop %r13\n"
+    "pop %r12\n"
     "pop %r11\n"
     "pop %r10\n"
     "pop %r9\n"
     "pop %r8\n"
+    "pop %rbp\n"
     "pop %rdi\n"
     "pop %rsi\n"
     "pop %rdx\n"
     "pop %rcx\n"
+    "pop %rbx\n"
 
     // Return to caller
     "ret\n"

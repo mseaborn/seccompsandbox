@@ -8,11 +8,12 @@ extern "C" {
 
   struct SyscallTable {
     void *handler;
-    void *trustedThread;
-    void (*trustedProcess)(int fd);
+    void (*trustedThread)(int processFd, pid_t tid, int threadFd, char* mem);
+    void (*trustedProcess)(int sandboxFd, int processFd, int threadFd,
+                           int cloneFd, char* mem);
   };
-  extern struct SyscallTable syscallTable[];
-  unsigned maxSyscall(void);
+  extern const struct SyscallTable syscallTable[];
+  extern const unsigned maxSyscall;
 #ifdef __cplusplus
 }
 #endif

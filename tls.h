@@ -25,15 +25,17 @@ class TLS {
  public:
   static void *allocateTLS() {
     SysCalls sys;
-    void *addr = sys.mmap(0, 4096, PROT_READ|PROT_WRITE,
-                          MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
     #if __WORDSIZE == 64
+      void *addr = sys.mmap(0, 4096, PROT_READ|PROT_WRITE,
+                            MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
       if (sys.arch_prctl(ARCH_SET_GS, addr) < 0) {
         return NULL;
       }
     #else
+      void *addr = sys.mmap2(0, 4096, PROT_READ|PROT_WRITE,
+                             MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
       struct user_desc u;
-      u.entry_number    = -1;
+      u.entry_number    = (typeof u.entry_number)-1;
       u.base_addr       = (int)addr;
       u.limit           = 0xfffff;
       u.seg_32bit       = 1;
@@ -65,14 +67,14 @@ class TLS {
     sys.munmap(addr, 4096);
   }
 
-  template<T> static inline bool setTLSValue(int idx, T val) {
+  template<class T> static inline bool setTLSValue(int idx, T val) {
     #if __WORDSIZE == 64
       if (idx < 0 || idx >= 4096/8) {
         return false;
       }
       asm("movq %0, %%gs:(%1)\n"
           :
-          : "q"(val), "q"(8ll * idx));
+          : "q"((void *)val), "q"(8ll * idx));
     #else
       if (idx < 0 || idx >= 4096/4) {
         return false;
@@ -84,9 +86,9 @@ class TLS {
     return true;
   }
 
-  template<T> static inline T getTLSValue(int idx) {
-    T rc;
+  template<class T> static inline T getTLSValue(int idx) {
     #if __WORDSIZE == 64
+      long long rc;
       if (idx < 0 || idx >= 4096/8) {
         return 0;
       }
@@ -94,6 +96,7 @@ class TLS {
           : "=q"(rc)
           : "q"(8ll * idx));
     #else
+      long rc;
       if (idx < 0 || idx >= 4096/4) {
         return 0;
       }
@@ -101,9 +104,10 @@ class TLS {
           : "=r"(rc)
           : "r"(4 * idx));
     #endif
-    return rc;
+    return (T)rc;
   }
 
 };
 
 } // namespace
+#endif

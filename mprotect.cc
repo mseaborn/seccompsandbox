@@ -2,32 +2,39 @@
 
 namespace playground {
 int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
-  write(2, "mprotect()\n", 11);
+  SysCalls sys;
+  write(sys, 2, "mprotect()\n", 11);
   struct {
     int      sysnum;
+    pid_t    tid;
     MProtect mprotect_req;
   } __attribute__((packed)) request;
   request.sysnum            = __NR_mprotect;
+  request.tid               = tid();
   request.mprotect_req.addr = addr;
   request.mprotect_req.len  = len;
   request.mprotect_req.prot = prot;
 
   long rc;
-  if (write(processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
+      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward mprotect() request [sandbox]");
   }
   return static_cast<int>(rc);
 }
 
-void Sandbox::thread_mprotect(int fd) {
+void Sandbox::thread_mprotect(int processFd, pid_t tid, int threadFd,
+                              char* mem) {
   die("thread_mprotect()");
 }
 
-void Sandbox::process_mprotect(int fd) {
+void Sandbox::process_mprotect(int sandboxFd, int processFd, int threadFd,
+                               int cloneFd, char* mem) {
   // Read request
+  SysCalls sys;
   MProtect mprotect_req;
-  if (read(fd, &mprotect_req, sizeof(mprotect_req)) != sizeof(mprotect_req)) {
+  if (read(sys, processFd, &mprotect_req, sizeof(mprotect_req)) !=
+      sizeof(mprotect_req)) {
     die("Failed to read parameters for mprotect() [process]");
   }
 
@@ -45,28 +52,15 @@ void Sandbox::process_mprotect(int fd) {
     if (mprotect_req.addr < reinterpret_cast<void *>(
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         stop > iter->first) {
-      secureMem().abandonSystemCall(threadFd(), rc);
+      SecureMem::abandonSystemCall(threadFd, rc);
       return;
     }
   }
 
   // Changing permissions on memory regions that were newly mapped inside of
   // the sandbox is OK.
-  secureMem().sendSystemCall(threadFd(), __NR_mprotect, mprotect_req.addr,
+  SecureMem::sendSystemCall(threadFd, mem, __NR_mprotect, mprotect_req.addr,
                              mprotect_req.len, mprotect_req.prot);
 }
 
 } // namespace
-
-extern "C" {
-int sandbox_mprotect(const void *addr, size_t len, int prot)
-#if __WORDSIZE == 64
-   __attribute__((alias("_ZN10playground7Sandbox16sandbox_mprotectEPKvmi")));
-#else
-   __attribute__((alias("_ZN10playground7Sandbox16sandbox_mprotectEPKvji")));
-#endif
-void thread_mprotect(int fd)
-    __attribute__((alias("_ZN10playground7Sandbox15thread_mprotectEi")));
-void process_mprotect(int fd)
-    __attribute__((alias("_ZN10playground7Sandbox16process_mprotectEi")));
-} // extern "C"
