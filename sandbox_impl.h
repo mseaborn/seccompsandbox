@@ -295,7 +295,8 @@ class Sandbox {
 
   static void* defaultSystemCallHandler(int syscallNum, void *arg0, void *arg1,
                                         void *arg2, void *arg3, void *arg4,
-                                        void *arg5);
+                                        void *arg5)
+                                       asm("defaultSystemCallHandler");
   static void initializeProtectedMap(int fd);
   static void trustedProcess(void *args) __attribute__((noreturn));
   static void createTrustedProcess(int* fds, char* mem);

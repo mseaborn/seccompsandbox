@@ -135,6 +135,11 @@ void Sandbox::createTrustedThread(int* fds, char* mem) {
   // code cannot trust any memory, and thus might have to forward requests to
   // the trusted process.
   // TODO(markus): rewrite in assembly so that we don't need to use the stack
+
+  // TODO(markus): We don't really need a stack for the trusted thread. But
+  // that also means we cannot use ChildArgs any more. That's probably a
+  // good thing...
+
   SysCalls sys;
   pid_t tid = sys.gettid();
   // TODO(markus): Make sure that freeTLS() will be called when thread dies
@@ -262,8 +267,7 @@ void Sandbox::startSandbox() {
         void *sym = library->getSymbol(*ptr);
         if (sym != NULL) {
           std::cout << "Found symbol: " << *ptr << std::endl;
-          library->patchSystemCalls(syscallTable, maxSyscall,
-                                    defaultSystemCallHandler);
+          library->patchSystemCalls();
           break;
         }
       }
@@ -275,7 +279,7 @@ void Sandbox::startSandbox() {
   // off-limit to all future mmap(), munmap(), mremap(), and mprotect() calls.
   snapshotMemoryMappings(pairs[0]);
 
-#if 0 // TODO(markus): for debugging only
+#if 1 // TODO(markus): for debugging only
   if (sys.prctl(PR_GET_SECCOMP, 0) != 0) {
     die("Failed to enable Seccomp mode");
   }

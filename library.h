@@ -102,10 +102,7 @@ class Library {
   void **getRelocation(const std::string& symbol);
   void *getSymbol(const std::string& symbol);
   void makeWritable(bool state) const;
-  void patchSystemCalls(const struct SyscallTable *sycallTable,
-                        int maxSyscallNum,
-                        void *(*defaultHandler)(int, void*, void*, void*,
-                                                void*, void*, void*));
+  void patchSystemCalls();
 
  protected:
   bool parseElf();
@@ -138,9 +135,7 @@ class Library {
   static char* getScratchSpace(const Maps* maps, char* near, int needed,
                                char** extraSpace, int* extraLength);
   void patchSystemCallsInFunction(const Maps* maps, char *start, char *end,
-                                  const struct SyscallTable *sycallTable,
-                                  int maxSyscallNum, char** extraSpace,
-                                  int* extraLength);
+                                  char** extraSpace, int* extraLength);
   int  patchVSystemCalls();
   void patchVDSO(char** extraSpace, int* extraLength);
 

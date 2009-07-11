@@ -1,6 +1,8 @@
 #ifndef SYSCALL_TABLE_H__
 #define SYSCALL_TABLE_H__
 
+#include <sys/types.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

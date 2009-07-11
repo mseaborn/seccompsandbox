@@ -144,14 +144,14 @@ void (*Sandbox::getTrustedThreadFnc())() {
 
       // Look up handler function in syscallTable
     "6:mov  %%rax, %%r9\n"
-      "cmp  maxSyscall(%%rip), %%eax\n"
+      "mov  maxSyscall@GOTPCREL(%%rip), %%r11\n"
+      "cmp  0(%%r11), %%eax\n"
       "ja   1b\n"
       "shl  $3, %%rax\n"
       "mov  %%rax, %%r11\n"
       "shl  $1, %%rax\n"
       "add  %%r11, %%rax\n"
-      "lea  syscallTable(%%rip), %%r11\n"
-      "add  %%r11, %%rax\n"
+      "add  syscallTable@GOTPCREL(%%rip), %%rax\n"
       "mov  8(%%rax), %%rax\n"
       "cmp  $-1, %%rax\n"
       "jz   7f\n"

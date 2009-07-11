@@ -1,10 +1,5 @@
 #include <sys/types.h>
 
-// TODO(markus): remove
-struct SyscallTable *syscallTableAddr;
-int                 syscallTableSize;
-void                *defaultSystemCallHandler;
-
 // TODO(markus): change this into a function that returns the address of the assembly code. If that isn't possible for sandbox_clone, then move that function into a *.S file
 __asm__(
     ".pushsection .text, \"ax\", @progbits\n"
@@ -20,9 +15,7 @@ __asm__(
     ".globl sandbox__clone\n"
     #if __WORDSIZE == 64
     "lea 8(%rsp), %r9\n"
-    "call 1f\n"
-  "1:addq $sandbox__clone-., 0(%rsp)\n"
-    "retq\n"
+    "jmp sandbox__clone@PLT\n"
     #else
     "lea 28(%esp), %eax\n"
     "mov %eax, 24(%esp)\n"
@@ -55,7 +48,9 @@ __asm__(
     "mov %r10, %rcx\n"
 
     // Check range of system call
-    "cmp syscallTableSize(%rip), %eax\n"
+    ".globl maxSyscall\n"
+    "mov maxSyscall@GOTPCREL(%rip), %r10\n"
+    "cmp 0(%r10), %eax\n"
     "ja  1f\n"
 
     // Retrieve function call from system call table
@@ -64,7 +59,8 @@ __asm__(
     "mov %r10, %r11\n"
     "shl $1, %r10\n"
     "add %r11, %r10\n"
-    "add syscallTableAddr(%rip), %r10\n" // TODO(markus): no need to move this into a variable. Just access it directly.
+    ".globl syscallTable\n"
+    "add syscallTable@GOTPCREL(%rip), %r10\n"
     "mov 0(%r10), %r10\n"
 
     // Jump to function if non-null, otherwise jump to fallback handler
@@ -106,8 +102,8 @@ __asm__(
     // Call default handler.
     "call 2f\n"
   "2:addq $3f-2b, 0(%rsp)\n"
-    "push defaultSystemCallHandler(%rip)\n"
-    "ret\n"
+    ".globl defaultSystemCallHandler\n"
+    "jmp  defaultSystemCallHandler@PLT\n"
   "3:pop  %r9\n"
     "jmp 0b\n"
     #else
@@ -129,7 +125,7 @@ __asm__(
     "push %eax\n"
 
     // Check range of system call
-    "cmp syscallTableSize, %eax\n"
+    "cmp syscallTable, %eax\n"
     "ja  1f\n"
 
     // Retrieve function call from system call table
@@ -137,7 +133,8 @@ __asm__(
     "mov  %eax, %ebx\n"
     "shl  $1, %eax\n"
     "add  %ebx, %eax\n"
-    "add  syscallTableAddr, %eax\n"
+    "lea  syscallTable, %ebx\n"
+    "add  %ebx, %eax\n"
     "mov  0(%eax), %eax\n"
 
     // Jump to function if non-null, otherwise jump to fallback handler

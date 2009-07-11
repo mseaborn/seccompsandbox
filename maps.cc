@@ -195,7 +195,7 @@ char *Maps::forwardGetRequest(Library *library, Elf_Addr offset,
   if (NOINTR(write(fds_[1], &req, sizeof(Request))) != sizeof(Request) ||
       NOINTR(read(fds_[0], &req.length, sizeof(req.length))) !=
       sizeof(req.length) ||
-      req.length == (size_t)-1 ||
+      req.length == -1 ||
       NOINTR(read(fds_[0], buf, length)) != (ssize_t)length) {
     memset(buf, 0, length);
     return NULL;

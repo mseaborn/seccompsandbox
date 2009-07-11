@@ -21,6 +21,7 @@
 
 #include "library.h"
 #include "syscall.h"
+#include "syscall_table.h"
 #include "x86_decode.h"
 
 #define NOINTR(x) ({ int i__; while ((i__ = (x)) < 0 && errno == EINTR); i__;})
@@ -303,9 +304,7 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
 }
 
 void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
-                                         char *end,
-                                         const struct SyscallTable*sycallTable,
-                                         int maxSyscallNum, char** extraSpace,
+                                         char *end, char** extraSpace,
                                          int* extraLength) {
   std::set<char *> branch_targets;
   for (char *ptr = start; ptr < end; ) {
@@ -757,7 +756,6 @@ int Library::patchVSystemCalls() {
 
             // Translate all SYSCALLs to jumps into our system call handler.
             patchSystemCallsInFunction(NULL, start, ptr,
-                                       syscallTableAddr, syscallTableSize,
                                        &extraSpace, &extraLength);
             break;
           }
@@ -780,12 +778,7 @@ int Library::patchVSystemCalls() {
   return 0;
 }
 
-void Library::patchSystemCalls(const struct SyscallTable *syscallTable,
-                               int maxSyscallNum, void *(*defaultHandler)(int,
-                                   void*, void*, void*, void*, void*, void*)) {
-  syscallTableAddr = syscallTable;
-  syscallTableSize = maxSyscallNum;
-  defaultSystemCallHandler = reinterpret_cast<void *>(defaultHandler);
+void Library::patchSystemCalls() {
   if (!valid_) {
     return;
   }
@@ -830,8 +823,8 @@ void Library::patchSystemCalls(const struct SyscallTable *syscallTable,
           has_syscall = false;
           // Our quick scan of the function found a potential system call.
           // Do a more thorough scan, now.
-          patchSystemCallsInFunction(maps_, func, ptr, syscallTable,
-                                     maxSyscallNum, &extraSpace, &extraLength);
+          patchSystemCallsInFunction(maps_, func, ptr, &extraSpace,
+                                     &extraLength);
         }
         func = ptr;
       }
@@ -841,8 +834,7 @@ void Library::patchSystemCalls(const struct SyscallTable *syscallTable,
   if (has_syscall) {
     // Patch any remaining system calls that were in the last function before
     // the loop terminated.
-    patchSystemCallsInFunction(maps_, func, stop, syscallTable, maxSyscallNum,
-                               &extraSpace, &extraLength);
+    patchSystemCallsInFunction(maps_, func, stop, &extraSpace, &extraLength);
   }
 
   // Mark our scratch space as write-protected and executable.

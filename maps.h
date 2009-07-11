@@ -71,13 +71,13 @@ class Maps {
 
     Request() { }
 
-    Request(enum Type t, Library* i, Elf_Addr o, size_t l) :
+    Request(enum Type t, Library* i, Elf_Addr o, ssize_t l) :
         library(i), offset(o), length(l), type(t), padding(0) {
     }
 
     Library*   library;
     Elf_Addr   offset;
-    size_t     length;
+    ssize_t    length;
     enum Type  type;
     int        padding; // for valgrind
   };
