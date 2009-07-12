@@ -64,7 +64,7 @@ void Sandbox::process_clone(int sandboxFd, int processFd, int threadFd,
     // trusted thread, but instead we need to continue execution at the IP
     // where we got called initially.
     #if __WORDSIZE == 64
-    char *next = SecureMem::generateSecureMemSnippet(
+    char *next = generateSecureCloneSnippet(
         mem, 4096, cloneFd, clone_req.flags, clone_req.stack, clone_req.pid,
         clone_req.ctid, clone_req.tls, &trustedThread);
     if (next + 180 > mem + 4096) {

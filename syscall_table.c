@@ -66,4 +66,4 @@ const struct SyscallTable syscallTable[] __attribute__((section(".rodata, \"a\",
   #endif
 };
 
-const unsigned maxSyscall = sizeof(syscallTable)/sizeof(struct SyscallTable);
+const unsigned maxSyscall __attribute__((section(".rodata"))) = sizeof(syscallTable)/sizeof(struct SyscallTable);

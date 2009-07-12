@@ -5,11 +5,6 @@
 extern "C" {
 #endif
 
-// TODO(markus): remove
-extern const struct SyscallTable *syscallTableAddr;
-extern int                 syscallTableSize;
-extern void                *defaultSystemCallHandler;
-
 void syscallWrapper();
 
 #ifdef __cplusplus

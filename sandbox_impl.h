@@ -257,14 +257,18 @@ class Sandbox {
   }
 
   static bool sendFd(int transport, int fd0, int fd1 = -1,
-                     void *buf = NULL, ssize_t len = -1);
+                     void* buf = NULL, ssize_t len = -1);
 
   // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
   // -errno.
   static bool getFd(int transport, int* fd0, int* fd1 = 0,
                     void* buf = NULL, ssize_t* len = NULL);
 
-  static void trustedThread(void *args) __attribute__((noreturn));
+  static char* generateSecureCloneSnippet(char* mem, ssize_t space,
+                                          int cloneFd, int flags, void* stack,
+                                          int* pid, int* ctid, void* tls,
+                                          void(*trustedThread)(void *));
+  static void trustedThread(void* args) __attribute__((noreturn)); //TODO(markus): remove
 
   static void (*getTrustedThreadFnc())();
   static void (*getTrustedThreadReturnResult())(void *);
@@ -301,6 +305,7 @@ class Sandbox {
   static void trustedProcess(void *args) __attribute__((noreturn));
   static void createTrustedProcess(int* fds, char* mem);
   static void createTrustedThread(int* fds, char* mem);
+  static void createTrustedThread(int processFd, int cloneFd);
   static void snapshotMemoryMappings(int processFd);
 
   static char  stack_[8192];

@@ -7,14 +7,6 @@ namespace playground {
 
 class SecureMem {
  public:
-  static char* generateSecureMemSnippet(char* mem, ssize_t space, int cloneFd,
-                                        int flags, void* stack, int* pid,
-                                        int* ctid, void* tls,
-                                        void(*trustedThread)(void*));
-
-  template<class T> static T receiveSystemCall(int err, char *mem) {
-    return (T)receiveSystemCallInternal(err, mem);
-  }
   static void abandonSystemCall(int fd, int err);
   static void sendSystemCall(int fd, char *mem, int syscall_num) {
     sendSystemCallInternal(fd, mem, syscall_num);
@@ -56,7 +48,6 @@ class SecureMem {
   }
 
  private:
-  static unsigned long receiveSystemCallInternal(int err, char *mem);
   static void sendSystemCallInternal(int fd, char *mem, int syscall_num,
                                      void *arg1 = 0, void *arg2 = 0,
                                      void *arg3 = 0, void *arg4 = 0,

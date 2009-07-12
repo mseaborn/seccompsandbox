@@ -213,20 +213,20 @@ void Sandbox::startSandbox() {
   char* mem = (char *)mmap(0, 4096, PROT_READ|PROT_WRITE,
                            MAP_SHARED|MAP_ANONYMOUS, -1,0);
   #if __WORDSIZE == 64
-  // B8 E7 00 00 00     MOV $231, %eax
+  // B8 E7 00 00 00     MOV $231, %eax // NR_exit_group
   // BF 01 00 00 00   0:MOV $1, %edi
   // 0F 05              SYSCALL
-  // B8 3C 00 00 00     MOV $60, %eax
+  // B8 3C 00 00 00     MOV $60, %eax  // NR_exit
   // EB F2              JMP 0b
   memcpy(mem,
          "\xB8\xE7\x00\x00\x00\xBF\x01\x00"
          "\x00\x00\x0F\x05\xB8\x3C\x00\x00"
          "\x00\xEB\xF2", 19);
   #else
-  // B8 FC 00 00 00     MOV    $252, %eax
+  // B8 FC 00 00 00     MOV    $252, %eax // NR_exit_group
   // BB 01 00 00 00   0:MOV    $1, %ebx
   // CD 80              INT    $0x80
-  // B8 01 00 00 00     MOV    $1, %eax
+  // B8 01 00 00 00     MOV    $1, %eax   // NR_exit
   // EB F2              JMP    0b
   memcpy(mem,
          "\xB8\xFC\x00\x00\x00\xBB\x01\x00"
@@ -242,6 +242,7 @@ void Sandbox::startSandbox() {
   }
   createTrustedProcess(pairs, mem);
   createTrustedThread(pairs, mem);
+  //createTrustedThread(pairs[0], pairs[2]); // TODO(markus): ***
 
   // Find all libraries that have system calls and redirect the system calls
   // to the sandbox. If we miss any system calls, the application will be
