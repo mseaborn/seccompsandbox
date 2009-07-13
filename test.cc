@@ -19,7 +19,7 @@ static void *fnc(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
-  playground::startSandbox();
+  startSandbox();
   write(2, "In secure mode, now!\n", 21);
 
   struct timeval tv;

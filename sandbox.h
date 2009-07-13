@@ -1,8 +1,6 @@
 #ifndef SANDBOX_H__
 #define SANDBOX_H__
 
-namespace playground {
-  void startSandbox();
-} // namespace
+extern "C" void startSandbox();
 
 #endif // SANDBOX_H__

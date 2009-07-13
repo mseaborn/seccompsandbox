@@ -27,12 +27,12 @@ void Sandbox::thread_munmap(int processFd, pid_t tid, int threadFd,
   die("thread_munmap()");
 }
 
-void Sandbox::process_munmap(int sandboxFd, int processFd, int threadFd,
-                             int cloneFd, char* mem) {
+void Sandbox::process_munmap(int processFdPub, int sandboxFd, int threadFd,
+                             int cloneFdPub, char* mem) {
   // Read request
   SysCalls sys;
   MUnmap munmap_req;
-  if (read(sys, processFd, &munmap_req, sizeof(munmap_req)) !=
+  if (read(sys, sandboxFd, &munmap_req, sizeof(munmap_req)) !=
       sizeof(munmap_req)) {
     die("Failed to read parameters for munmap() [process]");
   }

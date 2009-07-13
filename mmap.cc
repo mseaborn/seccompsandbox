@@ -38,12 +38,12 @@ void Sandbox::thread_mmap(int processFd, pid_t tid, int threadFd, char* mem) {
   die("thread_mmap()");
 }
 
-void Sandbox::process_mmap(int sandboxFd, int processFd, int threadFd,
-                           int cloneFd, char* mem) {
+void Sandbox::process_mmap(int processFdPub, int sandboxFd, int threadFd,
+                           int cloneFdPub, char* mem) {
   // Read request
   SysCalls sys;
   MMap mmap_req;
-  if (read(sys, processFd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
+  if (read(sys, sandboxFd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
     die("Failed to read parameters for mmap() [process]");
   }
   int rc = -EINVAL;

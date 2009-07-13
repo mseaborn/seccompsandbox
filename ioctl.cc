@@ -27,12 +27,12 @@ void Sandbox::thread_ioctl(int processFd, pid_t tid, int threadFd, char* mem) {
   die("thread_ioctl()");
 }
 
-void Sandbox::process_ioctl(int sandboxFd, int processFd, int threadFd,
+void Sandbox::process_ioctl(int processFdPub, int sandboxFd, int threadFd,
                             int cloneFd, char* mem) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;
-  if (read(sys, processFd, &ioctl_req, sizeof(ioctl_req)) !=sizeof(ioctl_req)){
+  if (read(sys, sandboxFd, &ioctl_req, sizeof(ioctl_req)) !=sizeof(ioctl_req)){
     die("Failed to read parameters for ioctl() [process]");
   }
   int rc = -EINVAL;

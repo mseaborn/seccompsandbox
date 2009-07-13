@@ -11,8 +11,8 @@ extern "C" {
   struct SyscallTable {
     void *handler;
     void (*trustedThread)(int processFd, pid_t tid, int threadFd, char* mem);
-    void (*trustedProcess)(int sandboxFd, int processFd, int threadFd,
-                           int cloneFd, char* mem);
+    void (*trustedProcess)(int processFdPub, int sandboxFd, int threadFd,
+                           int cloneFdPub, char* mem);
   };
   extern const struct SyscallTable syscallTable[];
   extern const unsigned maxSyscall;

@@ -11,8 +11,8 @@ void Sandbox::thread_getpid(int processFd, pid_t tid, int threadFd, char* mem){
   die("thread_getpid()");
 }
 
-void Sandbox::process_getpid(int sandboxFd, int processFd, int threadFd,
-                             int cloneFd, char* mem) {
+void Sandbox::process_getpid(int processFdPub, int sandboxFd, int threadFd,
+                             int cloneFdPub, char* mem) {
   die("process_getpid()");
 }
 

@@ -44,12 +44,12 @@ void Sandbox::thread_clone(int processFd, pid_t tid, int threadFd, char* mem) {
   die("thread_clone()");
 }
 
-void Sandbox::process_clone(int sandboxFd, int processFd, int threadFd,
-                            int cloneFd, char* mem) {
+void Sandbox::process_clone(int processFdPub, int sandboxFd, int threadFd,
+                            int cloneFdPub, char* mem) {
   // Read request
   Clone clone_req;
   SysCalls sys;
-  if (read(sys, processFd, &clone_req, sizeof(clone_req)) !=sizeof(clone_req)){
+  if (read(sys, sandboxFd, &clone_req, sizeof(clone_req)) !=sizeof(clone_req)){
     die("Failed to read parameters for clone() [process]");
   }
 
@@ -65,8 +65,8 @@ void Sandbox::process_clone(int sandboxFd, int processFd, int threadFd,
     // where we got called initially.
     #if __WORDSIZE == 64
     char *next = generateSecureCloneSnippet(
-        mem, 4096, cloneFd, clone_req.flags, clone_req.stack, clone_req.pid,
-        clone_req.ctid, clone_req.tls, &trustedThread);
+        mem, 4096, cloneFdPub, clone_req.flags, clone_req.stack, clone_req.pid,
+        clone_req.ctid, clone_req.tls);
     if (next + 180 > mem + 4096) {
       die("Insufficient shared memory");
     }

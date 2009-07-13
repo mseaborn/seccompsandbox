@@ -28,12 +28,12 @@ void Sandbox::thread_mprotect(int processFd, pid_t tid, int threadFd,
   die("thread_mprotect()");
 }
 
-void Sandbox::process_mprotect(int sandboxFd, int processFd, int threadFd,
-                               int cloneFd, char* mem) {
+void Sandbox::process_mprotect(int processFdPub, int sandboxFd, int threadFd,
+                               int cloneFdPub, char* mem) {
   // Read request
   SysCalls sys;
   MProtect mprotect_req;
-  if (read(sys, processFd, &mprotect_req, sizeof(mprotect_req)) !=
+  if (read(sys, sandboxFd, &mprotect_req, sizeof(mprotect_req)) !=
       sizeof(mprotect_req)) {
     die("Failed to read parameters for mprotect() [process]");
   }

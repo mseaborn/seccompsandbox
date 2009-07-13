@@ -58,12 +58,12 @@ void Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
   }
 }
 
-void Sandbox::process_open(int sandboxFd, int processFd, int threadFd,
-                           int cloneFd, char* mem) {
+void Sandbox::process_open(int processFdPub, int sandboxFd, int threadFd,
+                           int cloneFdPub, char* mem) {
   // Read request
   SysCalls sys;
   Open open_req;
-  if (read(sys, processFd, &open_req, sizeof(open_req)) != sizeof(open_req)) {
+  if (read(sys, sandboxFd, &open_req, sizeof(open_req)) != sizeof(open_req)) {
  read_parm_failed:
     die("Failed to read parameters for open() [process]");
   }
@@ -71,7 +71,7 @@ void Sandbox::process_open(int sandboxFd, int processFd, int threadFd,
   if (open_req.path_length > PATH_MAX) {
     char buf[32];
     while (open_req.path_length > 0) {
-      int i = read(sys, processFd, buf, sizeof(buf));
+      int i = read(sys, sandboxFd, buf, sizeof(buf));
       if (i <= 0) {
         goto read_parm_failed;
       }
@@ -84,7 +84,7 @@ void Sandbox::process_open(int sandboxFd, int processFd, int threadFd,
     return;
   }
   char path[open_req.path_length + 1];
-  if (read(sys, processFd, path, open_req.path_length) !=open_req.path_length){
+  if (read(sys, sandboxFd, path, open_req.path_length) !=open_req.path_length){
     goto read_parm_failed;
   }
   path[open_req.path_length] = '\000';

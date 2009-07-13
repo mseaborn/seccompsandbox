@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <map>
 
 #include "sandbox_impl.h"
@@ -10,62 +11,32 @@ struct Thread {
   char* mem;
 };
 
-void Sandbox::initializeProtectedMap(int fd) {
-  // Read the memory mappings as they were before the sandbox takes effect.
-  // These mappings cannot be changed by the sandboxed process.
-  {
-    int mapsFd;
-    if (!getFd(fd, &mapsFd)) {
-   maps_failure:
-      die("Cannot access /proc/self/maps");
-    }
-    char line[80];
-    FILE *fp = fdopen(mapsFd, "r");
-    for (bool truncated = false;;) {
-      if (fgets(line, sizeof(line), fp) == NULL) {
-        if (feof(fp) || errno != EINTR) {
-          break;
-        }
-        continue;
-      }
-      if (!truncated) {
-        unsigned long start, stop;
-        char *ptr = line;
-        errno = 0;
-        start = strtoul(ptr, &ptr, 16);
-        if (errno || *ptr++ != '-') {
-       parse_failure:
-          die("Failed to parse /proc/self/maps");
-        }
-        stop = strtoul(ptr, &ptr, 16);
-        if (errno || *ptr++ != ' ') {
-          goto parse_failure;
-        }
-        protectedMap_[reinterpret_cast<void *>(start)] = stop - start;
-      }
-      truncated = strchr(line, '\n') == NULL;
-    }
-    SysCalls sys;
-    NOINTR_SYS(sys.close(mapsFd));
-    if (write(sys, fd, &mapsFd, sizeof(mapsFd)) != sizeof(mapsFd)) {
-      goto maps_failure;
-    }
+void Sandbox::trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
+                             int cloneFd) {
+  SysCalls sys;
+  std::map<pid_t, struct Thread> threads;
+
+newThreadCreated:
+  int     shmFd, newThreadFd;
+  pid_t   newTid;
+  ssize_t newTidLen = sizeof(newTid);
+  if (!getFd(cloneFd, &shmFd, &newThreadFd, &newTid, &newTidLen) ||
+      newTidLen != sizeof(newTid)) {
+    die("Failed to received new thread information");
   }
-}
-
-void Sandbox::trustedProcess(void *args_) {
-  // Set up securely shared memory for main thread
-  static std::map<pid_t, struct Thread> threads;
-  ChildArgs* args     = reinterpret_cast<ChildArgs *>(args_);
-  initializeProtectedMap(args->fd2);
-
-  Thread* main_thread = &threads[args->tid];
-  main_thread->fd     = args->fd0;
-  main_thread->mem    = args->mem;
-  mprotect(args->mem, 4096, PROT_READ | PROT_WRITE);
+  if (threads.count(newTid)) {
+    die("Duplicate thread id");
+  }
+  Thread *newThread = &threads[newTid];
+  newThread->fd     = newThreadFd;
+  newThread->mem    = (char*)mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED,
+                                  shmFd, 0);
+  if (newThread->mem == MAP_FAILED) {
+    die("Failed to set up shared memory for communicating with new thread");
+  }
+  close(shmFd);
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
-  SysCalls sys;
   for (;;) {
     struct {
       unsigned int sysnum;
@@ -73,7 +44,7 @@ void Sandbox::trustedProcess(void *args_) {
       pid_t        tid;
     } __attribute__((packed)) header;
     int rc;
-    if ((rc = read(sys, args->fd2, &header, sizeof(header))) !=sizeof(header)){
+    if ((rc = read(sys, sandboxFd, &header, sizeof(header))) !=sizeof(header)){
       if (rc) {
         die("Failed to read system call number and thread id");
       }
@@ -88,12 +59,101 @@ void Sandbox::trustedProcess(void *args_) {
         !syscallTable[header.sysnum].trustedProcess) {
       die("Trusted process encountered unexpected system call");
     }
-    syscallTable[header.sysnum].trustedProcess(args->fd1,
-                                               args->fd2,
+    syscallTable[header.sysnum].trustedProcess(processFdPub,
+                                               sandboxFd,
                                                iter->second.fd,
-                                               args->fd3,
+                                               cloneFdPub,
                                                iter->second.mem);
+    if (header.sysnum == __NR_clone) {
+      goto newThreadCreated;
+    }
   }
+}
+
+void Sandbox::initializeProtectedMap(int fd) {
+  // Read the memory mappings as they were before the sandbox takes effect.
+  // These mappings cannot be changed by the sandboxed process.
+  int mapsFd;
+  if (!getFd(fd, &mapsFd)) {
+ maps_failure:
+    die("Cannot access /proc/self/maps");
+  }
+  char line[80];
+  FILE *fp = fdopen(mapsFd, "r");
+  for (bool truncated = false;;) {
+    if (fgets(line, sizeof(line), fp) == NULL) {
+      if (feof(fp) || errno != EINTR) {
+        break;
+      }
+      continue;
+    }
+    if (!truncated) {
+      unsigned long start, stop;
+      char *ptr = line;
+      errno = 0;
+      start = strtoul(ptr, &ptr, 16);
+      if (errno || *ptr++ != '-') {
+     parse_failure:
+        die("Failed to parse /proc/self/maps");
+      }
+      stop = strtoul(ptr, &ptr, 16);
+      if (errno || *ptr++ != ' ') {
+        goto parse_failure;
+      }
+      protectedMap_[reinterpret_cast<void *>(start)] = stop - start;
+    }
+    truncated = strchr(line, '\n') == NULL;
+  }
+  SysCalls sys;
+  NOINTR_SYS(sys.close(mapsFd));
+  if (write(sys, fd, &mapsFd, sizeof(mapsFd)) != sizeof(mapsFd)) {
+    goto maps_failure;
+  }
+}
+
+void Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
+                                   int cloneFdPub, int cloneFd){
+  // Create a trusted process that can evaluate system call parameters and
+  // decide whether a system call should execute. This process runs outside of
+  // the seccomp sandbox. It communicates with the sandbox'd process through
+  // a socketpair() and through securely shared memory.
+  SysCalls sys;
+  pid_t pid       = fork();
+  if (pid < 0) {
+    die("Failed to create trusted process");
+  }
+  if (!pid) {
+    // Close all file handles except for sandboxFd, cloneFd, and stdio
+    DIR *dir      = opendir("/proc/self/fd");
+    if (dir == 0) {
+      // If we don't know the list of our open file handles, just try closing
+      // all valid ones.
+      for (int fd = sysconf(_SC_OPEN_MAX); --fd > 2; ) {
+        if (fd != sandboxFd && fd != cloneFd) {
+          close(fd);
+        }
+      }
+    } else {
+      // If available, if is much more efficient to just close the file
+      // handles that show up in /proc/self/fd/
+      struct dirent de, *res;
+      while (!readdir_r(dir, &de, &res) && res) {
+        if (res->d_name[0] < '0')
+          continue;
+        int fd  = atoi(res->d_name);
+        if (fd > 2 && fd != sandboxFd && fd != cloneFd && fd != dirfd(dir)) {
+          close(fd);
+        }
+      }
+      closedir(dir);
+    }
+
+    initializeProtectedMap(sandboxFd);
+    trustedProcess(processFdPub, sandboxFd, cloneFdPub, cloneFd);
+    die();
+  }
+  close(sandboxFd);
+  close(cloneFd);
 }
 
 } // namespace

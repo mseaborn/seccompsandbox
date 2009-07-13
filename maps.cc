@@ -341,7 +341,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
   } while (len || long_line);
   new_addr = NULL;
 done:
-  close(fd);
+  sys.close(fd);
   return new_addr;
 }
 

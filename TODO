@@ -1,7 +1,3 @@
-- get rid of old-style createTrustedThread
-
-- add cloneFd code
-
 - intercept exit() to clean up after dying threads
 
 - add mutexes for mmap(), to prevent allocations in the cradle area

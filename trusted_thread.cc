@@ -19,11 +19,9 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
   unsigned long rc;
   switch (syscallNum) {
     case __NR_read:
-      write(sys, 2, "read()\n", 7);
       rc = sys.read((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_write:
-      write(sys, 2, "write()\n", 8);
       rc = sys.write((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_rt_sigreturn:
@@ -68,8 +66,7 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
 
 char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
                                           int cloneFd, int flags, void* stack,
-                                          int* pid, int* ctid, void* tls,
-                                          void(*trustedThread)(void *)) {
+                                          int* pid, int* ctid, void* tls) {
   struct {
     char*  start;                                  //  0
     char*  end;                                    //  1
@@ -124,12 +121,12 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // socketpair(AF_UNIX, SOCK_STREAM, 0, fds)
       "lea  100f(%%rip), %%rbp\n" // rbp = &arguments
     "nascent_thread:"
-      "mov  $53, %%eax\n"   // NR_socketpair
-      "mov  $1, %%edi\n"    // domain = AF_UNIX
-      "mov  $1, %%esi\n"    // type = SOCK_STREAM
-      "xor  %%rdx, %%rdx\n" // protocol = 0
-      "pushq %%rdx\n"       // used for futex()
-      "sub  $8, %%rsp\n"    // sv = %rsp
+      "mov  $53, %%eax\n"       // NR_socketpair
+      "mov  $1, %%edi\n"        // domain = AF_UNIX
+      "mov  $1, %%esi\n"        // type = SOCK_STREAM
+      "xor  %%rdx, %%rdx\n"     // protocol = 0
+      "pushq %%rdx\n"           // used for futex()
+      "sub  $8, %%rsp\n"        // sv = %rsp
       "mov  %%rsp, %%r10\n"
       "syscall\n"
       "test %%rax, %%rax\n"
@@ -138,14 +135,14 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // If things went wrong, we don't have an (easy) way of signaling
       // the parent. For our purposes, it is sufficient to fail with a
       // fatal error.
-    "2:mov  $231, %%eax\n" // NR_exit_group
-    "3:mov  $1, %%edi\n"   // status = 1
+    "2:mov  $231, %%eax\n"      // NR_exit_group
+    "3:mov  $1, %%edi\n"        // status = 1
       "syscall\n"
-    "4:mov  $60, %%eax\n"  // NR_exit
+    "4:mov  $60, %%eax\n"       // NR_exit
       "jmp  3b\n"
 
       // Get thread id of newly created thread
-    "5:mov  $186, %%eax\n" // NR_gettid
+    "5:mov  $186, %%eax\n"      // NR_gettid
       "syscall\n"
       "mov  %%rax, %%r14\n"
 
@@ -176,11 +173,11 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // If open() fails, exit. TODO(markus): add error handling
       "test %%rax, %%rax\n"
       "js   4b\n"
-      "mov  %%rax, %%r12\n" // %r12 = secureMemFd
+      "mov  %%rax, %%r12\n"     // %r12 = secureMemFd
 
       // Unlink file.
       // unlink("/dev/shm/.sandboxXXXXXX")
-      "mov  $87, %%eax\n" // NR_unlink
+      "mov  $87, %%eax\n"       // NR_unlink
       "syscall\n"
       "test %%rax, %%rax\n"
       "jnz  4b\n"
@@ -202,9 +199,9 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
 
       // Ensure that the file is at least one page long. This is necessary
       // in order to call mmap().
-      "mov  $77, %%eax\n"   // NR_ftruncate
-      "mov  %%r12, %%rdi\n" // fd
-      "mov  $4096, %%esi\n" // length = 4096
+      "mov  $77, %%eax\n"       // NR_ftruncate
+      "mov  %%r12, %%rdi\n"     // fd
+      "mov  $4096, %%esi\n"     // length = 4096
       "syscall\n"
       "test %%rax, %%rax\n"
       "jnz  4b\n"
@@ -215,19 +212,19 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // trusted process has to ensure that only one clone() request
       // is pending at any given time.
       // mmap(Sandbox::secure(), PROT_READ|PROT_EXEC,MAP_SHARED|MAP_FIXED,fd,0)
-      "mov  $9, %%eax\n"       // NR_mmap
-      "mov  0(%%rbp), %%rdi\n" // start  = Sandbox::secureCradle()
-      "mov  $5, %%edx\n"       // prot   = PROT_READ | PROT_EXEC
-      "mov  $17, %%r10\n"      // flags  = MAP_SHARED | MAP_FIXED
-      "mov  %%r12, %%r8\n"     // fd
-      "xor  %%r9, %%r9\n"      // offset = 0
+      "mov  $9, %%eax\n"        // NR_mmap
+      "mov  0(%%rbp), %%rdi\n"  // start  = Sandbox::secureCradle()
+      "mov  $5, %%edx\n"        // prot   = PROT_READ | PROT_EXEC
+      "mov  $17, %%r10\n"       // flags  = MAP_SHARED | MAP_FIXED
+      "mov  %%r12, %%r8\n"      // fd
+      "xor  %%r9, %%r9\n"       // offset = 0
       "syscall\n"
       "cmp  %%rax, %%rdi\n"
       "jnz  4b\n"
 
       // Call fork() to unshare the address space then exit the
       // temporary thread.
-      "mov  $57, %%eax\n" // NR_fork
+      "mov  $57, %%eax\n"       // NR_fork
       "syscall\n"
       "test %%rax, %%rax\n"
       "jnz  4b\n"
@@ -239,54 +236,54 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // process to decide where to send responses, too. To simplify
       // the code, this should probably happen on a dedicated
       // socketpair().
-      "mov  8(%%rbp), %%edi\n" // transport = Sandbox::cloneFd()
-      "mov  %%r12, %%rsi\n"    // fd0       = fd
-      "movl 0(%%rsp), %%edx\n" // fd1       = %rsp[0]
+      "mov  8(%%rbp), %%edi\n"  // transport = Sandbox::cloneFd()
+      "mov  %%r12, %%rsi\n"     // fd0       = fd
+      "movl 0(%%rsp), %%edx\n"  // fd1       = %rsp[0]
       "push %%r14\n"
-      "mov  %%rsp, %%rcx\n"    // buf       = &tid
-      "mov  $4, %%r8\n"        // len       = sizeof(int)
+      "mov  %%rsp, %%rcx\n"     // buf       = &tid
+      "mov  $4, %%r8\n"         // len       = sizeof(int)
       "mov 12(%%rbp), %%rax\n"
-      "call *%%rax\n"          // Sandbox::sendFd()
+      "call *%%rax\n"           // Sandbox::sendFd()
       "jmp  4b\n"
 
       // Nascent thread calls futex().
       // futex(&tid, FUTEX_WAIT, tid, NULL)
     "6:cmpl %%eax, 8(%%rsp)\n"
       "jnz  7f\n"
-      "lea  8(%%rsp), %%rdi\n" // uaddr
-      "xor  %%rsi, %%rsi\n"    // op      = FUTEX_WAIT
-      "mov  %%rax, %%rdx\n"    // val     = tid
-      "xor  %%r10, %%r10\n"    // timeout = NULL
-      "mov  $202, %%rax\n"     // NR_futex
+      "lea  8(%%rsp), %%rdi\n"  // uaddr
+      "xor  %%rsi, %%rsi\n"     // op      = FUTEX_WAIT
+      "mov  %%rax, %%rdx\n"     // val     = tid
+      "xor  %%r10, %%r10\n"     // timeout = NULL
+      "mov  $202, %%rax\n"      // NR_futex
       "syscall\n"
      "7:"
 
       // Trusted thread returns from futex() and tries to mremap()
       // shared memory from its original fixed location. It can do
       // this by temporarily increasing the size of the mapping
-      "mov  $25, %%eax\n"         // NR_mremap
-      "mov  0(%%rbp), %%rdi\n"    // old_address = Sandbox::secure()
-      "mov  $4096, %%esi\n"       // old_size    = 4096
-      "mov  $8192, %%edx\n"       // new_size    = 8192
-      "mov  $1, %%r10\n"          // flags       = MREMAP_MAYMOVE
+      "mov  $25, %%eax\n"       // NR_mremap
+      "mov  0(%%rbp), %%rdi\n"  // old_address = Sandbox::secure()
+      "mov  $4096, %%esi\n"     // old_size    = 4096
+      "mov  $8192, %%edx\n"     // new_size    = 8192
+      "mov  $1, %%r10\n"        // flags       = MREMAP_MAYMOVE
       "syscall\n"
       "cmp  $-4095, %%rax\n"
-      "jae  2b\n"                     // TODO(markus): better error handling
-      "mov  %%rax, %%rdi\n"           // old_address = tmp_address
-      "mov  $25, %%eax\n"             // NR_mremap
-      "mov  $8192, %%esi\n"           // old_size    = 8192
-      "mov  $4096, %%edx\n"           // new_size    = 4096
+      "jae  2b\n"               // TODO(markus): better error handling
+      "mov  %%rax, %%rdi\n"     // old_address = tmp_address
+      "mov  $25, %%eax\n"       // NR_mremap
+      "mov  $8192, %%esi\n"     // old_size    = 8192
+      "mov  $4096, %%edx\n"     // new_size    = 4096
       "syscall\n"
       "cmp  $-4095, %%rax\n"
-      "jae  2b\n"                 // TODO(markus): better error handling
-      "mov  %%rax, %%r12\n"       // %r12   = secure_mem
-      "mov  $9, %%eax\n"          // NR_mmap
-      "movq 0(%%rbp), %%rdi\n"    // start  = Sandbox::secureCradle()
-      "mov  $4096, %%esi\n"       // length = 4096
-      "xor  %%rdx, %%rdx\n"       // prot   = PROT_NONE
-      "mov  $0x32, %%r10\n"       // flags  = PRIVATE|FIXED|ANONYMOUS
-      "mov  $-1, %%r8\n"          // fd     = -1
-      "xor  %%r9, %%r9\n"         // offset = NULL
+      "jae  2b\n"               // TODO(markus): better error handling
+      "mov  %%rax, %%r12\n"     // %r12   = secure_mem
+      "mov  $9, %%eax\n"        // NR_mmap
+      "movq 0(%%rbp), %%rdi\n"  // start  = Sandbox::secureCradle()
+      "mov  $4096, %%esi\n"     // length = 4096
+      "xor  %%rdx, %%rdx\n"     // prot   = PROT_NONE
+      "mov  $0x32, %%r10\n"     // flags  = PRIVATE|FIXED|ANONYMOUS
+      "mov  $-1, %%r8\n"        // fd     = -1
+      "xor  %%r9, %%r9\n"       // offset = NULL
       "syscall\n"
       "cmp  %%rax, %%rdi\n"
       "jne  2b\n"
@@ -303,7 +300,7 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       "test %%rax, %%rax\n"
       "js   2b\n"
       "jnz  8f\n"
-      "mov  20(%%rbp), %%rax\n" // call Sandbox::trustedThread()
+      "mov  20(%%rbp), %%rax\n" // call *Sandbox::getTrustedThreadFnc()
       "jmp  *%%rax\n"
     "8:mov  0(%%rsp), %%r13d\n" // %r13 = threadFd
       "add  $16, %%rsp\n"
@@ -312,31 +309,31 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       // trusted thread and trusted process.
       // This system call can potentially be corrupted by untrusted threads,
       // but that's OK.
-      "mov  $9, %%eax\n"      // NR_mmap
-      "xor  %%rdi, %%rdi\n"   // start  = NULL
-      "mov  $4096, %%esi\n"   // length = 4096
-      "mov  $3, %%edx\n"      // prot   = PROT_READ | PROT_WRITE
-      "mov  $0x22, %%r10\n"   // flags  = PRIVATE|ANONYMOUS
-      "mov  $-1, %%r8\n"      // fd     = -1
-      "xor  %%r9, %%r9\n"     // offset = 0
+      "mov  $9, %%eax\n"        // NR_mmap
+      "xor  %%rdi, %%rdi\n"     // start  = NULL
+      "mov  $4096, %%esi\n"     // length = 4096
+      "mov  $3, %%edx\n"        // prot   = PROT_READ | PROT_WRITE
+      "mov  $0x22, %%r10\n"     // flags  = PRIVATE|ANONYMOUS
+      "mov  $-1, %%r8\n"        // fd     = -1
+      "xor  %%r9, %%r9\n"       // offset = 0
       "syscall\n"
-      "cmp  $-1, %%rax\n"     // MAP_FAILED
+      "cmp  $-1, %%rax\n"       // MAP_FAILED
       "jz   4b\n"
-      "mov  %%rax, %%rsi\n"   // args   = mmap()
-      "mov  $158, %%eax\n"    // NR_arch_prctl
-      "mov  $0x1001, %%edi\n" // option = ARCH_SET_GS
+      "mov  %%rax, %%rsi\n"     // args   = mmap()
+      "mov  $158, %%eax\n"      // NR_arch_prctl
+      "mov  $0x1001, %%edi\n"   // option = ARCH_SET_GS
       "syscall\n"
       "cmp  $-4095, %%rax\n"
       "jae  4b\n"
-      "mov  %%r14, %%gs:0\n"  // setTLSValue(TLS_TID, tid)
-      "mov  %%r13, %%gs:8\n"  // setTLSValue(TLS_THREAD_FD, threadFd)
-      "mov  %%r15, %%gs:16\n" // setTLSValue(TLS_PROCESS_FD, processFd)
+      "mov  %%r14, %%gs:0\n"    // setTLSValue(TLS_TID, tid)
+      "mov  %%r13, %%gs:8\n"    // setTLSValue(TLS_THREAD_FD, threadFd)
+      "mov  %%r15, %%gs:16\n"   // setTLSValue(TLS_PROCESS_FD, processFd)
       "mov  8(%%rbp), %%eax\n"
-      "mov  %%rax, %%gs:24\n" // setTLSValue(TLS_CLONE_FD, cloneFd)
+      "mov  %%rax, %%gs:24\n"   // setTLSValue(TLS_CLONE_FD, cloneFd)
 
       // Release privileges by entering seccomp mode.
-      "mov  $157, %%eax\n" // NR_prctl
-      "mov  $22, %%edi\n"  // PR_SET_SECCOMP
+      "mov  $157, %%eax\n"      // NR_prctl
+      "mov  $22, %%edi\n"       // PR_SET_SECCOMP
       "mov  $1, %%esi\n"
       "syscall\n"
       // TODO(markus): Paranoia. Add some error handling
@@ -359,7 +356,7 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
   "100:.byte 0, 0, 0, 0, 0, 0, 0, 0\n" // Sandbox::secureCradle()
       ".byte 0, 0, 0, 0\n"             // cloneFd
       ".byte 0, 0, 0, 0, 0, 0, 0, 0\n" // &Sandbox::sendFd()
-      ".byte 0, 0, 0, 0, 0, 0, 0, 0\n" // &Sandbox::trustedThread()
+      ".byte 0, 0, 0, 0, 0, 0, 0, 0\n" // Sandbox::getTrustedThreadFnc()
       ".string \"/dev/shm/.sandboxXXXXXX\"\n"
       ".byte 0xCC, 0xCC, 0xCC, 0xCC\n"
   "999:ret\n"
@@ -606,28 +603,6 @@ void (*Sandbox::getTrustedThreadFnc())() {
   "999:pop  %0\n"
       : "=g"(fnc));
   return fnc;
-}
-
-void Sandbox::trustedThread(void *args_) {
-#if __WORDSIZE == 64
-  ChildArgs *args = reinterpret_cast<ChildArgs *>(args_);
-  register void* mem asm("r12") = args->mem;
-  register int   fd0 asm("r13") = args->fd0;
-  register pid_t tid asm("r14") = args->tid;
-  register int   fd1 asm("r15") = args->fd1;
-  __asm__ __volatile__(
-      "jmp *%0\n"
-      :
-      : "q"(getTrustedThreadFnc()),
-        "q"(mem),
-        "q"(fd0),
-        "q"(tid),
-        "q"(fd1)
-      );
-#else
-      // TODO(markus): implement
-#endif
-  for (;;);
 }
 
 } // namespace

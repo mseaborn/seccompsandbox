@@ -89,12 +89,12 @@ void Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
   }
 }
 
-void Sandbox::process_stat(int sandboxFd, int processFd, int threadFd,
-                           int cloneFd, char* mem) {
+void Sandbox::process_stat(int processFdPub, int sandboxFd, int threadFd,
+                           int cloneFdPub, char* mem) {
   // Read request
   SysCalls sys;
   Stat stat_req;
-  if (read(sys, processFd, &stat_req, sizeof(stat_req)) != sizeof(stat_req)) {
+  if (read(sys, sandboxFd, &stat_req, sizeof(stat_req)) != sizeof(stat_req)) {
  read_parm_failed:
     die("Failed to read parameters for stat() [process]");
   }
@@ -102,7 +102,7 @@ void Sandbox::process_stat(int sandboxFd, int processFd, int threadFd,
   if (stat_req.path_length > PATH_MAX) {
     char buf[32];
     while (stat_req.path_length > 0) {
-      int i = read(sys, processFd, buf, sizeof(buf));
+      int i = read(sys, sandboxFd, buf, sizeof(buf));
       if (i <= 0) {
         goto read_parm_failed;
       }
@@ -115,7 +115,7 @@ void Sandbox::process_stat(int sandboxFd, int processFd, int threadFd,
     return;
   }
   char path[stat_req.path_length + 1];
-  if (read(sys, processFd, path, stat_req.path_length) !=
+  if (read(sys, sandboxFd, path, stat_req.path_length) !=
       stat_req.path_length) {
     goto read_parm_failed;
   }

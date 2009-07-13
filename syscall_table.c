@@ -12,7 +12,7 @@
 #endif
 #endif
 
-// TODO(markus): The table has to live in read-only memory
+// TODO(markus): This is an incredibly dirty hack to make the syscallTable live in r/o memory
 const struct SyscallTable syscallTable[] __attribute__((section(".rodata, \"a\", @progbits\n#"))) ={
   [ __NR_brk             ] = { 0, UNRESTRICTED_SYSCALL, 0 },
   [ __NR_close           ] = { 0, UNRESTRICTED_SYSCALL, 0 },

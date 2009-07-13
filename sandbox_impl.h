@@ -221,7 +221,7 @@ class Sandbox {
 
   typedef std::map<void *, long> ProtectedMap;
 
-  static void startSandbox();
+  static void startSandbox() asm("startSandbox");
   static void die(const char *msg = 0) __attribute__((noreturn)) {
     if (msg) {
       SysCalls sys;
@@ -266,49 +266,25 @@ class Sandbox {
 
   static char* generateSecureCloneSnippet(char* mem, ssize_t space,
                                           int cloneFd, int flags, void* stack,
-                                          int* pid, int* ctid, void* tls,
-                                          void(*trustedThread)(void *));
-  static void trustedThread(void* args) __attribute__((noreturn)); //TODO(markus): remove
-
+                                          int* pid, int* ctid, void* tls);
   static void (*getTrustedThreadFnc())();
   static void (*getTrustedThreadReturnResult())(void *);
 
   static ProtectedMap protectedMap_; // available in trusted process, only
 
  private:
-  struct ChildArgs {
-   public:
-    template<int n>static ChildArgs* pushArgs(char (&stack)[n], char* mem,
-                                              int fd0, int fd1, int fd2,
-                                              int fd3, int fd4, int tid) {
-      ChildArgs *args =
-          reinterpret_cast<ChildArgs *>(stack + n - sizeof(ChildArgs));
-      args->mem       = mem;
-      args->fd0       = fd0;
-      args->fd1       = fd1;
-      args->fd2       = fd2;
-      args->fd3       = fd3;
-      args->fd4       = fd4;
-      args->tid       = tid;
-      return args;
-    }
-    char* mem;
-    int   fd0, fd1, fd2, fd3, fd4;
-    int   tid;
-  };
-
   static void* defaultSystemCallHandler(int syscallNum, void *arg0, void *arg1,
                                         void *arg2, void *arg3, void *arg4,
                                         void *arg5)
                                        asm("defaultSystemCallHandler");
   static void initializeProtectedMap(int fd);
-  static void trustedProcess(void *args) __attribute__((noreturn));
-  static void createTrustedProcess(int* fds, char* mem);
-  static void createTrustedThread(int* fds, char* mem);
+  static void trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
+                             int cloneFd) __attribute__((noreturn));
+  static void createTrustedProcess(int processFdPub, int sandboxFd,
+                                   int cloneFdPub, int cloneFd);
   static void createTrustedThread(int processFd, int cloneFd);
   static void snapshotMemoryMappings(int processFd);
 
-  static char  stack_[8192];
   static int   pid_;
   static char* secureCradle_;
 };
