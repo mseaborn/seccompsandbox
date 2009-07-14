@@ -70,25 +70,22 @@ void Sandbox::process_clone(int processFdPub, int sandboxFd, int threadFd,
     if (next + 180 > mem + 4096) {
       die("Insufficient shared memory");
     }
-    // TODO(markus): For security reasons, we cannot use the stack. Replace the
-    // RET instruction with an absolute jump.
     // TODO(markus): Check whether there is a security issue with us not being
     // able to change the shared memory page atomically. In particular, by
     // writing to threadFd(), malicious code could persuade the trusted thread
     // to run the same system call multiple times. Maybe, include a serial
     // number that has to increment sequentially?
-    // TODO(markus): This code is currently not thread-safe.
     // 48 85 C0                         TEST %rax, %rax
     // 0F 85 9E 00 00 00                JNE  . + 0x9F  // Return to trusted thr
     // 48 81 EC 80 00 00 00             SUB  $0x80, %rsp  // Red zone comp.
     // 48 B9 .. .. .. .. .. .. .. ..    MOV  $0x..., %rcx
     // 51                               PUSH %rcx
+    // 48 BD .. .. .. .. .. .. .. ..    MOV  $0x..., %rbp
     // 48 BB .. .. .. .. .. .. .. ..    MOV  $0x..., %rbx
     // 48 B9 .. .. .. .. .. .. .. ..    MOV  $0x..., %rcx
     // 48 BA .. .. .. .. .. .. .. ..    MOV  $0x..., %rdx
     // 48 BE .. .. .. .. .. .. .. ..    MOV  $0x..., %rsi
     // 48 BF .. .. .. .. .. .. .. ..    MOV  $0x..., %rdi
-    // 48 BD .. .. .. .. .. .. .. ..    MOV  $0x..., %rbp
     // 49 B8 .. .. .. .. .. .. .. ..    MOV  $0x..., %r8
     // 49 B9 .. .. .. .. .. .. .. ..    MOV  $0x..., %r9
     // 49 BA .. .. .. .. .. .. .. ..    MOV  $0x..., %r10
@@ -106,12 +103,12 @@ void Sandbox::process_clone(int processFdPub, int sandboxFd, int threadFd,
            "\x48\x81\xEC\x80\x00\x00\x00"
            "\x48\xB9\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x51"
+           "\x48\xBD\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x48\xBB\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x48\xB9\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x48\xBA\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x48\xBE\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x48\xBF\x00\x00\x00\x00\x00\x00\x00\x00"
-           "\x48\xBD\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x49\xB8\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x49\xB9\x00\x00\x00\x00\x00\x00\x00\x00"
            "\x49\xBA\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -124,12 +121,12 @@ void Sandbox::process_clone(int processFdPub, int sandboxFd, int threadFd,
            "\x48\xB9\x00\x00\x00\x00\x00\x00\x00\x00"
            "\xFF\xE1", 180);
     *reinterpret_cast<void **>(next +  18) = clone_req.regs64.ret;
-    *reinterpret_cast<void **>(next +  29) = clone_req.regs64.rbx;
-    *reinterpret_cast<void **>(next +  39) = clone_req.regs64.rcx;
-    *reinterpret_cast<void **>(next +  49) = clone_req.regs64.rdx;
-    *reinterpret_cast<void **>(next +  59) = clone_req.regs64.rsi;
-    *reinterpret_cast<void **>(next +  69) = clone_req.regs64.rdi;
-    *reinterpret_cast<void **>(next +  79) = clone_req.regs64.rbp;
+    *reinterpret_cast<void **>(next +  29) = clone_req.regs64.rbp;
+    *reinterpret_cast<void **>(next +  39) = clone_req.regs64.rbx;
+    *reinterpret_cast<void **>(next +  49) = clone_req.regs64.rcx;
+    *reinterpret_cast<void **>(next +  59) = clone_req.regs64.rdx;
+    *reinterpret_cast<void **>(next +  69) = clone_req.regs64.rsi;
+    *reinterpret_cast<void **>(next +  79) = clone_req.regs64.rdi;
     *reinterpret_cast<void **>(next +  89) = clone_req.regs64.r8;
     *reinterpret_cast<void **>(next +  99) = clone_req.regs64.r9;
     *reinterpret_cast<void **>(next + 109) = clone_req.regs64.r10;

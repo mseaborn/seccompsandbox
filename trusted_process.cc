@@ -50,8 +50,7 @@ newThreadCreated:
       }
       die();
     }
-    std::map<pid_t, struct Thread>::const_iterator iter =
-                                                      threads.find(header.tid);
+    std::map<pid_t, struct Thread>::iterator iter = threads.find(header.tid);
     if (iter == threads.end()) {
       die("Received request from unknown thread");
     }
@@ -66,6 +65,8 @@ newThreadCreated:
                                                iter->second.mem);
     if (header.sysnum == __NR_clone) {
       goto newThreadCreated;
+    } else if (header.sysnum == __NR_exit) {
+      threads.erase(iter);
     }
   }
 }

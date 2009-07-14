@@ -1,7 +1,7 @@
 #include <sys/types.h>
 
 // TODO(markus): change this into a function that returns the address of the assembly code. If that isn't possible for sandbox_clone, then move that function into a *.S file
-__asm__(
+asm(
     ".pushsection .text, \"ax\", @progbits\n"
 
     // This code relies on the stack layout of the system call wrapper. It
@@ -29,12 +29,13 @@ __asm__(
     ".type syscallWrapper, @function\n"
     #if __WORDSIZE == 64
     // Save all registers
+    "push %rbp\n"
+    "mov  %rsp, %rbp\n"
     "push %rbx\n"
     "push %rcx\n"
     "push %rdx\n"
     "push %rsi\n"
     "push %rdi\n"
-    "push %rbp\n"
     "push %r8\n"
     "push %r9\n"
     "push %r10\n"
@@ -78,12 +79,13 @@ __asm__(
     "pop %r10\n"
     "pop %r9\n"
     "pop %r8\n"
-    "pop %rbp\n"
     "pop %rdi\n"
     "pop %rsi\n"
     "pop %rdx\n"
     "pop %rcx\n"
     "pop %rbx\n"
+    "pop %rbp\n"
+    "add $8, %rsp\n"
 
     // Return to caller
     "ret\n"

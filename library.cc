@@ -427,19 +427,23 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       // .. .. .. .. ; any leading instructions copied from original code
       // 48 81 EC 80 00 00 00        SUB  $0x80, %rsp
       // 50                          PUSH %rax
+      // 48 8D 05 .. .. .. ..        LEA  ...(%rip), %rax
+      // 50                          PUSH %rax
       // 48 B8 .. .. .. ..           MOV  $syscallWrapper, %rax
       // .. .. .. ..
       // 50                          PUSH %rax
       // 48 8D 05 06 00 00 00        LEA  6(%rip), %rax
-      // 48 87 44 24 08              XCHG %rax, 8(%rsp)
+      // 48 87 44 24 10              XCHG %rax, 16(%rsp)
       // C3                          RETQ
       // 48 81 C4 80 00 00 00        ADD  $0x80, %rsp
       // .. .. .. .. ; any trailing instructions copied from original code
       // E9 .. .. .. ..              JMPQ ...
       //
-      // Total: 44 bytes + any bytes that were copied
+      // Total: 52 bytes + any bytes that were copied
       //
       // On x86-32, the stack is available and we can do:
+      //
+      // TODO(markus): Try to maintain frame pointers on x86-32
       //
       // .. .. .. .. ; any leading instructions copied from original code
       // 68 .. .. .. ..              PUSH return_addr
@@ -520,7 +524,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       if (is_indirect_call) {
         needed = 41 + preamble + code[codeIdx].len + postamble;
       } else {
-        needed = 44 + preamble + postamble;
+        needed = 52 + preamble + postamble;
       }
       #else
       needed = 12 + preamble + postamble;
@@ -552,9 +556,10 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
            is_indirect_call ?
            "\x48\x81\x3C\x24\x00\x00\x00\xFF\x72\x0F\x81\x2C\x24\x00\x00\x00"
            "\x00\xC7\x44\x24\x04\x00\x00\x00\x00\xC3" :
-           "\x48\x81\xEC\x80\x00\x00\x00\x50\x48\xB8\x00\x00\x00\x00\x00\x00"
-           "\x00\x00\x50\x48\x8D\x05\x06\x00\x00\x00\x48\x87\x44\x24\x08\xC3"
-           "\x48\x81\xC4\x80\x00\x00", is_indirect_call ? 26 : 39
+           "\x48\x81\xEC\x80\x00\x00\x00\x50\x48\x8D\x05\x00\x00\x00\x00\x50"
+           "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\x50\x48\x8D\x05\x06\x00"
+           "\x00\x00\x48\x87\x44\x24\x10\xC3\x48\x81\xC4\x80\x00\x00",
+           is_indirect_call ? 26 : 47
            #else
            "\x68\x00\x00\x00\x00\x68\x00\x00\x00\x00\xC3", 11
            #endif
@@ -564,7 +569,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       // patching.
       memcpy(dest + preamble +
              #if __WORDSIZE == 64
-             (is_indirect_call ? 26 : 39),
+             (is_indirect_call ? 26 : 47),
              #else
              11,
              #endif
@@ -573,14 +578,16 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
       // Patch up the various computed values
       #if __WORDSIZE == 64
-      int post = preamble + (is_indirect_call ? 26 : 39) + postamble;
+      int post = preamble + (is_indirect_call ? 26 : 47) + postamble;
       dest[post] = '\xE9';
       *reinterpret_cast<int *>(dest + post + 1) =
           (code[second].addr + code[second].len) - (dest + post + 5);
       if (is_indirect_call) {
         *reinterpret_cast<int *>(dest + preamble + 13) = vsys_offset_;
       } else {
-        *reinterpret_cast<void **>(dest + preamble + 10) =
+        *reinterpret_cast<int *>(dest + preamble + 11) =
+            (code[second].addr + code[second].len) - (dest + preamble + 15);
+        *reinterpret_cast<void **>(dest + preamble + 18) =
             reinterpret_cast<void *>(&syscallWrapper);
       }
       #else
@@ -1014,7 +1021,7 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
       // memory at the original location and copy the original data into it.
       // The program can now resume execution.
       #if __WORDSIZE == 64
-      __asm__ __volatile__(
+      asm volatile(
           // new_addr = 4096 + mmap(0, new_length + 4096,
           //                        PROT_READ|PROT_WRITE|PROT_EXEC,
           //                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -1108,7 +1115,7 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
           : "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
             "r8", "r9", "r10", "r11", "r12", "memory");
       #else
-      __asm__ __volatile__(
+      asm volatile(
           "push %%ebp\n"
           "push %%ebx\n"
           "push %%edi\n"

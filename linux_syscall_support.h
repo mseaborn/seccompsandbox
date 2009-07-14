@@ -2358,6 +2358,8 @@ struct kernel_statfs {
                       struct kernel_rlimit*, l)
   LSS_INLINE _syscall1(pid_t,   getsid,          pid_t,       p)
   LSS_INLINE _syscall0(pid_t,   _gettid)
+  LSS_INLINE _syscall2(int,     gettimeofday,    struct timeval *, v,
+                       struct timezone *, z)
   LSS_INLINE _syscall5(int,     setxattr,        const char *,p,
                        const char *,   n,        const void *,v,
                        size_t,         s,        int,         f)

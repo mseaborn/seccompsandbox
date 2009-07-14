@@ -7,11 +7,11 @@ namespace playground {
 extern "C" void preload() {
   startSandbox();
   write(2, "In secure mode, now!\n", 21);
-  __asm__ __volatile__("int3");
+  asm volatile("int3");
 
 // TODO(markus): This code is just a temporary hack. Remove when not needed.
 #if __WORDSIZE == 64
-  __asm__ __volatile__ (
+  asm volatile(
       "sub $8, %rsp;"
       "push %rax;push %rbx;push %rcx;push %rdx;push %rbp;push %rsi;push %rdi;"
       "push %r8;push %r9;push %r10;push %r11;push %r12;push %r13;push %r14;"

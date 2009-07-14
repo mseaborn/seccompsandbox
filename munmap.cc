@@ -14,9 +14,12 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
   request.munmap_req.start  = start;
   request.munmap_req.length = length;
 
+  // Read the threadFd() before submitting the request, as we might be
+  // unallocating our thread local storage.
+  int thread = threadFd();
   long rc;
   if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+      read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward munmap() request [sandbox]");
   }
   return static_cast<int>(rc);

@@ -38,7 +38,7 @@ namespace playground {
 class Sandbox {
   // TODO(markus): restrict access to our private file handles
  public:
-  enum { TLS_TID, TLS_THREAD_FD, TLS_PROCESS_FD, TLS_CLONE_FD };
+  enum { TLS_MEM, TLS_TID, TLS_THREAD_FD, TLS_PROCESS_FD, TLS_CLONE_FD };
 
   static int tid()       { return TLS::getTLSValue<int>(TLS_TID); }
   static int threadFd()  { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
@@ -54,6 +54,7 @@ class Sandbox {
   STATIC int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
                            void* tls);
 #endif
+  STATIC int sandbox_exit(int status)                  asm("sandbox_exit");
   STATIC int sandbox_getpid()                          asm("sandbox_getpid");
   STATIC int sandbox_ioctl(int d, int req, void* arg)  asm("sandbox_ioctl");
   STATIC void *sandbox_mmap(void* start, size_t length, int prot, int flags,
@@ -67,6 +68,7 @@ class Sandbox {
   #endif
 
   STATIC void thread_clone(int, pid_t, int, char*)     asm("thread_clone");
+  STATIC void thread_exit(int, pid_t, int, char*)      asm("thread_exit");
   STATIC void thread_getpid(int, pid_t, int, char*)    asm("thread_getpid");
   STATIC void thread_ioctl(int, pid_t, int, char*)     asm("thread_ioctl");
   STATIC void thread_mmap(int, pid_t, int, char*)      asm("thread_mmap");
@@ -76,6 +78,7 @@ class Sandbox {
   STATIC void thread_stat(int, pid_t, int, char*)      asm("thread_stat");
 
   STATIC void process_clone(int, int, int, int, char*) asm("process_clone");
+  STATIC void process_exit(int, int, int, int, char*)  asm("process_exit");
   STATIC void process_getpid(int, int, int, int, char*)asm("process_getpid");
   STATIC void process_ioctl(int, int, int, int, char*) asm("process_ioctl");
   STATIC void process_mmap(int, int, int, int, char*)  asm("process_mmap");
@@ -93,35 +96,6 @@ class Sandbox {
     #define SYS_PREFIX    -1
     #undef  SYS_LINUX_SYSCALL_SUPPORT_H
     #include "linux_syscall_support.h"
-    // TODO(markus): remove
-    LSS_INLINE void* syscall(int num, void* arg0, void* arg1, void* arg2,
-                             void* arg3, void* arg4, void* arg5) {
-      long __res;
-      #if __WORDSIZE == 64
-      __asm__ __volatile__("movq %5,%%r10; movq %6,%%r8; movq %7,%%r9;"
-                           "syscall" :
-        "=a" (__res) : "0" (num),
-        "D" ((long)(arg0)), "S" ((long)(arg1)), "d" ((long)(arg2)),
-        "g" ((long)(arg3)), "g" ((long)(arg4)), "g" ((long)(arg5)) :
-        "r8", "r9", "r10", "r11", "rcx", "memory");
-      #else
-      struct { int n; long a1; long a6; } s = { num, (long)arg0, (long) arg5 };
-      __asm__ __volatile__("push %%ebp\n"
-                           "push %%ebx\n"
-                           "movl 8(%1), %%ebp\n"
-                           "movl 4(%1), %%ebx\n"
-                           "movl 0(%1), %%eax\n"
-                           "int  $0x80\n"
-                           "pop  %%ebx\n"
-                           "pop  %%ebp"
-                           : "=a" (__res)
-                           : "0" ((long)(&s)),
-                             "c" ((long)(arg1)), "d" ((long)(arg2)),
-                             "S" ((long)(arg3)), "D" ((long)(arg4))
-                           : "memory");
-      #endif
-      LSS_RETURN(void *,__res);
-    }
     SysCalls() : my_errno(0) { }
     int my_errno;
   };
@@ -152,12 +126,13 @@ class Sandbox {
         void* r10;
         void* r9;
         void* r8;
-        void *rbp;
         void* rdi;
         void* rsi;
         void* rdx;
         void* rcx;
-        void *rbx;
+        void* rbx;
+        void* rbp;
+        void* fake_ret;
         void* ret;
       } regs64 __attribute__((packed));
     #else
@@ -173,6 +148,10 @@ class Sandbox {
         void* ret2;
       } regs32 __attribute__((packed));
     #endif
+  } __attribute__((packed));
+
+  struct Exit {
+    int status;
   } __attribute__((packed));
 
   struct IOCtl {
@@ -264,11 +243,13 @@ class Sandbox {
   static bool getFd(int transport, int* fd0, int* fd1 = 0,
                     void* buf = NULL, ssize_t* len = NULL);
 
+  static char* randomizedFilename(char *fn);
   static char* generateSecureCloneSnippet(char* mem, ssize_t space,
                                           int cloneFd, int flags, void* stack,
                                           int* pid, int* ctid, void* tls);
   static void (*getTrustedThreadFnc())();
   static void (*getTrustedThreadReturnResult())(void *);
+  static void (*getTrustedThreadExitFnc())();
 
   static ProtectedMap protectedMap_; // available in trusted process, only
 

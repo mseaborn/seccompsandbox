@@ -11,7 +11,7 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
                                         void* arg5) {
   // TODO(markus): The following comment is currently not true, we do intercept these system calls. Try to fix that.
 
-  // We try to avoid intercepting read(), write(), sigreturn(), and exit(), as
+  // We try to avoid intercepting read(), write(), and sigreturn(), as
   // these system calls are not restricted in Seccomp mode. But depending on
   // the exact instruction sequence in libc, we might not be able to reliably
   // filter out these system calls at the time when we instrument the code.
@@ -27,10 +27,6 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
     case __NR_rt_sigreturn:
       write(sys, 2, "rt_sigreturn()\n", 15);
       rc = sys.rt_sigreturn((unsigned long)arg0);
-      break;
-    case __NR_exit:
-      write(sys, 2, "exit()\n", 7);
-      rc = sys._exit((long)arg0);
       break;
     default:
       if (syscallNum == __NR_close && arg0 == (void *)2) return 0; // TODO(markus): remove
@@ -64,6 +60,30 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
   return (void *)rc;
 }
 
+char* Sandbox::randomizedFilename(char *fn) {
+  // If /dev/shm does not exist, fall back on /tmp
+  SysCalls::kernel_stat sb;
+  SysCalls sys;
+  if (sys.stat("/dev/shm/", &sb) || !S_ISDIR(sb.st_mode)) {
+    strcpy(fn, "/tmp/.sandboxXXXXXX");
+  } else {
+    strcpy(fn, "/dev/shm/.sandboxXXXXXX");
+  }
+
+  // Replace the last six characters with a randomized string
+  fn = strrchr(fn, '\000');
+  struct timeval tv;
+  sys.gettimeofday(&tv, NULL);
+  unsigned long long rnd = ((unsigned long long)tv.tv_usec << 16) & tv.tv_sec;
+  unsigned long long r = rnd;
+  for (int j = 0; j < 6; j++) {
+    *--fn = 'A' + (r % 26);
+    r /= 26;
+  }
+
+  return fn;
+}
+
 char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
                                           int cloneFd, int flags, void* stack,
                                           int* pid, int* ctid, void* tls) {
@@ -77,7 +97,7 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
     void** tls;                                    //  6
     void** arguments;                              //  7
   } templ;
-  __asm__ __volatile__(
+  asm volatile(
     #if __WORDSIZE == 64
       "lea  0f(%%rip), %%rax\n"
       "mov  %%rax, 0(%0)\n"  // start
@@ -325,11 +345,12 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
       "syscall\n"
       "cmp  $-4095, %%rax\n"
       "jae  4b\n"
-      "mov  %%r14, %%gs:0\n"    // setTLSValue(TLS_TID, tid)
-      "mov  %%r13, %%gs:8\n"    // setTLSValue(TLS_THREAD_FD, threadFd)
-      "mov  %%r15, %%gs:16\n"   // setTLSValue(TLS_PROCESS_FD, processFd)
+      "mov  %%rsi, %%gs:0\n"    // setTLSValue(TLS_MEM, mmap())
+      "mov  %%r14, %%gs:8\n"    // setTLSValue(TLS_TID, tid)
+      "mov  %%r13, %%gs:16\n"   // setTLSValue(TLS_THREAD_FD, threadFd)
+      "mov  %%r15, %%gs:24\n"   // setTLSValue(TLS_PROCESS_FD, processFd)
       "mov  8(%%rbp), %%eax\n"
-      "mov  %%rax, %%gs:24\n"   // setTLSValue(TLS_CLONE_FD, cloneFd)
+      "mov  %%rax, %%gs:32\n"   // setTLSValue(TLS_CLONE_FD, cloneFd)
 
       // Release privileges by entering seccomp mode.
       "mov  $157, %%eax\n"      // NR_prctl
@@ -403,24 +424,8 @@ char* Sandbox::generateSecureCloneSnippet(char* mem, ssize_t space,
   // Generate unique filename. If this name turns out to not be unique, the
   // trusted thread will eventually notice and retry the operation.
   // TODO(markus): implement this feature
-  struct stat sb;
-  char *fn = mem + ((char *)templ.arguments + offFilename - templ.start);
-
-  // If /dev/shm does not exist, fall back on /tmp
-  if (stat("/dev/shm/", &sb) || !S_ISDIR(sb.st_mode)) {
-    strcpy(fn, "/tmp/.sandboxXXXXXX");
-  }
-
-  // Replace the last six characters with a randomized string
-  fn = strrchr(fn, '\000');
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  unsigned long long rnd = ((unsigned long long)tv.tv_usec << 16) & tv.tv_sec;
-  unsigned long long r = rnd;
-  for (int j = 0; j < 6; j++) {
-    *--fn = 'A' + (r % 26);
-    r /= 26;
-  }
+  randomizedFilename(mem +
+                     ((char *)templ.arguments + offFilename - templ.start));
 
   // Return the next address where to output assembly code
   return mem + (templ.end - templ.start);
@@ -437,9 +442,9 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
     void  (*trustedThread)();
     char  filename[24];
   } __attribute__((packed)) args = {
-    secureCradle(), cloneFd, &sendFd, getTrustedThreadFnc(),
-    "/dev/shm/.sandboxXXXXXX"
+    secureCradle(), cloneFd, &sendFd, getTrustedThreadFnc()
   };
+  randomizedFilename(args.filename);
   asm volatile(
 #if __WORDSIZE == 64
       "push %%rbx\n"
@@ -463,9 +468,22 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
 
 void (*Sandbox::getTrustedThreadReturnResult())(void *) {
   void (*fnc)(void *);
-  __asm__ __volatile__(
+  asm volatile(
 #if __WORDSIZE == 64
       "lea trustedThreadReturnResult(%%rip), %0"
+#else
+      "nop\n"
+// TODO(markus): Enable for 32bit
+#endif
+      : "=q"(fnc));
+  return fnc;
+}
+
+void (*Sandbox::getTrustedThreadExitFnc())() {
+  void (*fnc)();
+  asm volatile(
+#if __WORDSIZE == 64
+      "lea trustedThreadExit(%%rip), %0"
 #else
       "nop\n"
 // TODO(markus): Enable for 32bit
@@ -512,8 +530,8 @@ void (*Sandbox::getTrustedThreadFnc())() {
       "cmp  $-1, %%rax\n"   // MAP_FAILED
       "jnz  3f\n"
 
-    "1:mov  $60, %%eax\n"   // NR_exit
-    "2:mov  $1, %%edi\n"    // status = 1
+    "1:mov  $1, %%edi\n"    // status = 1
+    "2:mov  $60, %%eax\n"   // NR_exit
       "syscall\n"
       "jmp  2b\n"
 
@@ -597,6 +615,23 @@ void (*Sandbox::getTrustedThreadFnc())() {
       "cmp   $-4, %%rax\n"         // EINTR
       "jz    10b\n"
       "jmp   1b\n"
+
+    "trustedThreadExit:"
+      "mov   %%rbp, %%rdi\n" // start = &scratch
+      "mov   $4096, %%esi\n" // length = 4096
+      "mov   $11, %%eax\n"   // NR_unmap
+      "syscall\n"
+      "mov   %%r12, %%rdi\n" // start = secure_mem
+      "mov   $4096, %%esi\n" // length = 4096
+      "mov   $11, %%eax\n"   // NR_unmap
+      "syscall\n"
+      "mov   %%r13, %%rdi\n" // fd = threadFd
+      "mov   $3, %%eax\n"    // NR_close
+      "syscall\n"
+      "mov   %%r14, %%rdi\n" // status = exit_code
+   "11:mov   $60, %%eax\n"   // NR_exit
+      "syscall\n"
+      "jmp   11b\n"
 #else
 // TODO(markus): implement
 #endif

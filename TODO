@@ -1,5 +1,3 @@
-- intercept exit() to clean up after dying threads
-
 - add mutexes for mmap(), to prevent allocations in the cradle area
 
 - add sequence numbers to secure memory
@@ -11,7 +9,5 @@
 - add 32 bit assembly
 
 - get rid of preloader and of ELF helper process
-
-- rename syscall.c to syscall.cc
 
 - clean up sandbox_impl.h, maybe create extra helper classes?
