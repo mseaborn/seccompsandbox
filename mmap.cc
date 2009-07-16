@@ -34,12 +34,8 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   return rc;
 }
 
-void Sandbox::thread_mmap(int processFd, pid_t tid, int threadFd, char* mem) {
-  die("thread_mmap()");
-}
-
-void Sandbox::process_mmap(int processFdPub, int sandboxFd, int threadFd,
-                           int cloneFdPub, char* mem) {
+void Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
+                           char* mem) {
   // Read request
   SysCalls sys;
   MMap mmap_req;
@@ -53,9 +49,9 @@ void Sandbox::process_mmap(int processFdPub, int sandboxFd, int threadFd,
     // TODO(markus): Mark birthing place of secure memory as secure
     SecureMem::abandonSystemCall(threadFd, rc);
   } else {
-    SecureMem::sendSystemCall(threadFd, mem, __NR_MMAP, mmap_req.start,
-                               mmap_req.length, mmap_req.prot, mmap_req.flags,
-                               mmap_req.fd, mmap_req.offset);
+    SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_MMAP,
+                              mmap_req.start, mmap_req.length, mmap_req.prot,
+                              mmap_req.flags, mmap_req.fd, mmap_req.offset);
   }
 }
 

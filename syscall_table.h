@@ -6,13 +6,13 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  #define UNRESTRICTED_SYSCALL ((void *)-1)
+  #define UNRESTRICTED_SYSCALL ((void *)1)
 
   struct SyscallTable {
-    void *handler;
-    void (*trustedThread)(int processFd, pid_t tid, int threadFd, char* mem);
-    void (*trustedProcess)(int processFdPub, int sandboxFd, int threadFd,
-                           int cloneFdPub, char* mem);
+    void   *handler;
+    void* (*trustedThread)(int processFd, pid_t tid, int threadFd, char* mem);
+    void  (*trustedProcess)(int sandboxFd, int threadFdPub, int threadFd,
+                            char* mem);
   };
   extern const struct SyscallTable syscallTable[];
   extern const unsigned maxSyscall;

@@ -25,13 +25,8 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
   return static_cast<int>(rc);
 }
 
-void Sandbox::thread_munmap(int processFd, pid_t tid, int threadFd,
-                            char* mem) {
-  die("thread_munmap()");
-}
-
-void Sandbox::process_munmap(int processFdPub, int sandboxFd, int threadFd,
-                             int cloneFdPub, char* mem) {
+void Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
+                             char* mem) {
   // Read request
   SysCalls sys;
   MUnmap munmap_req;
@@ -61,8 +56,8 @@ void Sandbox::process_munmap(int processFdPub, int sandboxFd, int threadFd,
 
   // Unmapping memory regions that were newly mapped inside of the sandbox
   // is OK.
-  SecureMem::sendSystemCall(threadFd, mem, __NR_munmap, munmap_req.start,
-                            munmap_req.length);
+  SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_munmap,
+                            munmap_req.start, munmap_req.length);
 }
 
 } // namespace

@@ -1,12 +1,13 @@
 #include "sandbox_impl.h"
 #include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-#include <pthread.h>
 
 static void *fnc(void *arg) {
   struct timeval tv;
@@ -14,6 +15,9 @@ static void *fnc(void *arg) {
     printf("In thread:\ngettimeofday() failed\n");
   } else {
     printf("In thread: usec: %ld\n", (long)tv.tv_usec);
+  }
+  for (int i = 0; i < 10; i++) {
+    mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   }
   return 0;
 }
@@ -33,6 +37,9 @@ int main(int argc, char *argv[]) {
   isatty(0);
   pthread_t t;
   pthread_create(&t, NULL, fnc, NULL);
+  for (int i = 0; i < 10; i++) {
+    mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  }
   pthread_join(t, NULL);
   printf("Hello %s\n", "world");
   if (gettimeofday(&tv, 0)) {

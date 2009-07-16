@@ -16,15 +16,16 @@ int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   request.open_req.flags = flags;
   request.open_req.mode  = mode;
 
-  int rc, thread = threadFd();
+  int rc[sizeof(void *)/sizeof(int)];
+  int thread = threadFd();
   if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
+      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward open() request [sandbox]");
   }
-  return rc;
+  return rc[0];
 }
 
-void Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
+void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
   // Read request
   SysCalls sys;
   struct Request {
@@ -48,18 +49,15 @@ void Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
   if (write(sys, processFd, &request, sizeof(request)) != sizeof(request) ||
       write(sys, processFd, pathname, request.open_req.path_length) !=
       request.open_req.path_length) {
- forward_failed:
     die("Failed to forward open() request [thread]");
   }
   int rc;
   getFd(threadFd, &rc);
-  if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
-    goto forward_failed;
-  }
+  return reinterpret_cast<void *>(rc);
 }
 
-void Sandbox::process_open(int processFdPub, int sandboxFd, int threadFd,
-                           int cloneFdPub, char* mem) {
+void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
+                           char* mem) {
   // Read request
   SysCalls sys;
   Open open_req;
@@ -78,7 +76,7 @@ void Sandbox::process_open(int processFdPub, int sandboxFd, int threadFd,
       open_req.path_length -= i;
     }
  reply_with_error:
-    if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
+    if (write(sys, threadFdPub, &rc, sizeof(rc)) != sizeof(rc)) {
       die("Failed to return data from open() [process]");
     }
     return;
@@ -102,7 +100,7 @@ void Sandbox::process_open(int processFdPub, int sandboxFd, int threadFd,
   }
 
   // Send file handle back to trusted thread
-  if (!sendFd(threadFd, new_fd)) {
+  if (!sendFd(threadFdPub, new_fd)) {
     die("Failed to return file handle to sandbox [process]");
   }
   NOINTR_SYS(sys.close(new_fd));

@@ -286,7 +286,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
   do {
     if (rc > 0) {
       do {
-        rc = NOINTR(read(fd, buf + len, sizeof(buf) - len - 1));
+        rc = NOINTR(sys.read(fd, buf + len, sizeof(buf) - len - 1));
         if (rc > 0) {
           len += rc;
         }

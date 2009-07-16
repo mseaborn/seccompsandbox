@@ -45,6 +45,8 @@ class Sandbox {
   static int processFd() { return TLS::getTLSValue<int>(TLS_PROCESS_FD); }
   static int cloneFd()   { return TLS::getTLSValue<int>(TLS_CLONE_FD); }
 
+  typedef int mutex_t;
+
 #define STATIC static
   // Clone is special as it needs a wrapper in syscall_table.c
   STATIC int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
@@ -67,25 +69,17 @@ class Sandbox {
   STATIC int sandbox_stat64(const char *path, void* b) asm("sandbox_stat64");
   #endif
 
-  STATIC void thread_clone(int, pid_t, int, char*)     asm("thread_clone");
-  STATIC void thread_exit(int, pid_t, int, char*)      asm("thread_exit");
-  STATIC void thread_getpid(int, pid_t, int, char*)    asm("thread_getpid");
-  STATIC void thread_ioctl(int, pid_t, int, char*)     asm("thread_ioctl");
-  STATIC void thread_mmap(int, pid_t, int, char*)      asm("thread_mmap");
-  STATIC void thread_mprotect(int, pid_t, int, char*)  asm("thread_mprotect");
-  STATIC void thread_munmap(int, pid_t, int, char*)    asm("thread_munmap");
-  STATIC void thread_open(int, pid_t, int, char*)      asm("thread_open");
-  STATIC void thread_stat(int, pid_t, int, char*)      asm("thread_stat");
+  STATIC void*thread_open(int, pid_t, int, char*)      asm("thread_open");
+  STATIC void*thread_stat(int, pid_t, int, char*)      asm("thread_stat");
 
-  STATIC void process_clone(int, int, int, int, char*) asm("process_clone");
-  STATIC void process_exit(int, int, int, int, char*)  asm("process_exit");
-  STATIC void process_getpid(int, int, int, int, char*)asm("process_getpid");
-  STATIC void process_ioctl(int, int, int, int, char*) asm("process_ioctl");
-  STATIC void process_mmap(int, int, int, int, char*)  asm("process_mmap");
-  STATIC void process_mprotect(int, int, int,int,char*)asm("process_mprotect");
-  STATIC void process_munmap(int, int, int, int, char*)asm("process_munmap");
-  STATIC void process_open(int, int, int, int, char*)  asm("process_open");
-  STATIC void process_stat(int, int, int, int, char*)  asm("process_stat");
+  STATIC void process_clone(int, int, int, char*)      asm("process_clone");
+  STATIC void process_exit(int, int, int, char*)       asm("process_exit");
+  STATIC void process_ioctl(int, int, int, char*)      asm("process_ioctl");
+  STATIC void process_mmap(int, int, int, char*)       asm("process_mmap");
+  STATIC void process_mprotect(int, int,int,char*)     asm("process_mprotect");
+  STATIC void process_munmap(int, int, int, char*)     asm("process_munmap");
+  STATIC void process_open(int, int, int, char*)       asm("process_open");
+  STATIC void process_stat(int, int, int, char*)       asm("process_stat");
 
 #ifdef __cplusplus
   class SysCalls {
@@ -148,10 +142,6 @@ class Sandbox {
         void* ret2;
       } regs32 __attribute__((packed));
     #endif
-  } __attribute__((packed));
-
-  struct Exit {
-    int status;
   } __attribute__((packed));
 
   struct IOCtl {
@@ -235,29 +225,20 @@ class Sandbox {
     return NOINTR_SYS(sys.write(fd, buf, len));
   }
 
-  static bool sendFd(int transport, int fd0, int fd1 = -1,
-                     void* buf = NULL, ssize_t len = -1);
+  static bool sendFd(int transport, int fd0, int fd1 = -1, int fd2 = -1,
+                     void* buf = NULL, ssize_t len = -1) asm("sendFd");
 
   // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
   // -errno.
-  static bool getFd(int transport, int* fd0, int* fd1 = 0,
+  static bool getFd(int transport, int* fd0, int* fd1 = 0, int* fd2 = 0,
                     void* buf = NULL, ssize_t* len = NULL);
 
   static char* randomizedFilename(char *fn);
-  static char* generateSecureCloneSnippet(char* mem, ssize_t space,
-                                          int cloneFd, int flags, void* stack,
-                                          int* pid, int* ctid, void* tls);
   static void (*getTrustedThreadFnc())();
-  static void (*getTrustedThreadReturnResult())(void *);
-  static void (*getTrustedThreadExitFnc())();
 
   static ProtectedMap protectedMap_; // available in trusted process, only
 
  private:
-  static void* defaultSystemCallHandler(int syscallNum, void *arg0, void *arg1,
-                                        void *arg2, void *arg3, void *arg4,
-                                        void *arg5)
-                                       asm("defaultSystemCallHandler");
   static void initializeProtectedMap(int fd);
   static void trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
                              int cloneFd) __attribute__((noreturn));
@@ -266,8 +247,12 @@ class Sandbox {
   static void createTrustedThread(int processFd, int cloneFd);
   static void snapshotMemoryMappings(int processFd);
 
-  static int   pid_;
-  static char* secureCradle_;
+  static int     pid_;
+  static char*   secureCradle_;
+  static mutex_t syscall_mutex_ asm("syscall_mutex");
+
+  static int     processFdPub_;
+  static int     cloneFdPub_;
 };
 
 } // namespace

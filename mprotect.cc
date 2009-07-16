@@ -23,13 +23,8 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   return static_cast<int>(rc);
 }
 
-void Sandbox::thread_mprotect(int processFd, pid_t tid, int threadFd,
-                              char* mem) {
-  die("thread_mprotect()");
-}
-
-void Sandbox::process_mprotect(int processFdPub, int sandboxFd, int threadFd,
-                               int cloneFdPub, char* mem) {
+void Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
+                               char* mem) {
   // Read request
   SysCalls sys;
   MProtect mprotect_req;
@@ -59,8 +54,9 @@ void Sandbox::process_mprotect(int processFdPub, int sandboxFd, int threadFd,
 
   // Changing permissions on memory regions that were newly mapped inside of
   // the sandbox is OK.
-  SecureMem::sendSystemCall(threadFd, mem, __NR_mprotect, mprotect_req.addr,
-                             mprotect_req.len, mprotect_req.prot);
+  SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_mprotect,
+                            mprotect_req.addr,  mprotect_req.len,
+                            mprotect_req.prot);
 }
 
 } // namespace

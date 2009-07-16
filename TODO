@@ -1,12 +1,23 @@
-- add mutexes for mmap(), to prevent allocations in the cradle area
+- "char *mem" should be "SecureMem::Args *"
 
-- add sequence numbers to secure memory
+- no need to store processFd and cloneFd in TLS
+
+- convert thread_XXX() functions to assembly and make them part of
+  trusted_thread.cc; cleanup syscall_table.c
+
+- there is a race condition where somebody could call mmap() from one
+  trusted thread and be given a page in the secure cradle area,
+  because this memory page briefly becomes available while another
+  thread is calling clone. Detect this situation in the secure
+  assembly code for mmap() and just re-run mmap().
 
 - simplifly open() and ioctl()
 
-- convert thread_XXX() functions to assembly
-
 - add 32 bit assembly
+
+- get rid of __WORDSIZE, and use machine test macros instead
+
+- rename all asm() labels to be more unique
 
 - get rid of preloader and of ELF helper process
 

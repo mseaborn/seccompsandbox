@@ -15,12 +15,13 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   request.stat_req.path   = path;
   request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
 
-  int rc, thread = threadFd();
+  int rc[sizeof(void *)/sizeof(int)];
+  int thread = threadFd();
   if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
+      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward stat() request [sandbox]");
   }
-  return rc;
+  return rc[0];
 }
 
 #if __WORDSIZE == 32
@@ -38,16 +39,17 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
   request.stat_req.path   = path;
   request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
 
-  int rc, thread = threadFd();
+  int rc[sizeof(void *)/sizeof(int)];
+  int thread = threadFd();
   if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
+      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward stat() request [sandbox]");
   }
-  return rc;
+  return rc[0];
 }
 #endif
 
-void Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
+void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
   // Read request
   SysCalls sys;
   struct Request {
@@ -79,18 +81,15 @@ void Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
       request.stat_req.path_length ||
       read(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc) ||
       read(sys, threadFd, request.stat_req.buf, len) != len) {
- forward_failed:
     die("Failed to forward stat() request [thread]");
   }
 
   // Return result
-  if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
-    goto forward_failed;
-  }
+  return reinterpret_cast<void *>(rc);
 }
 
-void Sandbox::process_stat(int processFdPub, int sandboxFd, int threadFd,
-                           int cloneFdPub, char* mem) {
+void Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
+                           char* mem) {
   // Read request
   SysCalls sys;
   Stat stat_req;
@@ -108,7 +107,7 @@ void Sandbox::process_stat(int processFdPub, int sandboxFd, int threadFd,
       }
       stat_req.path_length -= i;
     }
-    if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
+    if (write(sys, threadFdPub, &rc, sizeof(rc)) != sizeof(rc)) {
    failed_to_reply:
       die("Failed to return data from stat() [process]");
     }
@@ -150,7 +149,7 @@ void Sandbox::process_stat(int processFdPub, int sandboxFd, int threadFd,
   if (response.rc < 0) {
     response.rc              = -sys.my_errno;
   }
-  if (write(sys, threadFd, &response, len) != len) {
+  if (write(sys, threadFdPub, &response, len) != len) {
     goto failed_to_reply;
   }
 }

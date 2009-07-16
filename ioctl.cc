@@ -23,12 +23,8 @@ int Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   return static_cast<int>(rc);
 }
 
-void Sandbox::thread_ioctl(int processFd, pid_t tid, int threadFd, char* mem) {
-  die("thread_ioctl()");
-}
-
-void Sandbox::process_ioctl(int processFdPub, int sandboxFd, int threadFd,
-                            int cloneFd, char* mem) {
+void Sandbox::process_ioctl(int sandboxFd, int threadFdPub, int threadFd,
+                            char* mem) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;
@@ -39,8 +35,8 @@ void Sandbox::process_ioctl(int processFdPub, int sandboxFd, int threadFd,
   switch (ioctl_req.req) {
     case TCGETS:
     case TIOCGWINSZ:
-      SecureMem::sendSystemCall(threadFd, mem, __NR_ioctl, ioctl_req.d,
-                                 ioctl_req.req, ioctl_req.arg);
+      SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_ioctl,
+                                ioctl_req.d, ioctl_req.req, ioctl_req.arg);
       break;
     default:
       std::cout << "Unsupported ioctl: 0x" << std::hex << ioctl_req.req <<
