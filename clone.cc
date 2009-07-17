@@ -58,6 +58,7 @@ void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
     // clone() has unusual semantics. We don't want to return back into the
     // trusted thread, but instead we need to continue execution at the IP
     // where we got called initially.
+    SecureMem::lockSystemCall(mem);
     #if defined(__x86_64__)
     mem->ret = clone_req.regs64.ret;
     mem->rbp = clone_req.regs64.rbp;

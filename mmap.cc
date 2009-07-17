@@ -2,10 +2,10 @@
 
 namespace playground {
 
-#if __WORDSIZE == 64
-#define __NR_MMAP __NR_mmap
+#ifdef __NR_mmap2
+  #define __NR_MMAP __NR_mmap2
 #else
-#define __NR_MMAP __NR_mmap2
+  #define __NR_MMAP __NR_mmap
 #endif
 
 void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,

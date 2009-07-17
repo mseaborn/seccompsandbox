@@ -17,11 +17,10 @@ void Sandbox::trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
   std::map<pid_t, struct Thread> threads;
 
 newThreadCreated:
-  int     shmFd, newThreadFdPub, newThreadFd;
+  int     shmFd;
   pid_t   newTid;
   ssize_t newTidLen = sizeof(newTid);
-  if (!getFd(cloneFd, &shmFd, &newThreadFdPub, &newThreadFd,
-             &newTid, &newTidLen) ||
+  if (!getFd(cloneFd, &shmFd, NULL, &newTid, &newTidLen) ||
       newTidLen != sizeof(newTid)) {
     die("Failed to receive new thread information");
   }
@@ -29,8 +28,6 @@ newThreadCreated:
     die("Duplicate thread id");
   }
   Thread *newThread = &threads[newTid];
-  newThread->fdPub  = newThreadFdPub;
-  newThread->fd     = newThreadFd;
   newThread->mem    = reinterpret_cast<SecureMem::Args*>(
       mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, shmFd, 0));
   if (newThread->mem == MAP_FAILED) {
@@ -40,18 +37,19 @@ newThreadCreated:
   /***/char buf[80] = { 0 };
   /***/sprintf(buf, "/proc/self/fd/%d", shmFd);
   /***/readlink(buf, buf, sizeof(buf)-1);
-  /***/printf("Adding new thread %d, shm=%p \"%s\", fdPub=%d, fd=%d\n",
-  /***/       newTid, newThread->mem, buf, newThreadFdPub, newThreadFd);
+
   NOINTR_SYS(sys.close(shmFd));
 
-  int     dummyFd;
   ssize_t selfLen = sizeof(void *);
-  if (!getFd(cloneFd, &dummyFd, NULL, NULL, &newThread->mem->self,
-             &selfLen) ||
+  if (!getFd(cloneFd, &newThread->fdPub, &newThread->fd,
+             &newThread->mem->self, &selfLen) ||
       selfLen != sizeof(void *)) {
     die("Failed to receive shared memory address from new thread");
   }
-  NOINTR_SYS(sys.close(dummyFd));
+  write(sys, newThread->fdPub, "12345678", 8);
+
+  /***/printf("Adding new thread %d, shm=%p \"%s\", fdPub=%d, fd=%d\n",
+  /***/       newTid, newThread->mem, buf, newThread->fdPub, newThread->fd);
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
   for (;;) {
@@ -82,6 +80,7 @@ newThreadCreated:
     if (header.sysnum == __NR_clone) {
       goto newThreadCreated;
     } else if (header.sysnum == __NR_exit) {
+      NOINTR_SYS(sys.close(iter->second.fdPub));
       NOINTR_SYS(sys.close(iter->second.fd));
       threads.erase(iter);
     }
@@ -91,11 +90,23 @@ newThreadCreated:
 void Sandbox::initializeProtectedMap(int fd) {
   // Read the memory mappings as they were before the sandbox takes effect.
   // These mappings cannot be changed by the sandboxed process.
-  int mapsFd;
-  if (!getFd(fd, &mapsFd)) {
+  int mapsFd, shmFd;
+  if (!getFd(fd, &mapsFd, &shmFd, NULL, NULL)) {
  maps_failure:
     die("Cannot access /proc/self/maps");
   }
+  SysCalls sys;
+  #ifdef __NR_mmap2
+    #define MMAP mmap2
+  #else
+    #define MMAP mmap
+  #endif
+  void* page = sys.MMAP(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, shmFd,0);
+  if (page == MAP_FAILED) {
+    die("Cannot create shared memory");
+  }
+  syscall_mutex_ = reinterpret_cast<mutex_t*>(page);
+  NOINTR_SYS(sys.close(shmFd));
   char line[80];
   FILE *fp = fdopen(mapsFd, "r");
   for (bool truncated = false;;) {
@@ -122,7 +133,6 @@ void Sandbox::initializeProtectedMap(int fd) {
     }
     truncated = strchr(line, '\n') == NULL;
   }
-  SysCalls sys;
   NOINTR_SYS(sys.close(mapsFd));
   if (write(sys, fd, &mapsFd, sizeof(mapsFd)) != sizeof(mapsFd)) {
     goto maps_failure;

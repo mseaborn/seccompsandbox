@@ -57,7 +57,7 @@ class SecureMem {
   } __attribute__((packed)) Args;
 
   static void abandonSystemCall(int fd, int err);
-  static void submitSystemCall(int fd, bool locked);
+  static void lockSystemCall(Args* mem);
   static void sendSystemCall(int fd, bool locked, Args* mem,
                              int syscallNum) {
     sendSystemCallInternal(fd, locked, mem, syscallNum);

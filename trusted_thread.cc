@@ -17,11 +17,10 @@ char* Sandbox::randomizedFilename(char *fn) {
   fn = strrchr(fn, '\000');
   struct timeval tv;
   sys.gettimeofday(&tv, NULL);
-  unsigned long long rnd = ((unsigned long long)tv.tv_usec << 16) & tv.tv_sec;
-  unsigned long long r = rnd;
+  unsigned r = 16807*(((unsigned long long)tv.tv_usec << 16) ^ tv.tv_sec);
   for (int j = 0; j < 6; j++) {
     *--fn = 'A' + (r % 26);
-    r /= 26;
+    r *= 16807;
   }
 
   return fn;
@@ -34,7 +33,7 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
   args.processFd       = processFd;
   args.cloneFd         = cloneFd;
   randomizedFilename(args.filename);
-  syscall_mutex_       = 0x80000000;
+  *syscall_mutex_      = 0x80000000;
   asm volatile(
 #if __WORDSIZE == 64
       "push %%rbx\n"
@@ -154,21 +153,6 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
       // secure memory area
     "4:cmp  $-2, %%eax\n"
       "jnz  9f\n"
-      ".globl syscall_mutex\n"
-      "mov   syscall_mutex@GOTPCREL(%%rip), %%r9\n"
-      "lock; incl (%%r9)\n"
-    "5:lock; btsl $31, (%%r9)\n"
-      "jae  6f\n"
-      "mov  (%%r9), %%edx\n"
-      "test %%edx, %%edx\n"
-      "jns  5b\n"
-      "xor  %%r10, %%r10\n"
-      "xor  %%rsi, %%rsi\n"        // FUTEX_WAIT
-      "mov  %%r9, %%rdi\n"
-      "mov  $202, %%eax\n"         // NR_futex
-      "syscall\n"
-      "jmp  5b\n"
-    "6:lock; decl (%%r9)\n"
       "cmp  %%rbx, %%fs:0x8\n"
       "jne  23f\n"                 // exit process
       "mov  %%fs:0x10, %%rax\n"
@@ -188,7 +172,9 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
       "add  $2, %%rbx\n"
       "syscall\n"
     "7:mov  %%rax, %%r8\n"
+      ".globl syscall_mutex\n"
       "mov  syscall_mutex@GOTPCREL(%%rip), %%r9\n"
+      "mov  (%%r9), %%r9\n"
       "lock; addl $0x80000000, (%%r9)\n"
       "je   8f\n"
       "mov  $1, %%edx\n"
@@ -300,6 +286,8 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
       // memory region early. But we verify the sequence number after each
       // read from that region, and terminate the program in case of a
       // mismatch.
+      "mov  syscall_mutex@GOTPCREL(%%rip), %%r9\n"
+      "mov  (%%r9), %%r9\n"
       "lock; incl (%%r9)\n"
       "mov  %%r9, %%rdi\n"      // uaddr
    "16:mov  (%%r9), %%edx\n"
@@ -343,6 +331,7 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
       // fatal error.
       "jmp  23f\n"              // exit process
    "20:mov  syscall_mutex@GOTPCREL(%%rip), %%rdi\n"
+      "mov  (%%rdi), %%rdi\n"
       "lock; addl $0x80000000, (%%rdi)\n"
       "je   21f\n"
       "mov  $1, %%edx\n"
@@ -439,18 +428,16 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
 
       // The fork()'d process uses sendmsg() to send the file handle
       // for the shared memory region to the trusted process. It also
-      // sends the file handle for talking to the trusted thread, and
-      // the new pid. The new pid is used as cookie by the trusted
+      // sends the new pid. The new pid is used as cookie by the trusted
       // process to decide where to send responses, too.
       "mov  0xD0(%%rbp), %%edi\n" // transport = Sandbox::cloneFd()
       "cmp  %%rbx, 8(%%rbp)\n"
       "jne  23b\n"              // exit process
       "mov  %%r13, %%rsi\n"     // fd0       = fd
-      "movl 0(%%rsp), %%edx\n"  // fd1       = %rsp[0]
-      "mov  4(%%rsp), %%ecx\n"  // fd2       = %rsp[1]
+      "mov  $-1, %%rdx\n"       // fd1       = -1
       "push %%r14\n"
-      "mov  %%rsp, %%r8\n"      // buf       = &tid
-      "mov  $4, %%r9\n"         // len       = sizeof(int)
+      "mov  %%rsp, %%rcx\n"     // buf       = &tid
+      "mov  $4, %%r8\n"         // len       = sizeof(int)
       ".globl sendFd\n"
       "call sendFd\n"
       "jmp  24b\n"              // exit process (no error message)
@@ -509,13 +496,17 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
       "mov  0xD0(%%rbp), %%edi\n"// transport = Sandbox::cloneFd()
       "cmp  %%rbx, 8(%%rbp)\n"
       "jne  23b\n"              // exit process
-      "mov  0(%%rsp), %%esi\n"  // fd0       = %rsp[0]
-      "mov  $-1, %%rdx\n"       // fd1       = -1
-      "mov  $-1, %%rcx\n"       // fd2       = -1
+      "mov  0(%%rsp), %%esi\n"  // fd0 = %rsp[0]
+      "mov  4(%%rsp), %%edx\n"  // fd1 = %rsp[1]
       "push %%r12\n"
-      "mov  %%rsp, %%r8\n"      // buf       = new_secure_mem
-      "mov  $8, %%r9\n"         // len       = sizeof(void *)
+      "mov  %%rsp, %%rcx\n"     // buf = new_secure_mem
+      "mov  $8, %%r8\n"         // len = sizeof(void *)
       "call sendFd\n"
+      "xor  %%rax, %%rax\n"     // NR_read
+      "mov  12(%%rsp), %%edi\n" // fd  = threadFd
+      "mov  %%rsp, %%rsi\n"     // buf = %%rsp
+      "mov  $8, %%rdx\n"        // len = 8
+      "syscall\n"
       "jmp  24b\n"              // exit process (no error message)
 
   "28:mov   %%rax, %%rdi\n"     // pid
@@ -636,6 +627,7 @@ void Sandbox::createTrustedThread(int processFd, int cloneFd) {
 
       // Release global mutex
    "30:mov  syscall_mutex@GOTPCREL(%%rip), %%rdi\n"
+      "mov  (%%rdi), %%rdi\n"
       "lock; addl $0x80000000, (%%rdi)\n"
       "je   31f\n"
       "mov  $1, %%edx\n"

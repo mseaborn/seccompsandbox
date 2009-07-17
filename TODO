@@ -1,3 +1,8 @@
+- add error handling, if there is a file name collision during thread
+  creation
+
+- add support for pid wrap-around
+
 - convert thread_XXX() functions to assembly and make them part of
   trusted_thread.cc; cleanup syscall_table.c
 

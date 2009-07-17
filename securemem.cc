@@ -1,3 +1,4 @@
+#include "mutex.h"
 #include "sandbox_impl.h"
 #include "securemem.h"
 
@@ -12,18 +13,8 @@ void SecureMem::abandonSystemCall(int fd, int err) {
   }
 }
 
-void SecureMem::submitSystemCall(int fd, bool locked) {
-  int data[] = { locked ? -2 : -1, 0 };
-  Sandbox::SysCalls sys;
-  if (Sandbox::write(sys, fd, data, sizeof(data)) != sizeof(data)) {
-    Sandbox::die("Failed to send system call");
-  }
-}
-
-void SecureMem::sendSystemCallInternal(int fd, bool locked, Args *mem,
-                                       int syscallNum, void *arg1, void *arg2,
-                                       void *arg3, void *arg4, void *arg5,
-                                       void *arg6) {
+void SecureMem::lockSystemCall(Args* mem) {
+  Mutex::lockMutex(Sandbox::syscall_mutex_);
   asm volatile(
     #if defined(__x86_64__)
       "lock; incq (%0)\n"
@@ -35,6 +26,25 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, Args *mem,
       :
       : "q"(&mem->sequence)
       : "memory");
+}
+
+void SecureMem::sendSystemCallInternal(int fd, bool locked, Args* mem,
+                                       int syscallNum, void* arg1, void* arg2,
+                                       void* arg3, void* arg4, void* arg5,
+                                       void* arg6) {
+  if (!locked) {
+    asm volatile(
+      #if defined(__x86_64__)
+        "lock; incq (%0)\n"
+      #elif defined(__i386__)
+        "lock; incl (%0)\n"
+      #else
+        #error Unsupported target platform
+      #endif
+        :
+        : "q"(&mem->sequence)
+        : "memory");
+  }
   mem->syscallNum = syscallNum;
   mem->arg1       = arg1;
   mem->arg2       = arg2;
@@ -53,7 +63,11 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, Args *mem,
       :
       : "q"(&mem->sequence)
       : "memory");
-  submitSystemCall(fd, locked);
+  int data[] = { locked ? -2 : -1, 0 };
+  Sandbox::SysCalls sys;
+  if (Sandbox::write(sys, fd, data, sizeof(data)) != sizeof(data)) {
+    Sandbox::die("Failed to send system call");
+  }
 }
 
 } // namespace

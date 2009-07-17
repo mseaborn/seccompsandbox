@@ -2336,6 +2336,8 @@ struct kernel_statfs {
                       struct kernel_stat*,   b)
   LSS_INLINE _syscall2(int,     fstatfs,         int,         f,
                       struct kernel_statfs*, b)
+  LSS_INLINE _syscall2(int, ftruncate,           int,         f,
+                       off_t,          l)
   LSS_INLINE _syscall4(int,     futex,           int*,        a,
                        int,            o, int,    v,
                       struct kernel_timespec*, t)
@@ -2458,6 +2460,7 @@ struct kernel_statfs {
                        const void *,   b, size_t, c)
   LSS_INLINE _syscall3(ssize_t, writev,           int,        f,
                        const struct kernel_iovec*, v, size_t, c)
+  LSS_INLINE _syscall1(int,     unlink,          const char*, f)
   #if defined(__NR_getcpu)
     LSS_INLINE _syscall3(long, getcpu, unsigned *, cpu,
                          unsigned *, node, void *, unused);

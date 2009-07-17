@@ -10,16 +10,14 @@ namespace playground {
 Sandbox::ProtectedMap Sandbox::protectedMap_;
 int                   Sandbox::pid_;
 char*                 Sandbox::secureCradle_;
-Sandbox::mutex_t      Sandbox::syscall_mutex_;
+Sandbox::mutex_t*     Sandbox::syscall_mutex_;
 int                   Sandbox::processFdPub_;
 int                   Sandbox::cloneFdPub_;
 
-bool Sandbox::sendFd(int transport, int fd0, int fd1, int fd2, void* buf,
-                     ssize_t len) {
-  int fds[3], count                     = 0;
+bool Sandbox::sendFd(int transport, int fd0, int fd1, void* buf, ssize_t len) {
+  int fds[2], count                     = 0;
   if (fd0 >= 0) { fds[count++]          = fd0; }
   if (fd1 >= 0) { fds[count++]          = fd1; }
-  if (fd2 >= 0) { fds[count++]          = fd2; }
   if (!count) {
     return false;
   }
@@ -48,8 +46,7 @@ bool Sandbox::sendFd(int transport, int fd0, int fd1, int fd2, void* buf,
       (ssize_t)sizeof(dummy) + (buf && len > 0 ? len : 0);
 }
 
-bool Sandbox::getFd(int transport, int* fd0, int* fd1, int* fd2, void* buf,
-                    ssize_t* len) {
+bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, ssize_t*len){
   int count                            = 0;
   int *err                             = NULL;
   if (fd0) {
@@ -63,12 +60,6 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, int* fd2, void* buf,
       err                              = fd1;
     }
     *fd1                               = -1;
-  }
-  if (fd2) {
-    if (!count++) {
-      err                              = fd2;
-    }
-    *fd2                               = -1;
   }
   if (!count) {
     return false;
@@ -106,7 +97,6 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, int* fd2, void* buf,
     *err                             = -EBADF;
     return false;
   }
-  if (fd2) { *fd2 = ((int *)CMSG_DATA(cmsg))[--count]; }
   if (fd1) { *fd1 = ((int *)CMSG_DATA(cmsg))[--count]; }
   if (fd0) { *fd0 = ((int *)CMSG_DATA(cmsg))[--count]; }
   return true;
@@ -114,12 +104,31 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, int* fd2, void* buf,
 
 void Sandbox::snapshotMemoryMappings(int processFd) {
   SysCalls sys;
-  int fd = sys.open("/proc/self/maps", O_RDONLY, 0);
-  if (fd < 0 || !sendFd(processFd, fd)) {
+  char fn[24];
+  randomizedFilename(fn);
+  int shmFd = sys.open(fn, O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
+  sys.unlink(fn);
+  if (shmFd < 0 || NOINTR_SYS(sys.ftruncate(shmFd, 4096))) {
+ shmFailure:
+    die("Cannot create shared memory");
+  }
+  #ifdef __NR_mmap2
+    #define MMAP mmap2
+  #else
+    #define MMAP mmap
+  #endif
+  void* page = sys.MMAP(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, shmFd,0);
+  if (page == MAP_FAILED) {
+    goto shmFailure;
+  }
+  syscall_mutex_ = reinterpret_cast<mutex_t*>(page);
+  int mapsFd = sys.open("/proc/self/maps", O_RDONLY, 0);
+  if (mapsFd < 0 || !sendFd(processFd, mapsFd, shmFd, NULL, NULL)) {
  failure:
     die("Cannot access /proc/self/maps");
   }
-  NOINTR_SYS(sys.close(fd));
+  NOINTR_SYS(sys.close(shmFd));
+  NOINTR_SYS(sys.close(mapsFd));
   int dummy;
   if (read(sys, processFd, &dummy, sizeof(dummy)) != sizeof(dummy)) {
     goto failure;

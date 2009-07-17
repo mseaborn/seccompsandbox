@@ -228,15 +228,16 @@ class Sandbox {
     return NOINTR_SYS(sys.write(fd, buf, len));
   }
 
-  static bool sendFd(int transport, int fd0, int fd1 = -1, int fd2 = -1,
-                     void* buf = NULL, ssize_t len = -1) asm("sendFd");
+  static bool sendFd(int transport, int fd0, int fd1, void* buf,
+                     ssize_t len) asm("sendFd");
 
   // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
   // -errno.
-  static bool getFd(int transport, int* fd0, int* fd1 = 0, int* fd2 = 0,
-                    void* buf = NULL, ssize_t* len = NULL);
+  static bool getFd(int transport, int* fd0, int* fd1, void* buf,
+                    ssize_t* len);
 
   static char* randomizedFilename(char *fn);
+  static mutex_t *syscall_mutex_ asm("syscall_mutex");
 
  private:
   static void initializeProtectedMap(int fd);
@@ -249,7 +250,6 @@ class Sandbox {
 
   static int     pid_;
   static char*   secureCradle_;
-  static mutex_t syscall_mutex_ asm("syscall_mutex");
 
   static int     processFdPub_;
   static int     cloneFdPub_;

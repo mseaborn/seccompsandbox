@@ -53,7 +53,7 @@ void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd,
     die("Failed to forward open() request [thread]");
   }
   int rc;
-  getFd(threadFd, &rc);
+  getFd(threadFd, &rc, NULL, NULL, NULL);
   return reinterpret_cast<void *>(rc);
 }
 
@@ -101,7 +101,7 @@ void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
   }
 
   // Send file handle back to trusted thread
-  if (!sendFd(threadFdPub, new_fd)) {
+  if (!sendFd(threadFdPub, new_fd, -1, NULL, 0)) {
     die("Failed to return file handle to sandbox [process]");
   }
   NOINTR_SYS(sys.close(new_fd));
