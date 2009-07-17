@@ -41,7 +41,7 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
 }
 
 void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
-                            char* mem) {
+                            SecureMem::Args* mem) {
   // Read request
   Clone clone_req;
   SysCalls sys;
@@ -50,7 +50,6 @@ void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
   }
 
   // TODO(markus): add policy restricting parameters for clone
-  // TODO(markus): make sandbox multi-threaded
   if ((clone_req.flags & ~CLONE_DETACHED) != (CLONE_VM|CLONE_FS|CLONE_FILES|
       CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|
       CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
@@ -59,32 +58,31 @@ void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
     // clone() has unusual semantics. We don't want to return back into the
     // trusted thread, but instead we need to continue execution at the IP
     // where we got called initially.
-    SecureMem::Args* args = reinterpret_cast<SecureMem::Args*>(mem);
     #if defined(__x86_64__)
-    args->ret = clone_req.regs64.ret;
-    args->rbp = clone_req.regs64.rbp;
-    args->rbx = clone_req.regs64.rbx;
-    args->rcx = clone_req.regs64.rcx;
-    args->rdx = clone_req.regs64.rdx;
-    args->rsi = clone_req.regs64.rsi;
-    args->rdi = clone_req.regs64.rdi;
-    args->r8  = clone_req.regs64.r8;
-    args->r9  = clone_req.regs64.r9;
-    args->r10 = clone_req.regs64.r10;
-    args->r11 = clone_req.regs64.r11;
-    args->r12 = clone_req.regs64.r12;
-    args->r13 = clone_req.regs64.r13;
-    args->r14 = clone_req.regs64.r14;
-    args->r15 = clone_req.regs64.r15;
+    mem->ret = clone_req.regs64.ret;
+    mem->rbp = clone_req.regs64.rbp;
+    mem->rbx = clone_req.regs64.rbx;
+    mem->rcx = clone_req.regs64.rcx;
+    mem->rdx = clone_req.regs64.rdx;
+    mem->rsi = clone_req.regs64.rsi;
+    mem->rdi = clone_req.regs64.rdi;
+    mem->r8  = clone_req.regs64.r8;
+    mem->r9  = clone_req.regs64.r9;
+    mem->r10 = clone_req.regs64.r10;
+    mem->r11 = clone_req.regs64.r11;
+    mem->r12 = clone_req.regs64.r12;
+    mem->r13 = clone_req.regs64.r13;
+    mem->r14 = clone_req.regs64.r14;
+    mem->r15 = clone_req.regs64.r15;
     #elif defined(__i386__)
     // TODO(markus): implement
     #else
     #error Unsupported target platform
     #endif
-    args->secureCradle = secureCradle();
-    args->processFd    = processFdPub_;
-    args->cloneFd      = cloneFdPub_;
-    randomizedFilename(args->filename);
+    mem->secureCradle = secureCradle();
+    mem->processFd    = processFdPub_;
+    mem->cloneFd      = cloneFdPub_;
+    randomizedFilename(mem->filename);
     SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_clone,
                               clone_req.flags, clone_req.stack, clone_req.pid,
                               clone_req.ctid, clone_req.tls);

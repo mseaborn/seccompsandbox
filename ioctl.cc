@@ -24,7 +24,7 @@ int Sandbox::sandbox_ioctl(int d, int req, void *arg) {
 }
 
 void Sandbox::process_ioctl(int sandboxFd, int threadFdPub, int threadFd,
-                            char* mem) {
+                            SecureMem::Args* mem) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;

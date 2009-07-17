@@ -25,7 +25,8 @@ int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   return rc[0];
 }
 
-void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
+void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd,
+                           SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   struct Request {
@@ -57,7 +58,7 @@ void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd, char* mem) {
 }
 
 void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
-                           char* mem) {
+                           SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   Open open_req;

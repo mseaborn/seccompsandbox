@@ -152,6 +152,8 @@ void Sandbox::startSandbox() {
       socketpair(AF_UNIX, SOCK_STREAM, 0, pairs+2)) {
     die("Failed to create trusted thread");
   }
+  processFdPub_ = pairs[0];
+  cloneFdPub_   = pairs[2];
   createTrustedProcess(pairs[0], pairs[1], pairs[2], pairs[3]);
 
   // We find all libraries that have system calls and redirect the system

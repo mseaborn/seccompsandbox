@@ -49,7 +49,8 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
 }
 #endif
 
-void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
+void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd,
+                           SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   struct Request {
@@ -89,7 +90,7 @@ void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd, char* mem) {
 }
 
 void Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
-                           char* mem) {
+                           SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   Stat stat_req;

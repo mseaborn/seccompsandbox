@@ -24,7 +24,7 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
 }
 
 void Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
-                               char* mem) {
+                               SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   MProtect mprotect_req;

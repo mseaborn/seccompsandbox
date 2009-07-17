@@ -7,8 +7,8 @@
 namespace playground {
 
 struct Thread {
-  int   fdPub, fd;
-  char* mem;
+  int              fdPub, fd;
+  SecureMem::Args* mem;
 };
 
 void Sandbox::trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
@@ -31,20 +31,27 @@ newThreadCreated:
   Thread *newThread = &threads[newTid];
   newThread->fdPub  = newThreadFdPub;
   newThread->fd     = newThreadFd;
-  newThread->mem    = (char*)mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED,
-                                  shmFd, 0);
-
-  // TODO(markus): remove
-  char buf[80] = { 0 };
-  sprintf(buf, "/proc/self/fd/%d", shmFd);
-  readlink(buf, buf, sizeof(buf)-1);
-  printf("Adding new thread %d, shm=%p \"%s\", fdPub=%d, fd=%d\n",
-         newTid, newThread->mem, buf, newThreadFdPub, newThreadFd);
-
+  newThread->mem    = reinterpret_cast<SecureMem::Args*>(
+      mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, shmFd, 0));
   if (newThread->mem == MAP_FAILED) {
     die("Failed to set up shared memory for communicating with new thread");
   }
-  close(shmFd);
+  /***/// TODO(markus): remove
+  /***/char buf[80] = { 0 };
+  /***/sprintf(buf, "/proc/self/fd/%d", shmFd);
+  /***/readlink(buf, buf, sizeof(buf)-1);
+  /***/printf("Adding new thread %d, shm=%p \"%s\", fdPub=%d, fd=%d\n",
+  /***/       newTid, newThread->mem, buf, newThreadFdPub, newThreadFd);
+  NOINTR_SYS(sys.close(shmFd));
+
+  int     dummyFd;
+  ssize_t selfLen = sizeof(void *);
+  if (!getFd(cloneFd, &dummyFd, NULL, NULL, &newThread->mem->self,
+             &selfLen) ||
+      selfLen != sizeof(void *)) {
+    die("Failed to receive shared memory address from new thread");
+  }
+  NOINTR_SYS(sys.close(dummyFd));
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
   for (;;) {
@@ -75,6 +82,7 @@ newThreadCreated:
     if (header.sysnum == __NR_clone) {
       goto newThreadCreated;
     } else if (header.sysnum == __NR_exit) {
+      NOINTR_SYS(sys.close(iter->second.fd));
       threads.erase(iter);
     }
   }
@@ -127,8 +135,6 @@ void Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
   // decide whether a system call should execute. This process runs outside of
   // the seccomp sandbox. It communicates with the sandbox'd process through
   // a socketpair() and through securely shared memory.
-  processFdPub_ = processFdPub;
-  cloneFdPub_   = cloneFdPub;
   SysCalls sys;
   pid_t pid       = fork();
   if (pid < 0) {

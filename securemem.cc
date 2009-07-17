@@ -20,11 +20,10 @@ void SecureMem::submitSystemCall(int fd, bool locked) {
   }
 }
 
-void SecureMem::sendSystemCallInternal(int fd, bool locked, char *mem,
-                                       int syscall_num, void *arg1, void *arg2,
+void SecureMem::sendSystemCallInternal(int fd, bool locked, Args *mem,
+                                       int syscallNum, void *arg1, void *arg2,
                                        void *arg3, void *arg4, void *arg5,
                                        void *arg6) {
-  void **args = reinterpret_cast<void **>(mem);
   asm volatile(
     #if defined(__x86_64__)
       "lock; incq (%0)\n"
@@ -34,15 +33,15 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, char *mem,
       #error Unsupported target platform
     #endif
       :
-      : "q"(mem)
+      : "q"(&mem->sequence)
       : "memory");
-  args[1] = reinterpret_cast<void *>(syscall_num);
-  args[2] = reinterpret_cast<void *>(arg1);
-  args[3] = reinterpret_cast<void *>(arg2);
-  args[4] = reinterpret_cast<void *>(arg3);
-  args[5] = reinterpret_cast<void *>(arg4);
-  args[6] = reinterpret_cast<void *>(arg5);
-  args[7] = reinterpret_cast<void *>(arg6);
+  mem->syscallNum = syscallNum;
+  mem->arg1       = arg1;
+  mem->arg2       = arg2;
+  mem->arg3       = arg3;
+  mem->arg4       = arg4;
+  mem->arg5       = arg5;
+  mem->arg6       = arg6;
   asm volatile(
     #if defined(__x86_64__)
       "lock; incq (%0)\n"
@@ -52,7 +51,7 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, char *mem,
       #error Unsupported target platform
     #endif
       :
-      : "q"(mem)
+      : "q"(&mem->sequence)
       : "memory");
   submitSystemCall(fd, locked);
 }

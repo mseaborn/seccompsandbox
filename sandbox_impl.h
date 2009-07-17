@@ -38,21 +38,23 @@ namespace playground {
 class Sandbox {
   // TODO(markus): restrict access to our private file handles
  public:
-  enum { TLS_MEM, TLS_TID, TLS_THREAD_FD, TLS_PROCESS_FD, TLS_CLONE_FD };
+  enum { TLS_MEM, TLS_TID, TLS_THREAD_FD };
 
   static int tid()       { return TLS::getTLSValue<int>(TLS_TID); }
   static int threadFd()  { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
-  static int processFd() { return TLS::getTLSValue<int>(TLS_PROCESS_FD); }
-  static int cloneFd()   { return TLS::getTLSValue<int>(TLS_CLONE_FD); }
+  static int processFd() { return processFdPub_; }
+  static int cloneFd()   { return cloneFdPub_; }
 
   typedef int mutex_t;
 
 #define STATIC static
+#define SecureMemArgs SecureMem::Args
   // Clone is special as it needs a wrapper in syscall_table.c
   STATIC int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
                            void* tls,void* wrapper_s) asm("sandbox__clone");
 #else
 #define STATIC
+#define SecureMemArgs void
   STATIC int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
                            void* tls);
 #endif
@@ -69,17 +71,18 @@ class Sandbox {
   STATIC int sandbox_stat64(const char *path, void* b) asm("sandbox_stat64");
   #endif
 
-  STATIC void*thread_open(int, pid_t, int, char*)      asm("thread_open");
-  STATIC void*thread_stat(int, pid_t, int, char*)      asm("thread_stat");
+  STATIC void*thread_open(int,pid_t, int,SecureMemArgs*)asm("thread_open");
+  STATIC void*thread_stat(int,pid_t, int,SecureMemArgs*)asm("thread_stat");
 
-  STATIC void process_clone(int, int, int, char*)      asm("process_clone");
-  STATIC void process_exit(int, int, int, char*)       asm("process_exit");
-  STATIC void process_ioctl(int, int, int, char*)      asm("process_ioctl");
-  STATIC void process_mmap(int, int, int, char*)       asm("process_mmap");
-  STATIC void process_mprotect(int, int,int,char*)     asm("process_mprotect");
-  STATIC void process_munmap(int, int, int, char*)     asm("process_munmap");
-  STATIC void process_open(int, int, int, char*)       asm("process_open");
-  STATIC void process_stat(int, int, int, char*)       asm("process_stat");
+  STATIC void process_clone(int,int,int,SecureMemArgs*)asm("process_clone");
+  STATIC void process_exit(int,int,int,SecureMemArgs*) asm("process_exit");
+  STATIC void process_ioctl(int,int,int,SecureMemArgs*)asm("process_ioctl");
+  STATIC void process_mmap(int,int,int,SecureMemArgs*) asm("process_mmap");
+  STATIC void process_mprotect(int,int,int,
+                               SecureMemArgs*)         asm("process_mprotect");
+  STATIC void process_munmap(int,int,int,SecureMemArgs*)asm("process_munmap");
+  STATIC void process_open(int,int,int,SecureMemArgs*) asm("process_open");
+  STATIC void process_stat(int,int,int,SecureMemArgs*) asm("process_stat");
 
 #ifdef __cplusplus
   class SysCalls {
@@ -234,9 +237,6 @@ class Sandbox {
                     void* buf = NULL, ssize_t* len = NULL);
 
   static char* randomizedFilename(char *fn);
-  static void (*getTrustedThreadFnc())();
-
-  static ProtectedMap protectedMap_; // available in trusted process, only
 
  private:
   static void initializeProtectedMap(int fd);
@@ -253,6 +253,7 @@ class Sandbox {
 
   static int     processFdPub_;
   static int     cloneFdPub_;
+  static ProtectedMap protectedMap_; // available in trusted process, only
 };
 
 } // namespace

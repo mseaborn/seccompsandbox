@@ -35,7 +35,7 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
 }
 
 void Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
-                           char* mem) {
+                           SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   MMap mmap_req;
@@ -46,9 +46,9 @@ void Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
   if (mmap_req.flags & MAP_FIXED) {
     // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
     // mappings.
-    // TODO(markus): Mark birthing place of secure memory as secure
     SecureMem::abandonSystemCall(threadFd, rc);
   } else {
+    mem->secureCradle = secureCradle();
     SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_MMAP,
                               mmap_req.start, mmap_req.length, mmap_req.prot,
                               mmap_req.flags, mmap_req.fd, mmap_req.offset);

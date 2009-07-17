@@ -22,7 +22,7 @@ int Sandbox::sandbox_exit(int status) {
 }
 
 void Sandbox::process_exit(int sandboxFd, int threadFdPub, int threadFd,
-                           char* mem) {
+                           SecureMem::Args* mem) {
   int data[] = { __NR_exit, 0 };
   SysCalls sys;
   write(sys, threadFdPub, data, sizeof(data));

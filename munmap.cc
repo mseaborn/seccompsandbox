@@ -26,7 +26,7 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
 }
 
 void Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
-                             char* mem) {
+                             SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   MUnmap munmap_req;
