@@ -34,10 +34,9 @@ class SecureMem {
         void* r13;
         void* r14;
         void* r15;
-        void* secureCradle;
+        void* newSecureMem;
         long  processFd;
-        long  cloneFd;
-        char  filename[24];
+        long long cookie;
       } __attribute__((packed));
       char securePage[4096];
     };

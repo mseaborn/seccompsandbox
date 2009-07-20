@@ -5,12 +5,10 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat()\n", 7);
   struct {
-    int   sysnum;
-    pid_t tid;
-    Stat  stat_req;
+    int       sysnum;
+    Stat      stat_req;
   } __attribute__((packed)) request;
   request.sysnum          = __NR_stat;
-  request.tid             = tid();
   request.stat_req.sysnum = __NR_stat;
   request.stat_req.path   = path;
   request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
@@ -29,12 +27,10 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat64()\n", 9);
   struct {
-    int   sysnum;
-    pid_t tid;
-    Stat  stat_req;
+    int       sysnum;
+    Stat      stat_req;
   } __attribute__((packed)) request;
   request.sysnum          = __NR_stat64;
-  request.tid             = tid();
   request.stat_req.sysnum = __NR_stat64;
   request.stat_req.path   = path;
   request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
@@ -49,21 +45,21 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
 }
 #endif
 
-void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd,
+void* Sandbox::thread_stat(int processFd, long long cookie, int threadFd,
                            SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   struct Request {
-    int   sysnum;
-    pid_t tid;
-    Stat  stat_req;
+    int       sysnum;
+    long long cookie;
+    Stat      stat_req;
   } __attribute__((packed)) request;
   if (read(sys, threadFd, &request.stat_req, sizeof(request.stat_req)) !=
       sizeof(request.stat_req)) {
     die("Failed to read parameters for stat() [thread]");
   }
   request.sysnum = request.stat_req.sysnum;
-  request.tid    = tid;
+  request.cookie = cookie;
 
   // Forward request to trusted process
   // TODO(markus): Must coalesce writes to avoid race conditions.
@@ -89,7 +85,7 @@ void* Sandbox::thread_stat(int processFd, pid_t tid, int threadFd,
   return reinterpret_cast<void *>(rc);
 }
 
-void Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
                            SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
@@ -112,7 +108,7 @@ void Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
    failed_to_reply:
       die("Failed to return data from stat() [process]");
     }
-    return;
+    return false;
   }
   char path[stat_req.path_length + 1];
   if (read(sys, sandboxFd, path, stat_req.path_length) !=
@@ -153,6 +149,7 @@ void Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
   if (write(sys, threadFdPub, &response, len) != len) {
     goto failed_to_reply;
   }
+  return true;
 }
 
 } // namespace

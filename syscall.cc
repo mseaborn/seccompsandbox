@@ -174,61 +174,55 @@ asm(
 );
 
 
-static void* defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
-                                      void* arg2, void* arg3, void* arg4,
-                                      void* arg5)
-                         asm("defaultSystemCallHandler") __attribute__((used));
-static void* defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
-                                      void* arg2, void* arg3, void* arg4,
-                                      void* arg5) {
+void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
+                                        void* arg2, void* arg3, void* arg4,
+                                        void* arg5) {
   // TODO(markus): The following comment is currently not true, we do intercept these system calls. Try to fix that.
 
   // We try to avoid intercepting read(), write(), and sigreturn(), as
   // these system calls are not restricted in Seccomp mode. But depending on
   // the exact instruction sequence in libc, we might not be able to reliably
   // filter out these system calls at the time when we instrument the code.
-  Sandbox::SysCalls sys;
+  SysCalls sys;
   unsigned long rc;
   switch (syscallNum) {
     case __NR_read:
-      rc = sys.read((long)arg0, arg1, (size_t)arg2);
+      rc             = sys.read((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_write:
-      rc = sys.write((long)arg0, arg1, (size_t)arg2);
+      rc             = sys.write((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_rt_sigreturn:
-      Sandbox::write(sys, 2, "rt_sigreturn()\n", 15);
-      rc = sys.rt_sigreturn((unsigned long)arg0);
+      write(sys, 2, "rt_sigreturn()\n", 15);
+      rc             = sys.rt_sigreturn((unsigned long)arg0);
       break;
     default:
       if (syscallNum == __NR_close && arg0 == (void *)2) return 0; // TODO(markus): remove
       if ((unsigned)syscallNum <= maxSyscall &&
           syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
-        { char buf[80]; sprintf(buf, "Unrestricted syscall %d\n", syscallNum); Sandbox::write(sys, 2, buf, strlen(buf)); } // TODO(markus): remove
+        { char buf[80]; sprintf(buf, "Unrestricted syscall %d\n", syscallNum); write(sys, 2, buf, strlen(buf)); } // TODO(markus): remove
         struct {
           int          sysnum;
-          pid_t        tid;
           void*        unrestricted_req[6];
         } __attribute__((packed)) request = {
-          syscallNum, Sandbox::tid(), { arg0, arg1, arg2, arg3, arg4, arg5 } };
+          syscallNum, { arg0, arg1, arg2, arg3, arg4, arg5 } };
 
-        int   thread = TLS::getTLSValue<int>(Sandbox::TLS_THREAD_FD);
+        int   thread = threadFd();
         void* rc;
-        if (Sandbox::write(sys, thread, &request, sizeof(request)) !=
-            sizeof(request) ||
-            Sandbox::read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
-          Sandbox::die("Failed to forward unrestricted system call");
+        if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
+            read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {
+          die("Failed to forward unrestricted system call");
         }
         return rc;
       } else {
         char buf[80] = { 0 };
         snprintf(buf, sizeof(buf)-1, "Uncaught system call %d\n", syscallNum);
-        Sandbox::write(sys, 2, buf, strlen(buf));
+        write(sys, 2, buf, strlen(buf));
         return (void *)-ENOSYS;
       }
   }
   if (rc < 0) {
-    rc = -sys.my_errno;
+    rc               = -sys.my_errno;
   }
   return (void *)rc;
 }

@@ -2,23 +2,17 @@
 
 namespace playground {
 
-#ifdef __NR_mmap2
-  #define __NR_MMAP __NR_mmap2
-#else
-  #define __NR_MMAP __NR_mmap
-#endif
-
 void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
                           int fd, off_t offset) {
   SysCalls sys;
   write(sys, 2, "mmap()\n", 7);
   struct {
-    int   sysnum;
-    pid_t tid;
-    MMap  mmap_req;
+    int       sysnum;
+    long long cookie;
+    MMap      mmap_req;
   } __attribute__((packed)) request;
   request.sysnum          = __NR_MMAP;
-  request.tid             = tid();
+  request.cookie          = cookie();
   request.mmap_req.start  = start;
   request.mmap_req.length = length;
   request.mmap_req.prot   = prot;
@@ -34,7 +28,7 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   return rc;
 }
 
-void Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
                            SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
@@ -47,11 +41,15 @@ void Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
     // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
     // mappings.
     SecureMem::abandonSystemCall(threadFd, rc);
+    return false;
   } else {
-    mem->secureCradle = secureCradle();
+    // TODO(markus): Even without MAP_FIXED, we have to ensure that we never
+    // return addresses that are in our "protected" area at the bottom of
+    // memory.
     SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_MMAP,
                               mmap_req.start, mmap_req.length, mmap_req.prot,
                               mmap_req.flags, mmap_req.fd, mmap_req.offset);
+    return true;
   }
 }
 

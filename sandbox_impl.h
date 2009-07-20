@@ -38,14 +38,8 @@ namespace playground {
 class Sandbox {
   // TODO(markus): restrict access to our private file handles
  public:
-  enum { TLS_MEM, TLS_TID, TLS_THREAD_FD };
 
-  static int tid()       { return TLS::getTLSValue<int>(TLS_TID); }
-  static int threadFd()  { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
-  static int processFd() { return processFdPub_; }
-  static int cloneFd()   { return cloneFdPub_; }
-
-  typedef int mutex_t;
+  enum { kMaxThreads = 100 };
 
 #define STATIC static
 #define SecureMemArgs SecureMem::Args
@@ -54,6 +48,7 @@ class Sandbox {
                            void* tls,void* wrapper_s) asm("sandbox__clone");
 #else
 #define STATIC
+#define bool int
 #define SecureMemArgs void
   STATIC int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
                            void* tls);
@@ -71,18 +66,18 @@ class Sandbox {
   STATIC int sandbox_stat64(const char *path, void* b) asm("sandbox_stat64");
   #endif
 
-  STATIC void*thread_open(int,pid_t, int,SecureMemArgs*)asm("thread_open");
-  STATIC void*thread_stat(int,pid_t, int,SecureMemArgs*)asm("thread_stat");
+  STATIC void*thread_open(int,long long, int,SecureMemArgs*)asm("thread_open");
+  STATIC void*thread_stat(int,long long, int,SecureMemArgs*)asm("thread_stat");
 
-  STATIC void process_clone(int,int,int,SecureMemArgs*)asm("process_clone");
-  STATIC void process_exit(int,int,int,SecureMemArgs*) asm("process_exit");
-  STATIC void process_ioctl(int,int,int,SecureMemArgs*)asm("process_ioctl");
-  STATIC void process_mmap(int,int,int,SecureMemArgs*) asm("process_mmap");
-  STATIC void process_mprotect(int,int,int,
+  STATIC bool process_clone(int,int,int,SecureMemArgs*)asm("process_clone");
+  STATIC bool process_exit(int,int,int,SecureMemArgs*) asm("process_exit");
+  STATIC bool process_ioctl(int,int,int,SecureMemArgs*)asm("process_ioctl");
+  STATIC bool process_mmap(int,int,int,SecureMemArgs*) asm("process_mmap");
+  STATIC bool process_mprotect(int,int,int,
                                SecureMemArgs*)         asm("process_mprotect");
-  STATIC void process_munmap(int,int,int,SecureMemArgs*)asm("process_munmap");
-  STATIC void process_open(int,int,int,SecureMemArgs*) asm("process_open");
-  STATIC void process_stat(int,int,int,SecureMemArgs*) asm("process_stat");
+  STATIC bool process_munmap(int,int,int,SecureMemArgs*)asm("process_munmap");
+  STATIC bool process_open(int,int,int,SecureMemArgs*) asm("process_open");
+  STATIC bool process_stat(int,int,int,SecureMemArgs*) asm("process_stat");
 
 #ifdef __cplusplus
   class SysCalls {
@@ -96,17 +91,59 @@ class Sandbox {
     SysCalls() : my_errno(0) { }
     int my_errno;
   };
+  #ifdef __NR_mmap2
+    #define      MMAP      mmap2
+    #define __NR_MMAP __NR_mmap2
+  #else
+    #define      MMAP      mmap
+    #define __NR_MMAP __NR_mmap
+  #endif
 
-  // TODO(markus): remove
-  struct Unrestricted {
-    void* arg0;
-    void* arg1;
-    void* arg2;
-    void* arg3;
-    void* arg4;
-    void* arg5;
-  } __attribute__((packed));
+  static void startSandbox() asm("startSandbox");
+  static void die(const char *msg = 0) __attribute__((noreturn)) {
+    if (msg) {
+      SysCalls sys;
+      sys.write(2, msg, strlen(msg));
+      sys.write(2, "\n", 1);
+    }
+    _exit(1);
+  }
 
+  static int read(SysCalls& sys, int fd, void *buf, ssize_t len) {
+    if (len < 0) {
+      sys.my_errno = EINVAL;
+      return -1;
+    }
+    int offset = 0;
+    while (offset < len) {
+      int partial =
+          NOINTR_SYS(sys.read(fd, reinterpret_cast<char *>(buf) + offset,
+                              len - offset));
+      if (partial < 0) {
+        return partial;
+      } else if (!partial) {
+        break;
+      }
+      offset += partial;
+    }
+    return offset;
+  }
+
+  static int write(SysCalls& sys, int fd, const void *buf, size_t len){
+    return NOINTR_SYS(sys.write(fd, buf, len));
+  }
+
+  static bool sendFd(int transport, int fd0, int fd1, void* buf,
+                     ssize_t len) asm("sendFd");
+
+  // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
+  // -errno.
+  static bool getFd(int transport, int* fd0, int* fd1, void* buf,
+                    ssize_t* len) asm("getFd");
+
+  typedef int mutex_t;
+  static mutex_t* syscall_mutex_ asm("syscall_mutex");
+ private:
   struct Clone {
     int   flags;
     void* stack;
@@ -191,68 +228,30 @@ class Sandbox {
     void         *buf;
   } __attribute__((packed));
 
+  enum { TLS_MEM, TLS_COOKIE, TLS_TID, TLS_THREAD_FD };
   typedef std::map<void *, long> ProtectedMap;
 
-  static void startSandbox() asm("startSandbox");
-  static void die(const char *msg = 0) __attribute__((noreturn)) {
-    if (msg) {
-      SysCalls sys;
-      sys.write(2, msg, strlen(msg));
-      sys.write(2, "\n", 1);
-    }
-    _exit(1);
-  }
-  static char* secureCradle() { return secureCradle_; }
+  static long long cookie() { return TLS::getTLSValue<long long>(TLS_COOKIE); }
+  static int tid()          { return TLS::getTLSValue<int>(TLS_TID); }
+  static int threadFd()     { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
+  static int processFd()    { return processFdPub_; }
+// TODO(markus): rename accessors to xxxPub()
 
-  static int read(SysCalls& sys, int fd, void *buf, ssize_t len) {
-    if (len < 0) {
-      sys.my_errno = EINVAL;
-      return -1;
-    }
-    int offset = 0;
-    while (offset < len) {
-      int partial =
-          NOINTR_SYS(sys.read(fd, reinterpret_cast<char *>(buf) + offset,
-                              len - offset));
-      if (partial < 0) {
-        return partial;
-      } else if (!partial) {
-        break;
-      }
-      offset += partial;
-    }
-    return offset;
-  }
+  static void* defaultSystemCallHandler(int syscallNum, void* arg0,
+                                        void* arg1, void* arg2, void* arg3,
+                                        void* arg4, void* arg5)
+                                            asm("defaultSystemCallHandler");
+  static void* makeSharedMemory(int* fd);
+  static void* getSecureMem();
+  static void  initializeProtectedMap(int fd);
+  static void  snapshotMemoryMappings(int processFd);
+  static void  trustedProcess(int processFdPub, int sandboxFd,
+                              void* secureArena) __attribute__((noreturn));
+  static void* createTrustedProcess(int processFdPub, int sandboxFd);
+  static void  createTrustedThread(int processFd, void* secureMem);
 
-  static int write(SysCalls& sys, int fd, const void *buf, size_t len){
-    return NOINTR_SYS(sys.write(fd, buf, len));
-  }
-
-  static bool sendFd(int transport, int fd0, int fd1, void* buf,
-                     ssize_t len) asm("sendFd");
-
-  // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
-  // -errno.
-  static bool getFd(int transport, int* fd0, int* fd1, void* buf,
-                    ssize_t* len);
-
-  static char* randomizedFilename(char *fn);
-  static mutex_t *syscall_mutex_ asm("syscall_mutex");
-
- private:
-  static void initializeProtectedMap(int fd);
-  static void trustedProcess(int processFdPub, int sandboxFd, int cloneFdPub,
-                             int cloneFd) __attribute__((noreturn));
-  static void createTrustedProcess(int processFdPub, int sandboxFd,
-                                   int cloneFdPub, int cloneFd);
-  static void createTrustedThread(int processFd, int cloneFd);
-  static void snapshotMemoryMappings(int processFd);
-
-  static int     pid_;
-  static char*   secureCradle_;
-
-  static int     processFdPub_;
-  static int     cloneFdPub_;
+  static int          pid_;
+  static int          processFdPub_ asm("processFdPub");
   static ProtectedMap protectedMap_; // available in trusted process, only
 };
 

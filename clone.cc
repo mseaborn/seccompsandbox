@@ -9,12 +9,12 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   SysCalls sys;
   write(sys, 2, "clone()\n", 8);
   struct {
-    int   sysnum;
-    pid_t tid;
-    Clone clone_req;
+    int       sysnum;
+    long long cookie;
+    Clone     clone_req;
   } __attribute__((packed)) request;
   request.sysnum               = __NR_clone;
-  request.tid                  = tid();
+  request.cookie               = cookie();
   request.clone_req.flags      = flags;
   request.clone_req.stack      = stack;
   request.clone_req.pid        = pid;
@@ -40,7 +40,7 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   return static_cast<int>(rc);
 }
 
-void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
                             SecureMem::Args* mem) {
   // Read request
   Clone clone_req;
@@ -54,39 +54,45 @@ void Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
       CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|
       CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
     SecureMem::abandonSystemCall(threadFd, -EPERM);
+    return false;
   } else {
-    // clone() has unusual semantics. We don't want to return back into the
-    // trusted thread, but instead we need to continue execution at the IP
-    // where we got called initially.
-    SecureMem::lockSystemCall(mem);
-    #if defined(__x86_64__)
-    mem->ret = clone_req.regs64.ret;
-    mem->rbp = clone_req.regs64.rbp;
-    mem->rbx = clone_req.regs64.rbx;
-    mem->rcx = clone_req.regs64.rcx;
-    mem->rdx = clone_req.regs64.rdx;
-    mem->rsi = clone_req.regs64.rsi;
-    mem->rdi = clone_req.regs64.rdi;
-    mem->r8  = clone_req.regs64.r8;
-    mem->r9  = clone_req.regs64.r9;
-    mem->r10 = clone_req.regs64.r10;
-    mem->r11 = clone_req.regs64.r11;
-    mem->r12 = clone_req.regs64.r12;
-    mem->r13 = clone_req.regs64.r13;
-    mem->r14 = clone_req.regs64.r14;
-    mem->r15 = clone_req.regs64.r15;
-    #elif defined(__i386__)
-    // TODO(markus): implement
-    #else
-    #error Unsupported target platform
-    #endif
-    mem->secureCradle = secureCradle();
-    mem->processFd    = processFdPub_;
-    mem->cloneFd      = cloneFdPub_;
-    randomizedFilename(mem->filename);
-    SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_clone,
-                              clone_req.flags, clone_req.stack, clone_req.pid,
-                              clone_req.ctid, clone_req.tls);
+    void* newMem        = getSecureMem();
+    if (!newMem) {
+      SecureMem::abandonSystemCall(threadFd, -ENOMEM);
+      return false;
+    } else {
+      // clone() has unusual semantics. We don't want to return back into the
+      // trusted thread, but instead we need to continue execution at the IP
+      // where we got called initially.
+      SecureMem::lockSystemCall(mem);
+      #if defined(__x86_64__)
+      mem->ret          = clone_req.regs64.ret;
+      mem->rbp          = clone_req.regs64.rbp;
+      mem->rbx          = clone_req.regs64.rbx;
+      mem->rcx          = clone_req.regs64.rcx;
+      mem->rdx          = clone_req.regs64.rdx;
+      mem->rsi          = clone_req.regs64.rsi;
+      mem->rdi          = clone_req.regs64.rdi;
+      mem->r8           = clone_req.regs64.r8;
+      mem->r9           = clone_req.regs64.r9;
+      mem->r10          = clone_req.regs64.r10;
+      mem->r11          = clone_req.regs64.r11;
+      mem->r12          = clone_req.regs64.r12;
+      mem->r13          = clone_req.regs64.r13;
+      mem->r14          = clone_req.regs64.r14;
+      mem->r15          = clone_req.regs64.r15;
+      #elif defined(__i386__)
+      // TODO(markus): implement
+      #else
+      #error Unsupported target platform
+      #endif
+      mem->newSecureMem = newMem;
+      mem->processFd    = processFdPub_;
+      SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_clone,
+                                clone_req.flags, clone_req.stack,
+                                clone_req.pid, clone_req.ctid, clone_req.tls);
+      return true;
+    }
   }
 }
 

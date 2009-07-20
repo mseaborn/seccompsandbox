@@ -5,12 +5,12 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   SysCalls sys;
   write(sys, 2, "mprotect()\n", 11);
   struct {
-    int      sysnum;
-    pid_t    tid;
-    MProtect mprotect_req;
+    int       sysnum;
+    long long cookie;
+    MProtect  mprotect_req;
   } __attribute__((packed)) request;
   request.sysnum            = __NR_mprotect;
-  request.tid               = tid();
+  request.cookie            = cookie();
   request.mprotect_req.addr = addr;
   request.mprotect_req.len  = len;
   request.mprotect_req.prot = prot;
@@ -23,7 +23,7 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   return static_cast<int>(rc);
 }
 
-void Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
                                SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
@@ -48,7 +48,7 @@ void Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         stop > iter->first) {
       SecureMem::abandonSystemCall(threadFd, rc);
-      return;
+      return false;
     }
   }
 
@@ -57,6 +57,7 @@ void Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
   SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_mprotect,
                             mprotect_req.addr,  mprotect_req.len,
                             mprotect_req.prot);
+  return true;
 }
 
 } // namespace

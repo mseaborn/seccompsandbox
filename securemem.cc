@@ -8,7 +8,7 @@ void SecureMem::abandonSystemCall(int fd, int err) {
   void* rc = reinterpret_cast<void *>(err);
   if (err) write(2, "System call failed\n", 19); // TODO(markus): remove
   Sandbox::SysCalls sys;
-  if (Sandbox::write(sys, fd, rc, sizeof(rc)) != sizeof(rc)) {
+  if (Sandbox::write(sys, fd, &rc, sizeof(rc)) != sizeof(rc)) {
     Sandbox::die("Failed to send system call");
   }
 }
@@ -63,9 +63,9 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, Args* mem,
       :
       : "q"(&mem->sequence)
       : "memory");
-  int data[] = { locked ? -2 : -1, 0 };
+  int data = locked ? -2 : -1;
   Sandbox::SysCalls sys;
-  if (Sandbox::write(sys, fd, data, sizeof(data)) != sizeof(data)) {
+  if (Sandbox::write(sys, fd, &data, sizeof(data)) != sizeof(data)) {
     Sandbox::die("Failed to send system call");
   }
 }

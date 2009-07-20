@@ -7,12 +7,10 @@
 
 namespace playground {
 
-Sandbox::ProtectedMap Sandbox::protectedMap_;
 int                   Sandbox::pid_;
-char*                 Sandbox::secureCradle_;
 Sandbox::mutex_t*     Sandbox::syscall_mutex_;
 int                   Sandbox::processFdPub_;
-int                   Sandbox::cloneFdPub_;
+Sandbox::ProtectedMap Sandbox::protectedMap_;
 
 bool Sandbox::sendFd(int transport, int fd0, int fd1, void* buf, ssize_t len) {
   int fds[2], count                     = 0;
@@ -104,24 +102,8 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, ssize_t*len){
 
 void Sandbox::snapshotMemoryMappings(int processFd) {
   SysCalls sys;
-  char fn[24];
-  randomizedFilename(fn);
-  int shmFd = sys.open(fn, O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
-  sys.unlink(fn);
-  if (shmFd < 0 || NOINTR_SYS(sys.ftruncate(shmFd, 4096))) {
- shmFailure:
-    die("Cannot create shared memory");
-  }
-  #ifdef __NR_mmap2
-    #define MMAP mmap2
-  #else
-    #define MMAP mmap
-  #endif
-  void* page = sys.MMAP(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED, shmFd,0);
-  if (page == MAP_FAILED) {
-    goto shmFailure;
-  }
-  syscall_mutex_ = reinterpret_cast<mutex_t*>(page);
+  int shmFd;
+  syscall_mutex_ = reinterpret_cast<mutex_t*>(makeSharedMemory(&shmFd));
   int mapsFd = sys.open("/proc/self/maps", O_RDONLY, 0);
   if (mapsFd < 0 || !sendFd(processFd, mapsFd, shmFd, NULL, NULL)) {
  failure:
@@ -138,32 +120,17 @@ void Sandbox::snapshotMemoryMappings(int processFd) {
 void Sandbox::startSandbox() {
   SysCalls sys;
 
-  // In order to allow thread creation in the sandbox, we set up well-known
-  // fixed address where all secure shared memory areas are initially
-  // created. They subsequently need to be moved to a new per-thread address.
-  // In order to ensure that the kernel finds a new address, when we change
-  // the allocation size with mremap(), we have to place guard pages on both
-  // sides of the page.
-  char* secure = (char *)mmap(0, 3*4096, PROT_NONE,
-                              MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-  if (secure == MAP_FAILED) {
-    die("Cannot initialize secure memory");
-  }
-  secureCradle_ = secure + 4096;
-
   // The pid is unchanged for the entire program, so we can retrieve it once
   // and store it in a global variable.
   pid_ = sys.getpid();
 
-  // For talking to the trusted thread, we need to socket pairs.
-  int pairs[4];
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, pairs  ) ||
-      socketpair(AF_UNIX, SOCK_STREAM, 0, pairs+2)) {
+  // Get socketpair for talking to the trusted process
+  int pair[2];
+  if (socketpair(AF_UNIX, SOCK_STREAM, 0, pair)) {
     die("Failed to create trusted thread");
   }
-  processFdPub_ = pairs[0];
-  cloneFdPub_   = pairs[2];
-  createTrustedProcess(pairs[0], pairs[1], pairs[2], pairs[3]);
+  processFdPub_     = pair[0];
+  void* secureMem   = createTrustedProcess(pair[0], pair[1]);
 
   // We find all libraries that have system calls and redirect the system
   // calls to the sandbox. If we miss any system calls, the application will be
@@ -198,10 +165,10 @@ void Sandbox::startSandbox() {
 
   // Take a snapshot of the current memory mappings. These mappings will be
   // off-limits to all future mmap(), munmap(), mremap(), and mprotect() calls.
-  snapshotMemoryMappings(pairs[0]);
+  snapshotMemoryMappings(processFdPub_);
 
   // Creating the trusted thread enables sandboxing
-  createTrustedThread(pairs[0], pairs[2]);
+  createTrustedThread(processFdPub_, secureMem);
 }
 
 } // namespace

@@ -5,13 +5,13 @@ int Sandbox::sandbox_exit(int status) {
   SysCalls sys;
   write(sys, 2, "exit()\n", 7);
   struct {
-    int   sysnum;
-    pid_t tid;
+    int       sysnum;
+    long long cookie;
   } __attribute__((packed)) request;
-  request.sysnum          = __NR_exit;
-  request.tid             = tid();
+  request.sysnum = __NR_exit;
+  request.cookie = cookie();
 
-  int process             = processFd();
+  int process    = processFd();
   sandbox_munmap(TLS::getTLSValue<void *>(TLS_MEM), 4096);
   if (write(sys, process, &request, sizeof(request)) != sizeof(request)) {
     die("Failed to forward exit() request [sandbox]");
@@ -21,11 +21,12 @@ int Sandbox::sandbox_exit(int status) {
   }
 }
 
-void Sandbox::process_exit(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_exit(int sandboxFd, int threadFdPub, int threadFd,
                            SecureMem::Args* mem) {
-  int data[] = { __NR_exit, 0 };
+  int data = __NR_exit;
   SysCalls sys;
-  write(sys, threadFdPub, data, sizeof(data));
+  write(sys, threadFdPub, &data, sizeof(data));
+  return true;
 }
 
 } // namespace

@@ -6,12 +6,10 @@ int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   SysCalls sys;
   write(sys, 2, "open()\n", 7);
   struct {
-    int   sysnum;
-    pid_t tid;
-    Open  open_req;
+    int       sysnum;
+    Open      open_req;
   } __attribute__((packed)) request;
   request.sysnum         = __NR_open;
-  request.tid            = tid();
   request.open_req.path  = pathname;
   request.open_req.flags = flags;
   request.open_req.mode  = mode;
@@ -25,17 +23,17 @@ int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   return rc[0];
 }
 
-void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd,
+void* Sandbox::thread_open(int processFd, long long cookie, int threadFd,
                            SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   struct Request {
-    int   sysnum;
-    pid_t tid;
-    Open  open_req;
+    int       sysnum;
+    long long cookie;
+    Open      open_req;
   } __attribute__((packed)) request;
   request.sysnum = __NR_open;
-  request.tid    = tid;
+  request.cookie = cookie;
   if (read(sys, threadFd, &request.open_req, sizeof(request.open_req)) !=
       sizeof(request.open_req)) {
     die("Failed to read parameters for open() [thread]");
@@ -57,7 +55,7 @@ void* Sandbox::thread_open(int processFd, pid_t tid, int threadFd,
   return reinterpret_cast<void *>(rc);
 }
 
-void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
                            SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
@@ -80,7 +78,7 @@ void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
     if (write(sys, threadFdPub, &rc, sizeof(rc)) != sizeof(rc)) {
       die("Failed to return data from open() [process]");
     }
-    return;
+    return false;
   }
   char path[open_req.path_length + 1];
   if (read(sys, sandboxFd, path, open_req.path_length) !=open_req.path_length){
@@ -105,6 +103,7 @@ void Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
     die("Failed to return file handle to sandbox [process]");
   }
   NOINTR_SYS(sys.close(new_fd));
+  return true;
 }
 
 } // namespace

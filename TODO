@@ -1,3 +1,14 @@
+- have the server manage the location of the secure memory. It must allocate
+  a free slot in process_clone() before it forwards the request to the client.
+  It will only release a slot once the client tells is so from its exit
+  function. We have to make sure that this information cannot be spoofed.
+
+- fix mmap() so that it cannot return addresses at the bottom of memory
+
+- do we really need to go through the PLT and the GOT?
+
+- avoid using wait4()/SIGCHLD, as it generates unneeded signals
+
 - add error handling, if there is a file name collision during thread
   creation
 

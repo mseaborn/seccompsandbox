@@ -5,12 +5,12 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
   SysCalls sys;
   write(sys, 2, "munmap()\n", 9);
   struct {
-    int    sysnum;
-    pid_t  tid;
-    MUnmap munmap_req;
+    int       sysnum;
+    long long cookie;
+    MUnmap    munmap_req;
   } __attribute__((packed)) request;
   request.sysnum            = __NR_munmap;
-  request.tid               = tid();
+  request.cookie            = cookie();
   request.munmap_req.start  = start;
   request.munmap_req.length = length;
 
@@ -25,7 +25,7 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
   return static_cast<int>(rc);
 }
 
-void Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
+bool Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
                              SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
@@ -50,7 +50,7 @@ void Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         stop > iter->first) {
       SecureMem::abandonSystemCall(threadFd, rc);
-      return;
+      return false;
     }
   }
 
@@ -58,6 +58,7 @@ void Sandbox::process_munmap(int sandboxFd, int threadFdPub, int threadFd,
   // is OK.
   SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_munmap,
                             munmap_req.start, munmap_req.length);
+  return true;
 }
 
 } // namespace

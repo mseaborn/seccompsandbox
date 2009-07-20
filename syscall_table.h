@@ -10,14 +10,15 @@ namespace playground {
 #define SecureMemArgs SecureMem::Args
 #else
 #define SecureMemArgs void
+#define bool          int
 #endif
   #define UNRESTRICTED_SYSCALL ((void *)1)
 
   struct SyscallTable {
     void   *handler;
-    void* (*trustedThread)(int processFd, pid_t tid, int threadFd,
+    void* (*trustedThread)(int processFd, long long cookie, int threadFd,
                            SecureMemArgs* mem);
-    void  (*trustedProcess)(int sandboxFd, int threadFdPub, int threadFd,
+    bool  (*trustedProcess)(int sandboxFd, int threadFdPub, int threadFd,
                             SecureMemArgs* mem);
   };
   extern const struct SyscallTable syscallTable[];

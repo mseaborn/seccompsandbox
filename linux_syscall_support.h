@@ -2454,6 +2454,8 @@ struct kernel_statfs {
                       struct kernel_stat*,   b)
   LSS_INLINE _syscall2(int,     statfs,          const char*, f,
                       struct kernel_statfs*, b)
+  LSS_INLINE _syscall3(int,     tgkill,          pid_t,       p,
+                       pid_t,          t, int,            s)
   LSS_INLINE _syscall2(int,     tkill,           pid_t,       p,
                        int,            s)
   LSS_INLINE _syscall3(ssize_t, write,            int,        f,
