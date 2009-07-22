@@ -4,89 +4,61 @@ namespace playground {
 int Sandbox::sandbox_stat(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat()\n", 7);
-  struct {
+  int len                       = strlen(path);
+  struct Request {
     int       sysnum;
+    long long cookie;
     Stat      stat_req;
-  } __attribute__((packed)) request;
-  request.sysnum          = __NR_stat;
-  request.stat_req.sysnum = __NR_stat;
-  request.stat_req.path   = path;
-  request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
+    char      pathname[0];
+  } __attribute__((packed)) *request;
+  char data[sizeof(struct Request) + len];
+  request                       = reinterpret_cast<struct Request*>(data);
+  request->sysnum               = __NR_stat;
+  request->cookie               = cookie();
+  request->sysnum               = __NR_stat;
+  request->stat_req.path_length = len;
+  request->stat_req.buf         = buf;
+  memcpy(request->pathname, path, len);
 
-  int rc[sizeof(void *)/sizeof(int)];
-  int thread = threadFd();
-  if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
+  long rc;
+  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward stat() request [sandbox]");
   }
-  return rc[0];
+  return static_cast<int>(rc);
 }
 
 #if __WORDSIZE == 32
 int Sandbox::sandbox_stat64(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat64()\n", 9);
-  struct {
-    int       sysnum;
-    Stat      stat_req;
-  } __attribute__((packed)) request;
-  request.sysnum          = __NR_stat64;
-  request.stat_req.sysnum = __NR_stat64;
-  request.stat_req.path   = path;
-  request.stat_req.buf    = reinterpret_cast<SysCalls::kernel_stat *>(buf);
-
-  int rc[sizeof(void *)/sizeof(int)];
-  int thread = threadFd();
-  if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward stat() request [sandbox]");
-  }
-  return rc[0];
-}
-#endif
-
-void* Sandbox::thread_stat(int processFd, long long cookie, int threadFd,
-                           SecureMem::Args* mem) {
-  // Read request
-  SysCalls sys;
+  int len                       = strlen(path);
   struct Request {
     int       sysnum;
     long long cookie;
     Stat      stat_req;
-  } __attribute__((packed)) request;
-  if (read(sys, threadFd, &request.stat_req, sizeof(request.stat_req)) !=
-      sizeof(request.stat_req)) {
-    die("Failed to read parameters for stat() [thread]");
-  }
-  request.sysnum = request.stat_req.sysnum;
-  request.cookie = cookie;
+    char      pathname[0];
+  } __attribute__((packed)) *request;
+  char data[sizeof(struct Request) + len];
+  request                       = reinterpret_cast<struct Request*>(data);
+  request->sysnum               = __NR_stat64;
+  request->cookie               = cookie();
+  request->sysnum               = __NR_stat64;
+  request->stat_req.path_length = len;
+  request->stat_req.buf         = buf;
+  memcpy(request->pathname, path, len);
 
-  // Forward request to trusted process
-  // TODO(markus): Must coalesce writes to avoid race conditions.
-  // TODO(markus): Maybe, move this code into sandbox_stat()
-  const char *pathname = request.stat_req.path;
-  request.stat_req.path_length = strlen(pathname);
-  int rc;
-  #if __WORDSIZE == 64
-  int len = sizeof(SysCalls::kernel_stat);
-  #else
-  int len = request.stat_req.sysnum == __NR_stat ?
-      sizeof(SysCalls::kernel_stat) : sizeof(SysCalls::kernel_stat64);
-  #endif
-  if (write(sys, processFd, &request, sizeof(request)) != sizeof(request) ||
-      write(sys, processFd, pathname, request.stat_req.path_length) !=
-      request.stat_req.path_length ||
-      read(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc) ||
-      read(sys, threadFd, request.stat_req.buf, len) != len) {
-    die("Failed to forward stat() request [thread]");
+  long rc;
+  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
+    die("Failed to forward stat64() request [sandbox]");
   }
-
-  // Return result
-  return reinterpret_cast<void *>(rc);
+  return static_cast<int>(rc);
 }
+#endif
 
-bool Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
-                           SecureMem::Args* mem) {
+bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
+                           int threadFd, SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   Stat stat_req;
@@ -94,8 +66,9 @@ bool Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
  read_parm_failed:
     die("Failed to read parameters for stat() [process]");
   }
-  int rc = -ENAMETOOLONG;
-  if (stat_req.path_length > PATH_MAX) {
+  int   rc                  = -ENAMETOOLONG;
+  char* pathname            = getSecureStringBuffer(stat_req.path_length);
+  if (!pathname) {
     char buf[32];
     while (stat_req.path_length > 0) {
       int i = read(sys, sandboxFd, buf, sizeof(buf));
@@ -104,51 +77,27 @@ bool Sandbox::process_stat(int sandboxFd, int threadFdPub, int threadFd,
       }
       stat_req.path_length -= i;
     }
-    if (write(sys, threadFdPub, &rc, sizeof(rc)) != sizeof(rc)) {
-   failed_to_reply:
+    if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
       die("Failed to return data from stat() [process]");
     }
     return false;
   }
-  char path[stat_req.path_length + 1];
-  if (read(sys, sandboxFd, path, stat_req.path_length) !=
+  SecureMem::lockSystemCall(parentProc, mem);
+  if (read(sys, sandboxFd, pathname, stat_req.path_length) !=
       stat_req.path_length) {
     goto read_parm_failed;
   }
-  path[stat_req.path_length] = '\000';
 
-  // Stat file
-  // TODO(markus): A better solution is to send the system call, but to
-  //               store the filename in the secure memory page
   // TODO(markus): Implement sandboxing policy
-  struct Response {
-    int                       rc;
-    union {
-      SysCalls::kernel_stat   sb;
-      SysCalls::kernel_stat64 sb64;
-    };
-  } __attribute__((packed)) response;
-  int len = sizeof(int) + sizeof(SysCalls::kernel_stat);
-  switch (stat_req.sysnum) {
-    case __NR_stat:
-      response.rc = sys.stat(path, &response.sb);
-      break;
-    #if __WORDSIZE == 32
-    case __NR_stat64:
-      len = sizeof(int) + sizeof(SysCalls::kernel_stat64);
-      response.rc = sys.stat64(path, &response.sb64);
-      break;
-    #endif
-    default:
-      goto read_parm_failed;
-  }
-  // Return result back to trusted thread
-  if (response.rc < 0) {
-    response.rc              = -sys.my_errno;
-  }
-  if (write(sys, threadFdPub, &response, len) != len) {
-    goto failed_to_reply;
-  }
+
+  // Tell trusted thread to stat the file.
+  SecureMem::sendSystemCall(threadFdPub, true, mem,
+                            #if __WORDSIZE == 32
+                            stat_req.sysnum == __NR_stat64 ? __NR_stat64 :
+                            #endif
+                            __NR_stat,
+                            pathname - (char*)mem + (char*)mem->self,
+                            stat_req.buf);
   return true;
 }
 

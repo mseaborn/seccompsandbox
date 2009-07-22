@@ -5,58 +5,32 @@ namespace playground {
 int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   SysCalls sys;
   write(sys, 2, "open()\n", 7);
-  struct {
-    int       sysnum;
-    Open      open_req;
-  } __attribute__((packed)) request;
-  request.sysnum         = __NR_open;
-  request.open_req.path  = pathname;
-  request.open_req.flags = flags;
-  request.open_req.mode  = mode;
-
-  int rc[sizeof(void *)/sizeof(int)];
-  int thread = threadFd();
-  if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
-      read(sys, thread, rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward open() request [sandbox]");
-  }
-  return rc[0];
-}
-
-void* Sandbox::thread_open(int processFd, long long cookie, int threadFd,
-                           SecureMem::Args* mem) {
-  // Read request
-  SysCalls sys;
+  int len                = strlen(pathname);
   struct Request {
     int       sysnum;
     long long cookie;
     Open      open_req;
-  } __attribute__((packed)) request;
-  request.sysnum = __NR_open;
-  request.cookie = cookie;
-  if (read(sys, threadFd, &request.open_req, sizeof(request.open_req)) !=
-      sizeof(request.open_req)) {
-    die("Failed to read parameters for open() [thread]");
-  }
+    char      pathname[0];
+  } __attribute__((packed)) *request;
+  char data[sizeof(struct Request) + len];
+  request                       = reinterpret_cast<struct Request*>(data);
+  request->sysnum               = __NR_open;
+  request->cookie               = cookie();
+  request->open_req.path_length = len;
+  request->open_req.flags       = flags;
+  request->open_req.mode        = mode;
+  memcpy(request->pathname, pathname, len);
 
-  // Forward request to trusted process, and receive new file descriptor in
-  // return
-  // TODO(markus): Must coalesce writes to avoid race conditions.
-  // TODO(markus): Maybe, move this code into sandbox_open()
-  const char *pathname = request.open_req.path;
-  request.open_req.path_length = strlen(pathname);
-  if (write(sys, processFd, &request, sizeof(request)) != sizeof(request) ||
-      write(sys, processFd, pathname, request.open_req.path_length) !=
-      request.open_req.path_length) {
-    die("Failed to forward open() request [thread]");
+  long rc;
+  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
+    die("Failed to forward open() request [sandbox]");
   }
-  int rc;
-  getFd(threadFd, &rc, NULL, NULL, NULL);
-  return reinterpret_cast<void *>(rc);
+  return static_cast<int>(rc);
 }
 
-bool Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
-                           SecureMem::Args* mem) {
+bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
+                           int threadFd, SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   Open open_req;
@@ -64,8 +38,9 @@ bool Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
  read_parm_failed:
     die("Failed to read parameters for open() [process]");
   }
-  int rc = -ENAMETOOLONG;
-  if (open_req.path_length > PATH_MAX) {
+  int   rc                  = -ENAMETOOLONG;
+  char* pathname            = getSecureStringBuffer(open_req.path_length);
+  if (!pathname) {
     char buf[32];
     while (open_req.path_length > 0) {
       int i = read(sys, sandboxFd, buf, sizeof(buf));
@@ -74,35 +49,23 @@ bool Sandbox::process_open(int sandboxFd, int threadFdPub, int threadFd,
       }
       open_req.path_length -= i;
     }
- reply_with_error:
-    if (write(sys, threadFdPub, &rc, sizeof(rc)) != sizeof(rc)) {
+    if (write(sys, threadFd, &rc, sizeof(rc)) != sizeof(rc)) {
       die("Failed to return data from open() [process]");
     }
     return false;
   }
-  char path[open_req.path_length + 1];
-  if (read(sys, sandboxFd, path, open_req.path_length) !=open_req.path_length){
+  SecureMem::lockSystemCall(parentProc, mem);
+  if (read(sys, sandboxFd, pathname, open_req.path_length) !=
+      open_req.path_length) {
     goto read_parm_failed;
   }
-  path[open_req.path_length] = '\000';
 
-  // Open file
   // TODO(markus): Implement sandboxing policy
-  // TODO(markus): Do we care that the trusted process sees slightly different
-  // files than the sandbox'd process? Most notably /proc/self is different.
-  // TODO(markus): A better solution is to send the system call, but to
-  //               store the filename in the secure memory page
-  int new_fd = sys.open(path, open_req.flags, open_req.mode);
-  if (new_fd < 0) {
-    rc = -sys.my_errno;
-    goto reply_with_error;
-  }
 
-  // Send file handle back to trusted thread
-  if (!sendFd(threadFdPub, new_fd, -1, NULL, 0)) {
-    die("Failed to return file handle to sandbox [process]");
-  }
-  NOINTR_SYS(sys.close(new_fd));
+  // Tell trusted thread to open the file.
+  SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_open,
+                            pathname - (char*)mem + (char*)mem->self,
+                            open_req.flags, open_req.mode);
   return true;
 }
 

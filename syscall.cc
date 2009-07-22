@@ -59,10 +59,7 @@ asm(
 
     // Retrieve function call from system call table
     "mov %rax, %r10\n"
-    "shl $3, %r10\n"
-    "mov %r10, %r11\n"
-    "shl $1, %r10\n"
-    "add %r11, %r10\n"
+    "shl $4, %r10\n"
     ".globl syscallTable\n"
     "add syscallTable@GOTPCREL(%rip), %r10\n"
     "mov 0(%r10), %r10\n"
@@ -133,10 +130,7 @@ asm(
     "ja  1f\n"
 
     // Retrieve function call from system call table
-    "shl  $2, %eax\n"
-    "mov  %eax, %ebx\n"
-    "shl  $1, %eax\n"
-    "add  %ebx, %eax\n"
+    "shl  $3, %eax\n"
     "lea  syscallTable, %ebx\n"
     "add  %ebx, %eax\n"
     "mov  0(%eax), %eax\n"
@@ -207,7 +201,7 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
         } __attribute__((packed)) request = {
           syscallNum, { arg0, arg1, arg2, arg3, arg4, arg5 } };
 
-        int   thread = threadFd();
+        int   thread = threadFdPub();
         void* rc;
         if (write(sys, thread, &request, sizeof(request)) != sizeof(request) ||
             read(sys, thread, &rc, sizeof(rc)) != sizeof(rc)) {

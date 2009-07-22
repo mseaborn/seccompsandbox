@@ -29,6 +29,7 @@
 #ifdef __cplusplus
 #include <iostream>
 #include <map>
+#include <vector>
 #include "sandbox.h"
 #include "securemem.h"
 #include "tls.h"
@@ -66,18 +67,22 @@ class Sandbox {
   STATIC int sandbox_stat64(const char *path, void* b) asm("sandbox_stat64");
   #endif
 
-  STATIC void*thread_open(int,long long, int,SecureMemArgs*)asm("thread_open");
-  STATIC void*thread_stat(int,long long, int,SecureMemArgs*)asm("thread_stat");
-
-  STATIC bool process_clone(int,int,int,SecureMemArgs*)asm("process_clone");
-  STATIC bool process_exit(int,int,int,SecureMemArgs*) asm("process_exit");
-  STATIC bool process_ioctl(int,int,int,SecureMemArgs*)asm("process_ioctl");
-  STATIC bool process_mmap(int,int,int,SecureMemArgs*) asm("process_mmap");
-  STATIC bool process_mprotect(int,int,int,
+  STATIC bool process_clone(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_clone");
+  STATIC bool process_exit(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_exit");
+  STATIC bool process_ioctl(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_ioctl");
+  STATIC bool process_mmap(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_mmap");
+  STATIC bool process_mprotect(int, int, int, int,
                                SecureMemArgs*)         asm("process_mprotect");
-  STATIC bool process_munmap(int,int,int,SecureMemArgs*)asm("process_munmap");
-  STATIC bool process_open(int,int,int,SecureMemArgs*) asm("process_open");
-  STATIC bool process_stat(int,int,int,SecureMemArgs*) asm("process_stat");
+  STATIC bool process_munmap(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_munmap");
+  STATIC bool process_open(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_open");
+  STATIC bool process_stat(int, int, int, int, SecureMemArgs*)
+                                                       asm("process_stat");
 
 #ifdef __cplusplus
   class SysCalls {
@@ -211,31 +216,24 @@ class Sandbox {
   } __attribute__((packed));
 
   struct Open {
-    union {
-      const char *path;
-      int        path_length;
-    };
+    int    path_length;
     int    flags;
     mode_t mode;
   } __attribute__((packed));
 
   struct Stat {
-    int          sysnum;
-    union {
-      const char *path;
-      int        path_length;
-    };
-    void         *buf;
+    int   sysnum;
+    int   path_length;
+    void* buf;
   } __attribute__((packed));
 
-  enum { TLS_MEM, TLS_COOKIE, TLS_TID, TLS_THREAD_FD };
+  enum { TLS_COOKIE, TLS_TID, TLS_THREAD_FD };
   typedef std::map<void *, long> ProtectedMap;
 
   static long long cookie() { return TLS::getTLSValue<long long>(TLS_COOKIE); }
   static int tid()          { return TLS::getTLSValue<int>(TLS_TID); }
-  static int threadFd()     { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
-  static int processFd()    { return processFdPub_; }
-// TODO(markus): rename accessors to xxxPub()
+  static int threadFdPub()  { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
+  static int processFdPub() { return processFdPub_; }
 
   static void* defaultSystemCallHandler(int syscallNum, void* arg0,
                                         void* arg1, void* arg2, void* arg3,
@@ -243,16 +241,24 @@ class Sandbox {
                                             asm("defaultSystemCallHandler");
   static void* makeSharedMemory(int* fd);
   static void* getSecureMem();
+  static char* getSecureStringBuffer(int length);
   static void  initializeProtectedMap(int fd);
   static void  snapshotMemoryMappings(int processFd);
-  static void  trustedProcess(int processFdPub, int sandboxFd,
-                              void* secureArena) __attribute__((noreturn));
-  static void* createTrustedProcess(int processFdPub, int sandboxFd);
-  static void  createTrustedThread(int processFd, void* secureMem);
+  static void  trustedProcess(int parentProc, int processFdPub, int sandboxFd,
+                              int cloneFd, void* secureArena)
+                                                     __attribute__((noreturn));
+  static void* createTrustedProcess(int processFdPub, int sandboxFd,
+                                    int cloneFdPub, int cloneFd);
+  static void  createTrustedThread(int processFdPub, int cloneFdPub,
+                                   void* secureMem);
 
-  static int          pid_;
-  static int          processFdPub_ asm("processFdPub");
-  static ProtectedMap protectedMap_; // available in trusted process, only
+  static int   pid_;
+  static int   processFdPub_;
+  static int   cloneFdPub_;
+
+  // Available in trusted process, only
+  static ProtectedMap       protectedMap_;
+  static std::vector<void*> secureMemPool_;
 };
 
 } // namespace

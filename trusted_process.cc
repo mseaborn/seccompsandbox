@@ -9,7 +9,10 @@ namespace playground {
 struct Thread {
   int              fdPub, fd;
   SecureMem::Args* mem;
+  char*            lastVerifiedString;
+  int              lastVerifiedStringLen;
 };
+static struct Thread* currentThread;
 
 void* Sandbox::makeSharedMemory(int* fd) {
   // If /dev/shm does not exist, fall back on /tmp
@@ -53,34 +56,99 @@ void* Sandbox::makeSharedMemory(int* fd) {
 }
 
 void* Sandbox::getSecureMem() {
+  if (!secureMemPool_.empty()) {
+    void* rc = secureMemPool_.back();
+    secureMemPool_.pop_back();
+    return rc;
+  }
   return NULL;
 }
 
-void Sandbox::trustedProcess(int processFdPub, int sandboxFd,
-                             void* secureArena) {
+char* Sandbox::getSecureStringBuffer(int length) {
+  // We have to make sure that in two consecutive calls that we send to the
+  // trusted thread, we don't pass the same address for the verified string
+  // (typically used for filenames). Otherwise, an attacker could manipulate
+  // the global futex and time a request for the trusted process just right
+  // so that it changes the string before the trusted thread had a chance to
+  // retrieve it.
+  if (length < 0) {
+    return NULL;
+  }
+
+  // Allow for trailing zero byte
+  length++;
+  if (currentThread->lastVerifiedString) {
+    memset(currentThread->lastVerifiedString, 0,
+           currentThread->lastVerifiedStringLen);
+  }
+  char *rc                               = NULL;
+  if (!currentThread->lastVerifiedString ||
+      currentThread->lastVerifiedString - currentThread->mem->pathname >=
+      length) {
+    rc                                   = currentThread->mem->pathname;
+  } else {
+    char *nextAvailable                  =
+      currentThread->lastVerifiedString + currentThread->lastVerifiedStringLen;
+    if (currentThread->mem->pathname + sizeof(currentThread->mem->pathname) -
+        length >= nextAvailable) {
+      rc                                 = nextAvailable;
+    }
+  }
+  if (rc) {
+    memset(rc, 0, length);
+    currentThread->lastVerifiedStringLen = length;
+    currentThread->lastVerifiedString    = rc;
+  }
+  return rc;
+}
+
+void Sandbox::trustedProcess(int parentProc, int processFdPub, int sandboxFd,
+                             int cloneFd, void* secureArena) {
   std::map<long long, struct Thread> threads;
   SysCalls  sys;
-  long long cookie       = 0;
+  long long cookie        = 0;
+
+  // The very first entry in the secure memory arena has been assigned to the
+  // initial thread. The remaining entries are available for allocation.
+  void* startAddress      = secureArena;
+  for (int i = 0; i < kMaxThreads-1; i++) {
+    startAddress          = reinterpret_cast<char *>(startAddress) + 8192;
+    secureMemPool_.push_back(startAddress);
+  }
 
 newThreadCreated:
-  Thread *newThread      = &threads[++cookie];
+  Thread *newThread       = &threads[++cookie];
+  memset(newThread, 0, sizeof(Thread));
 
   int shmFd;
-  newThread->mem         = reinterpret_cast<SecureMem::Args*>(
+  SecureMem::Args* newMem = reinterpret_cast<SecureMem::Args*>(
                                                      makeSharedMemory(&shmFd));
-  newThread->mem->cookie = cookie;
-  ssize_t selfLen        = sizeof(newThread->mem->self);
-  if (!getFd(sandboxFd, &newThread->fdPub, &newThread->fd,
-             &newThread->mem->self, &selfLen) ||
-      selfLen != sizeof(newThread->mem->self) ||
-      !sendFd(newThread->fdPub, shmFd, -1, NULL, 0)) {
-    die("Failed to receive new thread information");
+  newThread->mem          = newMem;
+  newMem->cookie          = cookie;
+  struct {
+    SecureMem::Args* self;
+    int              tid;
+    int              fdPub;
+  } __attribute__((packed)) data;
+  ssize_t dataLen         = sizeof(data);
+  if (!getFd(cloneFd, &newThread->fdPub, &newThread->fd, &data, &dataLen) ||
+      dataLen != sizeof(data)) {
+    // We get here either because the sandbox got corrupted, or because our
+    // parent process has terminated.
+    if (newThread->fdPub || dataLen) {
+      die("Failed to receive new thread information");
+    }
+    die();
   }
+  newMem->self            = data.self;
+  newMem->threadId        = data.tid;
+  newMem->threadFdPub     = data.fdPub;
+  sendFd(newThread->fdPub, shmFd, -1, NULL, 0);
   NOINTR_SYS(sys.close(shmFd));
 
   // TODO(markus): remove
   /***/printf("Adding new thread %lld, shm=%p, fdPub=%d, fd=%d\n",
-  /***/       cookie, newThread->mem, newThread->fdPub, newThread->fd);
+  /***/       cookie, newThread->mem->self, newThread->fdPub, newThread->fd);
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
   for (;;) {
@@ -100,14 +168,16 @@ newThreadCreated:
     if (iter == threads.end()) {
       die("Received request from unknown thread");
     }
+    currentThread         = &iter->second;
     if (header.sysnum > maxSyscall ||
         !syscallTable[header.sysnum].trustedProcess) {
       die("Trusted process encountered unexpected system call");
     }
-    if (syscallTable[header.sysnum].trustedProcess(sandboxFd,
-                                                   iter->second.fdPub,
-                                                   iter->second.fd,
-                                                   iter->second.mem) &&
+    if (syscallTable[header.sysnum].trustedProcess(parentProc,
+                                                   sandboxFd,
+                                                   currentThread->fdPub,
+                                                   currentThread->fd,
+                                                   currentThread->mem) &&
         header.sysnum == __NR_clone) {
       goto newThreadCreated;
     } else if (header.sysnum == __NR_exit) {
@@ -175,35 +245,39 @@ void Sandbox::initializeProtectedMap(int fd) {
   }
 }
 
-void* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd) {
-  // Create a trusted process that can evaluate system call parameters and
-  // decide whether a system call should execute. This process runs outside of
-  // the seccomp sandbox. It communicates with the sandbox'd process through
-  // a socketpair() and through securely shared memory.
-  SysCalls sys;
-
+void* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
+                                    int cloneFdPub, int cloneFd) {
   // Allocate memory that will be used for storing the secure memory. While
   // we allow this memory area to be empty at times (e.g. when not all threads
   // are in use), we make sure that it never gets any user-allocated memory.
   char *secureArena = reinterpret_cast<char *>(
-      sys.MMAP(reinterpret_cast<void *>(4096), 8192*kMaxThreads, PROT_NONE,
-               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
+      mmap(reinterpret_cast<void *>(4096), 8192*kMaxThreads, PROT_NONE,
+           MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
   if (secureArena == MAP_FAILED) {
     die("Failed to allocate secure memory arena");
   }
 
-  pid_t pid       = fork();
+  int parentProc    = open("/proc/self/", O_RDONLY|O_DIRECTORY);
+  if (parentProc < 0) {
+    die("Failed to access /proc/self");
+  }
+
+  // Create a trusted process that can evaluate system call parameters and
+  // decide whether a system call should execute. This process runs outside of
+  // the seccomp sandbox. It communicates with the sandbox'd process through
+  // a socketpair() and through securely shared memory.
+  pid_t pid         = fork();
   if (pid < 0) {
     die("Failed to create trusted process");
   }
   if (!pid) {
     // Close all file handles except for sandboxFd, cloneFd, and stdio
-    DIR *dir      = opendir("/proc/self/fd");
+    DIR *dir        = opendir("/proc/self/fd");
     if (dir == 0) {
       // If we don't know the list of our open file handles, just try closing
       // all valid ones.
       for (int fd = sysconf(_SC_OPEN_MAX); --fd > 2; ) {
-        if (fd != sandboxFd) {
+        if (fd != parentProc && fd != sandboxFd && fd != cloneFd) {
           close(fd);
         }
       }
@@ -214,8 +288,10 @@ void* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd) {
       while (!readdir_r(dir, &de, &res) && res) {
         if (res->d_name[0] < '0')
           continue;
-        int fd  = atoi(res->d_name);
-        if (fd > 2 && fd != sandboxFd && fd != dirfd(dir)) {
+        int fd      = atoi(res->d_name);
+        if (fd > 2 &&
+            fd != parentProc && fd != sandboxFd && fd != cloneFd &&
+            fd != dirfd(dir)) {
           close(fd);
         }
       }
@@ -223,9 +299,10 @@ void* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd) {
     }
 
     initializeProtectedMap(sandboxFd);
-    trustedProcess(processFdPub, sandboxFd, secureArena);
+    trustedProcess(parentProc, processFdPub, sandboxFd, cloneFd, secureArena);
     die();
   }
+  close(parentProc);
   close(sandboxFd);
   return secureArena;
 }

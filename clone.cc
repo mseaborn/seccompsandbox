@@ -33,15 +33,16 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   #endif
 
   long rc;
-  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFdPub(), &request, sizeof(request)) !=
+      sizeof(request) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward clone() request [sandbox]");
   }
   return static_cast<int>(rc);
 }
 
-bool Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
-                            SecureMem::Args* mem) {
+bool Sandbox::process_clone(int parentProc, int sandboxFd, int threadFdPub,
+                            int threadFd, SecureMem::Args* mem) {
   // Read request
   Clone clone_req;
   SysCalls sys;
@@ -64,7 +65,7 @@ bool Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
       // clone() has unusual semantics. We don't want to return back into the
       // trusted thread, but instead we need to continue execution at the IP
       // where we got called initially.
-      SecureMem::lockSystemCall(mem);
+      SecureMem::lockSystemCall(parentProc, mem);
       #if defined(__x86_64__)
       mem->ret          = clone_req.regs64.ret;
       mem->rbp          = clone_req.regs64.rbp;
@@ -87,7 +88,8 @@ bool Sandbox::process_clone(int sandboxFd, int threadFdPub, int threadFd,
       #error Unsupported target platform
       #endif
       mem->newSecureMem = newMem;
-      mem->processFd    = processFdPub_;
+      mem->processFdPub = processFdPub_;
+      mem->cloneFdPub   = cloneFdPub_;
       SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_clone,
                                 clone_req.flags, clone_req.stack,
                                 clone_req.pid, clone_req.ctid, clone_req.tls);

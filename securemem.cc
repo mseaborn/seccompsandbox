@@ -13,8 +13,20 @@ void SecureMem::abandonSystemCall(int fd, int err) {
   }
 }
 
-void SecureMem::lockSystemCall(Args* mem) {
-  Mutex::lockMutex(Sandbox::syscall_mutex_);
+void SecureMem::lockSystemCall(int parentProc, Args* mem) {
+  while (!Mutex::lockMutex(Sandbox::syscall_mutex_, 500)) {
+    // This mutex should not be contended. If it is, we are either experiencing
+    // a very unusual load of system calls that the sandbox is not optimized
+    // for; or, more likely, the sandboxed process terminated while the
+    // trusted process was in the middle of waiting for the mutex. We detect
+    // this situation and terminate the trusted process.
+    char proc[80];
+    sprintf(proc, "/proc/self/fd/%d/status", parentProc);
+    struct stat sb;
+    if (stat(proc, &sb)) {
+      Sandbox::die();
+    }
+  }
   asm volatile(
     #if defined(__x86_64__)
       "lock; incq (%0)\n"

@@ -4,6 +4,9 @@
 #include <linux/futex.h>
 #include "linux_syscall_support.h"
 
+#define NOINTR_SYS(x)                                                         \
+ ({ int i__; while ((i__ = (x)) < 0 && sys.my_errno == EINTR); i__;})
+
 namespace playground {
 
 class Mutex {
@@ -50,7 +53,8 @@ class Mutex {
     sys.futex(mutex, FUTEX_WAKE, 1, NULL);
   }
 
-  static void lockMutex(mutex_t* mutex) {
+  static bool lockMutex(mutex_t* mutex, int timeout = 0) {
+    bool rc        = true;
     // Increment mutex to add ourselves to the list of waiters
     #if defined(__x86_64__) || defined(__i386__)
     asm volatile(
@@ -73,6 +77,7 @@ class Mutex {
         #error Unsupported target platform
       #endif
       if (!status) {
+     done:
         // If the mutex was available, remove ourselves from list of waiters
         #if defined(__x86_64__) || defined(__i386__)
         asm volatile(
@@ -82,15 +87,27 @@ class Mutex {
         #else
           #error Unsupported target platform
         #endif
-        return;
+        return rc;
       }
-      int value = *mutex;
+      int value    = *mutex;
       if (value >= 0) {
         // Mutex has just become available, no need to call kernel
         continue;
       }
       SysCalls sys;
-      sys.futex(mutex, FUTEX_WAIT, value, NULL);
+      SysCalls::kernel_timespec tm;
+      if (timeout) {
+        tm.tv_sec  = timeout / 1000;
+        tm.tv_nsec = (timeout % 1000) * 1000 * 1000;
+      } else {
+        tm.tv_sec  = 0;
+        tm.tv_nsec = 0;
+      }
+      if (NOINTR_SYS(sys.futex(mutex, FUTEX_WAIT, value, &tm)) &&
+          sys.my_errno == ETIMEDOUT) {
+        rc         = false;
+        goto done;
+      }
     }
   }
 };

@@ -10,53 +10,62 @@ class SecureMem {
   typedef struct Args {
     union {
       struct {
-        struct Args* self;
-        long  sequence;
-        long  syscallNum;
-        void* arg1;
-        void* arg2;
-        void* arg3;
-        void* arg4;
-        void* arg5;
-        void* arg6;
-        void* ret;
-        void* rbp;
-        void* rbx;
-        void* rcx;
-        void* rdx;
-        void* rsi;
-        void* rdi;
-        void* r8;
-        void* r9;
-        void* r10;
-        void* r11;
-        void* r12;
-        void* r13;
-        void* r14;
-        void* r15;
-        void* newSecureMem;
-        long  processFd;
-        long long cookie;
+        union {
+          struct {
+            struct Args* self;
+            long  sequence;
+            long  syscallNum;
+            void* arg1;
+            void* arg2;
+            void* arg3;
+            void* arg4;
+            void* arg5;
+            void* arg6;
+            void* ret;
+            void* rbp;
+            void* rbx;
+            void* rcx;
+            void* rdx;
+            void* rsi;
+            void* rdi;
+            void* r8;
+            void* r9;
+            void* r10;
+            void* r11;
+            void* r12;
+            void* r13;
+            void* r14;
+            void* r15;
+            void* newSecureMem;
+            int   processFdPub;
+            int   cloneFdPub;
+            long long cookie;
+            long  threadId;
+            long  threadFdPub;
+          } __attribute__((packed));
+          char    header[512];
+        };
+        char      pathname[4096 - 512];
       } __attribute__((packed));
-      char securePage[4096];
+      char        securePage[4096];
     };
     union {
       struct {
-        long  tmpSyscallNum;
-        void* tmpArg1;
-        void* tmpArg2;
-        void* tmpArg3;
-        void* tmpArg4;
-        void* tmpArg5;
-        void* tmpArg6;
-        void* tmpReturnValue;
+        long      tmpSyscallNum;
+        void*     tmpArg1;
+        void*     tmpArg2;
+        void*     tmpArg3;
+        void*     tmpArg4;
+        void*     tmpArg5;
+        void*     tmpArg6;
+        void*     tmpReturnValue;
       } __attribute__((packed));
-      char scratchPage[4096];
+      char        scratchPage[4096];
     };
   } __attribute__((packed)) Args;
 
   static void abandonSystemCall(int fd, int err);
-  static void lockSystemCall(Args* mem);
+  static void lockSystemCall(int parentProc, Args* mem);
   static void sendSystemCall(int fd, bool locked, Args* mem,
                              int syscallNum) {
     sendSystemCallInternal(fd, locked, mem, syscallNum);

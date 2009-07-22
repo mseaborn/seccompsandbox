@@ -16,15 +16,16 @@ int Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   request.ioctl_req.arg = arg;
 
   long rc;
-  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFdPub(), &request, sizeof(request)) !=
+      sizeof(request) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward ioctl() request [sandbox]");
   }
   return static_cast<int>(rc);
 }
 
-bool Sandbox::process_ioctl(int sandboxFd, int threadFdPub, int threadFd,
-                            SecureMem::Args* mem) {
+bool Sandbox::process_ioctl(int parentProc, int sandboxFd, int threadFdPub,
+                            int threadFd, SecureMem::Args* mem) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;

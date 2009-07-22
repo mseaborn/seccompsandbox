@@ -16,10 +16,8 @@ namespace playground {
 
   struct SyscallTable {
     void   *handler;
-    void* (*trustedThread)(int processFd, long long cookie, int threadFd,
-                           SecureMemArgs* mem);
-    bool  (*trustedProcess)(int sandboxFd, int threadFdPub, int threadFd,
-                            SecureMemArgs* mem);
+    bool  (*trustedProcess)(int parentProc, int sandboxFd, int threadFdPub,
+                            int threadFd, SecureMemArgs* mem);
   };
   extern const struct SyscallTable syscallTable[];
   extern const unsigned maxSyscall;

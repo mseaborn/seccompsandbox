@@ -3,11 +3,13 @@
 
 namespace playground {
 
-void Sandbox::createTrustedThread(int processFd, void* secureMem) {
-  SecureMem::Args args                  = { { { 0 } } };
+void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
+                                  void* secureMem) {
+  SecureMem::Args args                  = { { { { { 0 } } } } };
   args.self                             = &args;
   args.newSecureMem                     = secureMem;
-  args.processFd                        = processFd;
+  args.processFdPub                     = processFdPub;
+  args.cloneFdPub                       = cloneFdPub;
   *syscall_mutex_                       = 0x80000000;
   asm volatile(
 #if __WORDSIZE == 64
@@ -60,8 +62,12 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       //   0xB0: stored %r14 value for clone() system call
       //   0xB8: stored %r15 value for clone() system call
       //   0xC0: new shared memory for clone()
-      //   0xC8: processFd for talking to trusted process
-      //   0xD0: unique cookie assigned to us by the trusted process
+      //   0xC8: processFdPub for talking to trusted process
+      //   0xCC: cloneFdPub for talking to trusted process
+      //   0xD0: cookie assigned to us by the trusted process (TLS_COOKIE)
+      //   0xD8: thread id (TLS_TID)
+      //   0xE0: threadFdPub (TLS_THREAD_FD)
+      //   0x200-0x1000: securely passed verified file name(s)
 
       // Layout of (untrusted) scratch space:
       //   0x00: syscall number; passed in %rax
@@ -130,17 +136,19 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       "mov  %%fs:0x28, %%rdx\n"
       "mov  %%fs:0x30, %%r10\n"
       "mov  %%fs:0x38, %%r8\n"
+      "mov  %%fs:0x40, %%r9\n"
+      "cmp  %%rbx, %%fs:0x8\n"
+      "jne  23f\n"                 // exit process
 
       // clone() has unusual calling conventions and must be handled specially
       "cmp  $56, %%rax\n"          // NR_clone
       "jz   15f\n"
 
-      "mov  %%fs:0x40, %%r9\n"
-      "cmp  %%rbx, %%fs:0x8\n"
+      "syscall\n"
+    "7:cmp  %%rbx, %%fs:0x8\n"
       "jne  23f\n"                 // exit process
       "add  $2, %%rbx\n"
-      "syscall\n"
-    "7:mov  %%rax, %%r8\n"
+      "mov  %%rax, %%r8\n"
       ".globl syscall_mutex\n"
       "mov  syscall_mutex@GOTPCREL(%%rip), %%r9\n"
       "mov  (%%r9), %%r9\n"
@@ -154,32 +162,16 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
     "8:mov  %%r8, %%rax\n"
       "jmp  12f\n"
 
-      // Look up handler function in syscallTable
+      // Check in syscallTable whether this system call is unrestricted
     "9:mov  %%rax, %%r9\n"
       "mov  maxSyscall@GOTPCREL(%%rip), %%r11\n"
       "cmp  0(%%r11), %%eax\n"
       "ja   23f\n"                 // exit process
-      "shl  $3, %%rax\n"
-      "mov  %%rax, %%r11\n"
-      "shl  $1, %%rax\n"
-      "add  %%r11, %%rax\n"
+      "shl  $4, %%rax\n"
       "add  syscallTable@GOTPCREL(%%rip), %%rax\n"
-      "mov  8(%%rax), %%rax\n"
+      "mov  0(%%rax), %%rax\n"
       "cmp  $1, %%rax\n"
-      "jz   10f\n"
-
-      // temporarily set up a stack and pass appropriate parameters, so that this can be tested with C code
-      "mov  %%fs:0x0, %%rcx\n"  // mem       // TODO(markus): remove
-      "lea  0x2000(%%rcx), %%rsp\n"          // TODO(markus): remove
-      "mov  %%r15, %%rdi\n"     // processFd // TODO(markus): remove
-      "mov  %%fs:0xD0, %%rsi\n" // cookie    // TODO(markus): remove
-      "mov  %%r13, %%rdx\n"     // threadFd  // TODO(markus): remove
-      "call *%%rax\n"                        // TODO(markus): remove
-      "xor  %%rsp, %%rsp\n"                  // TODO(markus): remove
-      "jmp  12f\n"                           // TODO(markus): remove
-
-      // Call handler function for this system call
-      "jmp  *%%rax\n"
+      "jne  23f\n"
 
       // Default behavior for unrestricted system calls is to just execute
       // them. Read the remaining arguments first.
@@ -237,10 +229,7 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       // terminates the program. But if we ever support signal handling,
       // we have to be careful that the user cannot install a SIGSEGV
       // handler that gets executed with elevated privileges.
-   "15:cmp  %%rbx, %%fs:0x8\n"
-      "jne  23f\n"              // exit process
-      "add  $2, %%rbx\n"
-      "mov  %%fs:0x0, %%rbp\n"  // %rbp = old_shared_mem
+   "15:mov  %%fs:0x0, %%rbp\n"  // %rbp = old_shared_mem
       "syscall\n"               // calls NR_clone
       "cmp  $-4095, %%rax\n"
       "jae  7b\n"
@@ -255,6 +244,7 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       // memory region early. But we verify the sequence number after each
       // read from that region, and terminate the program in case of a
       // mismatch.
+      "add  $2, %%rbx\n"
       "mov  syscall_mutex@GOTPCREL(%%rip), %%r9\n"
       "mov  (%%r9), %%r9\n"
       "lock; incl (%%r9)\n"
@@ -272,18 +262,24 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       "xor  %%r10, %%r10\n"     // timeout = NULL
       "mov  $202, %%rax\n"      // NR_futex
       "syscall\n"
+      "cmp  $-4, %%rax\n"       // EINTR
+      "jz   17b\n"
       "jmp  16b\n"
 
       // In nascent thread, now.
-   "18:sub  $2, %%rbx\n"        // Undo changes to %rbx made in parent
-      "xor  %%r15, %%r15\n"     // Request to return from clone() when done
+   "18:xor  %%r15, %%r15\n"     // Request to return from clone() when done
+
+      // Get thread id of nascent thread
+   "19:mov  $186, %%eax\n"      // NR_gettid
+      "syscall\n"
+      "mov  %%rax, %%r14\n"
 
       // Nascent thread creates socketpair() for sending requests to
       // trusted thread.
       // We can create the filehandles on the stack. Filehandles are
       // always treated as untrusted.
       // socketpair(AF_UNIX, SOCK_STREAM, 0, fds)
-   "19:push %%r15\n"
+      "push %%r15\n"
       "mov  $53, %%eax\n"       // NR_socketpair
       "mov  $1, %%edi\n"        // domain = AF_UNIX
       "mov  $1, %%esi\n"        // type = SOCK_STREAM
@@ -349,21 +345,22 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       // Use sendmsg() to send to the trusted process the file handles for
       // communicating with the new trusted thread. We also send the address
       // of the secure memory area so that it can be stored in the "self"
-      // entry.
-      ".globl processFdPub\n"
-      "mov  processFdPub@GOTPCREL(%%rip), %%rdi\n"
-      "mov  (%%rdi), %%edi\n"   // transport = Sandbox::processFdPub()
+      // entry, and the thread id.
+      "mov  0xCC(%%rbp), %%edi\n"//transport = Sandbox::cloneFdPub()
+      "cmp  %%rbx, 8(%%rbp)\n"
+      "jne  23b\n"              // exit process
       "mov  0(%%rsp), %%esi\n"  // fd0       = threadFdPub
       "mov  4(%%rsp), %%rdx\n"  // fd1       = threadFd
-      "push %%r12\n"
-      "mov  %%rsp, %%rcx\n"     // buf       = &secure_mem
-      "mov  $8, %%r8\n"         // len       = sizeof(void *)
+      "push %%r14\n"            // threadId
+      "mov  %%esi, 4(%%rsp)\n"  // threadFdPub
+      "push %%r12\n"            // secure_mem
+      "mov  %%rsp, %%rcx\n"     // buf       = &data
+      "mov  $16, %%r8\n"        // len       = sizeof(void *) + 2*sizeof(int)
       ".globl sendFd\n"
       "call sendFd\n"
 
       // Receive file handle for secure shared memory segment
-      "mov  processFdPub@GOTPCREL(%%rip), %%rdi\n"
-      "mov  12(%%rsp), %%edi\n" // transport = threadFd
+      "mov  20(%%rsp), %%edi\n" // transport = threadFd
       "mov  %%rsp, %%rsi\n"     // fd0       = %rsp
       "xor  %%rdx, %%rdx\n"     // fd1       = NULL
       "mov  %%rdx, %%rcx\n"     // buf       = NULL
@@ -377,7 +374,7 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       // fail.
       "mov  $33, %%eax\n"       // NR_dup2
       "mov  0(%%rsp), %%edi\n"  // old = shmFd
-      "mov  8(%%rsp), %%esi\n"  // new = *%rsp+8
+      "mov  16(%%rsp), %%esi\n"  // new = *%rsp+16
       "syscall\n"
       "jmp  24b\n"              // exit process (no error message)
 
@@ -420,11 +417,6 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       "mov  $3, %%rdx\n"          // prot = PROT_READ | PROT_WRITE
       "syscall\n"
 
-      // Get thread id of nascent thread
-      "mov  $186, %%eax\n"        // NR_gettid
-      "syscall\n"
-      "mov  %%rax, %%r14\n"
-
       // Call clone() to create new trusted thread().
       // clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|
       //       CLONE_SYSVSEM|CLONE_UNTRACED|CLONE_SETTLS, stack, NULL, NULL,
@@ -436,7 +428,7 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
       "xor  %%rdx, %%rdx\n"     // pid   = NULL
       "xor  %%r10, %%r10\n"     // ctid  = NULL
       "mov  %%r12, %%r8\n"      // tls   = new_secure_mem
-      "mov  0xC8(%%rbp), %%r15\n"//%r15  = processFdPub
+      "mov  0xC8(%%rbp), %%r15d\n"//%r15  = processFdPub
       "cmp  %%rbx, 8(%%rbp)\n"
       "jne  23b\n"              // exit process
       "syscall\n"
@@ -450,29 +442,12 @@ void Sandbox::createTrustedThread(int processFd, void* secureMem) {
 
       // Set up thread local storage with information on how to talk to
       // trusted thread and trusted process.
-      // This system call can potentially be corrupted by untrusted threads,
-      // but that's OK.
-      "mov  $9, %%eax\n"        // NR_mmap
-      "xor  %%rdi, %%rdi\n"     // start  = NULL
-      "mov  $4096, %%esi\n"     // length = 4096
-      "mov  $3, %%edx\n"        // prot   = PROT_READ | PROT_WRITE
-      "mov  $0x22, %%r10\n"     // flags  = PRIVATE|ANONYMOUS
-      "mov  $-1, %%r8\n"        // fd     = -1
-      "xor  %%r9, %%r9\n"       // offset = 0
-      "syscall\n"
-      "cmp  $-1, %%rax\n"       // MAP_FAILED
-      "jz   20b\n"              // exit thread, unlock global mutex
-      "mov  %%rax, %%rsi\n"     // args   = mmap()
-      "mov  $158, %%eax\n"      // NR_arch_prctl
-      "mov  $0x1001, %%edi\n"   // option = ARCH_SET_GS
+      "lea  0xD0(%%r12), %%rsi\n" // args   = &secure_mem->cookie;
+      "mov  $158, %%eax\n"        // NR_arch_prctl
+      "mov  $0x1001, %%edi\n"     // option = ARCH_SET_GS
       "syscall\n"
       "cmp  $-4095, %%rax\n"
       "jae  20b\n"              // exit thread, unlock global mutex
-      "mov  %%rsi, %%gs:0\n"    // setTLSValue(TLS_MEM, mmap())
-      "mov  0xD0(%%r12), %%rax\n"
-      "mov  %%rax, %%gs:8\n"    // setTLSValue(TLS_COOKIE, cookie)
-      "mov  %%r14, %%gs:16\n"   // setTLSValue(TLS_TID, tid)
-      "mov  %%r13, %%gs:24\n"   // setTLSValue(TLS_THREAD_FD, threadFd)
 
       // Check whether this is the initial thread, or a newly created one
       "pop  %%r15\n"

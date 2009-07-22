@@ -3,21 +3,11 @@
   It will only release a slot once the client tells is so from its exit
   function. We have to make sure that this information cannot be spoofed.
 
-- fix mmap() so that it cannot return addresses at the bottom of memory
+- check cookies. invalidate cookies when thread exits
 
 - do we really need to go through the PLT and the GOT?
 
 - avoid using wait4()/SIGCHLD, as it generates unneeded signals
-
-- add error handling, if there is a file name collision during thread
-  creation
-
-- add support for pid wrap-around
-
-- convert thread_XXX() functions to assembly and make them part of
-  trusted_thread.cc; cleanup syscall_table.c
-
-- simplifly open() and ioctl()
 
 - add 32 bit assembly
 

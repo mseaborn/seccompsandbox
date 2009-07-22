@@ -21,15 +21,16 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   request.mmap_req.offset = offset;
 
   void* rc;
-  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFdPub(), &request, sizeof(request)) !=
+      sizeof(request) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward mmap() request [sandbox]");
   }
   return rc;
 }
 
-bool Sandbox::process_mmap(int sandboxFd, int threadFdPub, int threadFd,
-                           SecureMem::Args* mem) {
+bool Sandbox::process_mmap(int parentProc, int sandboxFd, int threadFdPub,
+                           int threadFd, SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   MMap mmap_req;

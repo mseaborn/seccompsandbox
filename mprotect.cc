@@ -16,15 +16,16 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   request.mprotect_req.prot = prot;
 
   long rc;
-  if (write(sys, processFd(), &request, sizeof(request)) != sizeof(request) ||
-      read(sys, threadFd(), &rc, sizeof(rc)) != sizeof(rc)) {
+  if (write(sys, processFdPub(), &request, sizeof(request)) !=
+      sizeof(request) ||
+      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward mprotect() request [sandbox]");
   }
   return static_cast<int>(rc);
 }
 
-bool Sandbox::process_mprotect(int sandboxFd, int threadFdPub, int threadFd,
-                               SecureMem::Args* mem) {
+bool Sandbox::process_mprotect(int parentProc, int sandboxFd, int threadFdPub,
+                               int threadFd, SecureMem::Args* mem) {
   // Read request
   SysCalls sys;
   MProtect mprotect_req;
