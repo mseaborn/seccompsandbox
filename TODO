@@ -1,20 +1,7 @@
-- have the server manage the location of the secure memory. It must allocate
-  a free slot in process_clone() before it forwards the request to the client.
-  It will only release a slot once the client tells is so from its exit
-  function. We have to make sure that this information cannot be spoofed.
+- add 32 bit assembly.
 
-- check cookies. invalidate cookies when thread exits
-
-- do we really need to go through the PLT and the GOT?
-
-- avoid using wait4()/SIGCHLD, as it generates unneeded signals
-
-- add 32 bit assembly
-
-- get rid of __WORDSIZE, and use machine test macros instead
-
-- rename all asm() labels to be more unique
-
-- get rid of preloader and of ELF helper process
+- get rid of preloader and of ELF helper process.
 
 - clean up sandbox_impl.h, maybe create extra helper classes?
+
+- address (or remove) remaining "TODO(markus):" statements.

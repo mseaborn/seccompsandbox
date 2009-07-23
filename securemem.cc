@@ -1,4 +1,3 @@
-#include "mutex.h"
 #include "sandbox_impl.h"
 #include "securemem.h"
 
@@ -13,46 +12,50 @@ void SecureMem::abandonSystemCall(int fd, int err) {
   }
 }
 
+void SecureMem::dieIfParentDied(int parentProc) {
+  // The syscall_mutex_ should not be contended. If it is, we are either
+  // experiencing a very unusual load of system calls that the sandbox is not
+  // optimized for; or, more likely, the sandboxed process terminated while the
+  // trusted process was in the middle of waiting for the mutex. We detect
+  // this situation and terminate the trusted process.
+  char proc[80];
+  sprintf(proc, "/proc/self/fd/%d/status", parentProc);
+  struct stat sb;
+  if (stat(proc, &sb)) {
+      Sandbox::die();
+  }
+}
+
 void SecureMem::lockSystemCall(int parentProc, Args* mem) {
   while (!Mutex::lockMutex(Sandbox::syscall_mutex_, 500)) {
-    // This mutex should not be contended. If it is, we are either experiencing
-    // a very unusual load of system calls that the sandbox is not optimized
-    // for; or, more likely, the sandboxed process terminated while the
-    // trusted process was in the middle of waiting for the mutex. We detect
-    // this situation and terminate the trusted process.
-    char proc[80];
-    sprintf(proc, "/proc/self/fd/%d/status", parentProc);
-    struct stat sb;
-    if (stat(proc, &sb)) {
-      Sandbox::die();
-    }
+    dieIfParentDied(parentProc);
   }
   asm volatile(
-    #if defined(__x86_64__)
+  #if defined(__x86_64__)
       "lock; incq (%0)\n"
-    #elif defined(__i386__)
+  #elif defined(__i386__)
       "lock; incl (%0)\n"
-    #else
-      #error Unsupported target platform
-    #endif
+  #else
+  #error Unsupported target platform
+  #endif
       :
       : "q"(&mem->sequence)
       : "memory");
 }
 
-void SecureMem::sendSystemCallInternal(int fd, bool locked, Args* mem,
-                                       int syscallNum, void* arg1, void* arg2,
-                                       void* arg3, void* arg4, void* arg5,
-                                       void* arg6) {
+void SecureMem::sendSystemCallInternal(int fd, bool locked, int parentProc,
+                                       Args* mem, int syscallNum, void* arg1,
+                                       void* arg2, void* arg3, void* arg4,
+                                       void* arg5, void* arg6) {
   if (!locked) {
     asm volatile(
-      #if defined(__x86_64__)
+    #if defined(__x86_64__)
         "lock; incq (%0)\n"
-      #elif defined(__i386__)
+    #elif defined(__i386__)
         "lock; incl (%0)\n"
-      #else
-        #error Unsupported target platform
-      #endif
+    #else
+    #error Unsupported target platform
+    #endif
         :
         : "q"(&mem->sequence)
         : "memory");
@@ -65,13 +68,13 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, Args* mem,
   mem->arg5       = arg5;
   mem->arg6       = arg6;
   asm volatile(
-    #if defined(__x86_64__)
+  #if defined(__x86_64__)
       "lock; incq (%0)\n"
-    #elif defined(__i386__)
+  #elif defined(__i386__)
       "lock; incl (%0)\n"
-    #else
-      #error Unsupported target platform
-    #endif
+  #else
+  #error Unsupported target platform
+  #endif
       :
       : "q"(&mem->sequence)
       : "memory");
@@ -79,6 +82,11 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, Args* mem,
   Sandbox::SysCalls sys;
   if (Sandbox::write(sys, fd, &data, sizeof(data)) != sizeof(data)) {
     Sandbox::die("Failed to send system call");
+  }
+  if (parentProc >= 0) {
+    while (!Mutex::waitForUnlock(Sandbox::syscall_mutex_, 500)) {
+      dieIfParentDied(parentProc);
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 
 namespace playground {
 
+#if defined(__x86_64__) || defined(__i386__)
 unsigned short next_inst(const char **ip, bool is64bit, bool *has_prefix,
                          char **rex_ptr, char **mod_rm_ptr, char **sib_ptr,
                          bool *is_group) {
@@ -300,5 +301,6 @@ no_more_prefixes:
   *ip = reinterpret_cast<const char *>(insn_ptr);
   return insn;
 }
+#endif
 
 } // namespace

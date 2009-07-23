@@ -36,7 +36,7 @@ bool Sandbox::process_ioctl(int parentProc, int sandboxFd, int threadFdPub,
   switch (ioctl_req.req) {
     case TCGETS:
     case TIOCGWINSZ:
-      SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_ioctl,
+      SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_ioctl,
                                 ioctl_req.d, ioctl_req.req, ioctl_req.arg);
       return true;
     default:

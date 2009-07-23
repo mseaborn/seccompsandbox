@@ -47,7 +47,7 @@ bool Sandbox::process_mmap(int parentProc, int sandboxFd, int threadFdPub,
     // TODO(markus): Even without MAP_FIXED, we have to ensure that we never
     // return addresses that are in our "protected" area at the bottom of
     // memory.
-    SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_MMAP,
+    SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_MMAP,
                               mmap_req.start, mmap_req.length, mmap_req.prot,
                               mmap_req.flags, mmap_req.fd, mmap_req.offset);
     return true;

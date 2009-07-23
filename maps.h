@@ -4,10 +4,12 @@
 #include <elf.h>
 #include <vector>
 
-#if __WORDSIZE == 64
+#if defined(__x86_64__)
 typedef Elf64_Addr Elf_Addr;
-#else
+#elif defined(__i386__)
 typedef Elf32_Addr Elf_Addr;
+#else
+#error Undefined target platform
 #endif
 
 namespace playground {

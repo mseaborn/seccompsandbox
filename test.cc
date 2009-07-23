@@ -9,8 +9,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#define THREADS 10
-#define ITER    10000
+#define THREADS 100
+#define ITER    100
 
 static void *empty(void *arg) {
   return mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);

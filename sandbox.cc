@@ -8,12 +8,12 @@
 namespace playground {
 
 // Global variables
-int                   Sandbox::pid_;
-Sandbox::mutex_t*     Sandbox::syscall_mutex_;
-int                   Sandbox::processFdPub_;
-int                   Sandbox::cloneFdPub_;
-Sandbox::ProtectedMap Sandbox::protectedMap_;
-std::vector<void*>    Sandbox::secureMemPool_;
+int                           Sandbox::pid_;
+Mutex::mutex_t*               Sandbox::syscall_mutex_;
+int                           Sandbox::processFdPub_;
+int                           Sandbox::cloneFdPub_;
+Sandbox::ProtectedMap         Sandbox::protectedMap_;
+std::vector<SecureMem::Args*> Sandbox::secureMemPool_;
 
 
 bool Sandbox::sendFd(int transport, int fd0, int fd1, void* buf, ssize_t len) {
@@ -110,14 +110,11 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, ssize_t*len){
 
 void Sandbox::snapshotMemoryMappings(int processFd) {
   SysCalls sys;
-  int shmFd;
-  syscall_mutex_ = reinterpret_cast<mutex_t*>(makeSharedMemory(&shmFd));
   int mapsFd = sys.open("/proc/self/maps", O_RDONLY, 0);
-  if (mapsFd < 0 || !sendFd(processFd, mapsFd, shmFd, NULL, NULL)) {
+  if (mapsFd < 0 || !sendFd(processFd, mapsFd, -1, NULL, NULL)) {
  failure:
     die("Cannot access /proc/self/maps");
   }
-  NOINTR_SYS(sys.close(shmFd));
   NOINTR_SYS(sys.close(mapsFd));
   int dummy;
   if (read(sys, processFd, &dummy, sizeof(dummy)) != sizeof(dummy)) {
@@ -130,7 +127,7 @@ void Sandbox::startSandbox() {
 
   // The pid is unchanged for the entire program, so we can retrieve it once
   // and store it in a global variable.
-  pid_            = sys.getpid();
+  pid_                           = sys.getpid();
 
   // Get socketpairs for talking to the trusted process
   int pair[4];
@@ -138,9 +135,10 @@ void Sandbox::startSandbox() {
       socketpair(AF_UNIX, SOCK_STREAM, 0, pair+2)) {
     die("Failed to create trusted thread");
   }
-  processFdPub_   = pair[0];
-  cloneFdPub_     = pair[2];
-  void* secureMem = createTrustedProcess(pair[0], pair[1], pair[2], pair[3]);
+  processFdPub_                  = pair[0];
+  cloneFdPub_                    = pair[2];
+  SecureMemArgs::Args* secureMem = createTrustedProcess(pair[0], pair[1],
+                                                        pair[2], pair[3]);
 
   // We find all libraries that have system calls and redirect the system
   // calls to the sandbox. If we miss any system calls, the application will be

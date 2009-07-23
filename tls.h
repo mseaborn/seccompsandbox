@@ -25,31 +25,33 @@ class TLS {
  public:
   static void *allocateTLS() {
     SysCalls sys;
-    #if __WORDSIZE == 64
-      void *addr = sys.mmap(0, 4096, PROT_READ|PROT_WRITE,
-                            MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-      if (sys.arch_prctl(ARCH_SET_GS, addr) < 0) {
-        return NULL;
-      }
+    #if defined(__x86_64__)
+    void *addr = sys.mmap(0, 4096, PROT_READ|PROT_WRITE,
+                          MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    if (sys.arch_prctl(ARCH_SET_GS, addr) < 0) {
+      return NULL;
+    }
+    #elif defined(__i386__)
+    void *addr = sys.mmap2(0, 4096, PROT_READ|PROT_WRITE,
+                           MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    struct user_desc u;
+    u.entry_number    = (typeof u.entry_number)-1;
+    u.base_addr       = (int)addr;
+    u.limit           = 0xfffff;
+    u.seg_32bit       = 1;
+    u.contents        = 0;
+    u.read_exec_only  = 0;
+    u.limit_in_pages  = 1;
+    u.seg_not_present = 0;
+    u.useable         = 1;
+    if (sys.set_thread_area(&u) < 0) {
+      return NULL;
+    }
+    asm("movw %w0, %%fs"
+        :
+        : "q"(8*u.entry_number+3));
     #else
-      void *addr = sys.mmap2(0, 4096, PROT_READ|PROT_WRITE,
-                             MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-      struct user_desc u;
-      u.entry_number    = (typeof u.entry_number)-1;
-      u.base_addr       = (int)addr;
-      u.limit           = 0xfffff;
-      u.seg_32bit       = 1;
-      u.contents        = 0;
-      u.read_exec_only  = 0;
-      u.limit_in_pages  = 1;
-      u.seg_not_present = 0;
-      u.useable         = 1;
-      if (sys.set_thread_area(&u) < 0) {
-        return NULL;
-      }
-      asm("movw %w0, %%fs"
-          :
-          : "q"(8*u.entry_number+3));
+    #error Unsupported target platform
     #endif
     return addr;
   }
@@ -57,52 +59,58 @@ class TLS {
   static void freeTLS() {
     SysCalls sys;
     void *addr;
-    #if __WORDSIZE == 64
-      sys.arch_prctl(ARCH_GET_GS, &addr);
+    #if defined(__x86_64__)
+    sys.arch_prctl(ARCH_GET_GS, &addr);
+    #elif defined(__i386__)
+    struct user_desc u;
+    sys.get_thread_area(&u);
+    addr = (void *)u.base_addr;
     #else
-      struct user_desc u;
-      sys.get_thread_area(&u);
-      addr = (void *)u.base_addr;
+    #error Unsupported target platform
     #endif
     sys.munmap(addr, 4096);
   }
 
   template<class T> static inline bool setTLSValue(int idx, T val) {
-    #if __WORDSIZE == 64
-      if (idx < 0 || idx >= 4096/8) {
-        return false;
-      }
-      asm("movq %0, %%gs:(%1)\n"
-          :
-          : "q"((void *)val), "q"(8ll * idx));
+    #if defined(__x86_64__)
+    if (idx < 0 || idx >= 4096/8) {
+      return false;
+    }
+    asm("movq %0, %%gs:(%1)\n"
+        :
+        : "q"((void *)val), "q"(8ll * idx));
+    #elif defined(__i386__)
+    if (idx < 0 || idx >= 4096/4) {
+      return false;
+    }
+    asm("movl %0, %%fs:(%1)\n"
+        :
+        : "r"(val), "r"(4 * idx));
     #else
-      if (idx < 0 || idx >= 4096/4) {
-        return false;
-      }
-      asm("movl %0, %%fs:(%1)\n"
-          :
-          : "r"(val), "r"(4 * idx));
+    #error Unsupported target platform
     #endif
     return true;
   }
 
   template<class T> static inline T getTLSValue(int idx) {
-    #if __WORDSIZE == 64
-      long long rc;
-      if (idx < 0 || idx >= 4096/8) {
-        return 0;
-      }
-      asm("movq %%gs:(%1), %0\n"
-          : "=q"(rc)
-          : "q"(8ll * idx));
+    #if defined(__x86_64__)
+    long long rc;
+    if (idx < 0 || idx >= 4096/8) {
+      return 0;
+    }
+    asm("movq %%gs:(%1), %0\n"
+        : "=q"(rc)
+        : "q"(8ll * idx));
+    #elif defined(__i386__)
+    long rc;
+    if (idx < 0 || idx >= 4096/4) {
+      return 0;
+    }
+    asm("movl %%fs:(%1), %0\n"
+        : "=r"(rc)
+        : "r"(4 * idx));
     #else
-      long rc;
-      if (idx < 0 || idx >= 4096/4) {
-        return 0;
-      }
-      asm("movl %%fs:(%1), %0\n"
-          : "=r"(rc)
-          : "r"(4 * idx));
+    #error Unsupported target platform
     #endif
     return (T)rc;
   }

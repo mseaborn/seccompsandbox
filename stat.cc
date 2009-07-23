@@ -28,7 +28,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   return static_cast<int>(rc);
 }
 
-#if __WORDSIZE == 32
+#if defined(__i386__)
 int Sandbox::sandbox_stat64(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat64()\n", 9);
@@ -67,8 +67,7 @@ bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for stat() [process]");
   }
   int   rc                  = -ENAMETOOLONG;
-  char* pathname            = getSecureStringBuffer(stat_req.path_length);
-  if (!pathname) {
+  if (stat_req.path_length >= (int)sizeof(mem->pathname)) {
     char buf[32];
     while (stat_req.path_length > 0) {
       int i = read(sys, sandboxFd, buf, sizeof(buf));
@@ -83,20 +82,21 @@ bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
     return false;
   }
   SecureMem::lockSystemCall(parentProc, mem);
-  if (read(sys, sandboxFd, pathname, stat_req.path_length) !=
+  if (read(sys, sandboxFd, mem->pathname, stat_req.path_length) !=
       stat_req.path_length) {
     goto read_parm_failed;
   }
+  mem->pathname[stat_req.path_length] = '\000';
 
   // TODO(markus): Implement sandboxing policy
 
   // Tell trusted thread to stat the file.
-  SecureMem::sendSystemCall(threadFdPub, true, mem,
-                            #if __WORDSIZE == 32
+  SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem,
+                            #if defined(__i386__)
                             stat_req.sysnum == __NR_stat64 ? __NR_stat64 :
                             #endif
                             __NR_stat,
-                            pathname - (char*)mem + (char*)mem->self,
+                            mem->pathname - (char*)mem + (char*)mem->self,
                             stat_req.buf);
   return true;
 }

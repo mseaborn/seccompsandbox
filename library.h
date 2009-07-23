@@ -10,16 +10,18 @@
 
 #include "maps.h"
 
-#if __WORDSIZE == 64
+#if defined(__x86_64__)
 typedef Elf64_Ehdr Elf_Ehdr;
 typedef Elf64_Shdr Elf_Shdr;
 typedef Elf64_Sym  Elf_Sym;
 typedef Elf64_Addr Elf_Addr;
-#else
+#elif defined(__i386__)
 typedef Elf32_Ehdr Elf_Ehdr;
 typedef Elf32_Shdr Elf_Shdr;
 typedef Elf32_Sym  Elf_Sym;
 typedef Elf32_Addr Elf_Addr;
+#else
+#error Unsupported target platform
 #endif
 
 struct SyscallTable;

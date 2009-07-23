@@ -55,7 +55,7 @@ bool Sandbox::process_mprotect(int parentProc, int sandboxFd, int threadFdPub,
 
   // Changing permissions on memory regions that were newly mapped inside of
   // the sandbox is OK.
-  SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_mprotect,
+  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_mprotect,
                             mprotect_req.addr,  mprotect_req.len,
                             mprotect_req.prot);
   return true;

@@ -54,7 +54,7 @@ bool Sandbox::process_munmap(int parentProc, int sandboxFd, int threadFdPub,
 
   // Unmapping memory regions that were newly mapped inside of the sandbox
   // is OK.
-  SecureMem::sendSystemCall(threadFdPub, false, mem, __NR_munmap,
+  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_munmap,
                             munmap_req.start, munmap_req.length);
   return true;
 }

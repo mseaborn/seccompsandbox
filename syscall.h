@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-void syscallWrapper();
+void syscallWrapper() asm("playground$syscallWrapper");
 
 #ifdef __cplusplus
 }

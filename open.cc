@@ -39,8 +39,7 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for open() [process]");
   }
   int   rc                  = -ENAMETOOLONG;
-  char* pathname            = getSecureStringBuffer(open_req.path_length);
-  if (!pathname) {
+  if (open_req.path_length >= (int)sizeof(mem->pathname)) {
     char buf[32];
     while (open_req.path_length > 0) {
       int i = read(sys, sandboxFd, buf, sizeof(buf));
@@ -55,16 +54,17 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
     return false;
   }
   SecureMem::lockSystemCall(parentProc, mem);
-  if (read(sys, sandboxFd, pathname, open_req.path_length) !=
+  if (read(sys, sandboxFd, mem->pathname, open_req.path_length) !=
       open_req.path_length) {
     goto read_parm_failed;
   }
+  mem->pathname[open_req.path_length] = '\000';
 
   // TODO(markus): Implement sandboxing policy
 
   // Tell trusted thread to open the file.
-  SecureMem::sendSystemCall(threadFdPub, true, mem, __NR_open,
-                            pathname - (char*)mem + (char*)mem->self,
+  SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem, __NR_open,
+                            mem->pathname - (char*)mem + (char*)mem->self,
                             open_req.flags, open_req.mode);
   return true;
 }

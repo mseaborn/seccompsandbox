@@ -12,25 +12,27 @@ asm(
     // so that upon starting the child, register values can be restored and
     // the child can start executing at the correct IP, instead of trying to
     // run in the trusted thread.
-    "sandbox_clone:"
-    ".globl sandbox_clone\n"
-    ".type sandbox_clone, @function\n"
-    ".globl sandbox__clone\n"
-    #if __WORDSIZE == 64
+    "playground$sandbox_clone:"
+    ".globl playground$sandbox_clone\n"
+    ".type playground$sandbox_clone, @function\n"
+    ".globl playground$sandbox__clone\n"
+    #if defined(__x86_64__)
     "lea 8(%rsp), %r9\n"
-    "jmp sandbox__clone@PLT\n"
-    #else
+    "jmp playground$sandbox__clone\n"
+    #elif defined(__i386__)
     "lea 28(%esp), %eax\n"
     "mov %eax, 24(%esp)\n"
-    "jmp sandbox__clone\n"
+    "jmp playground$sandbox__clone\n"
+    #else
+    #error Unsupported target platform
     #endif
-    ".size sandbox_clone, .-sandbox_clone\n"
+    ".size playground$sandbox_clone, .-playground$sandbox_clone\n"
 
 
-    "syscallWrapper:"
-    ".globl syscallWrapper\n"
-    ".type syscallWrapper, @function\n"
-    #if __WORDSIZE == 64
+    "playground$syscallWrapper:"
+    ".globl playground$syscallWrapper\n"
+    ".type playground$syscallWrapper, @function\n"
+    #if defined(__x86_64__)
     // Save all registers
     "push %rbp\n"
     "mov  %rsp, %rbp\n"
@@ -52,16 +54,16 @@ asm(
     "mov %r10, %rcx\n"
 
     // Check range of system call
-    ".globl maxSyscall\n"
-    "mov maxSyscall@GOTPCREL(%rip), %r10\n"
+    ".globl playground$maxSyscall\n"
+    "mov playground$maxSyscall@GOTPCREL(%rip), %r10\n"
     "cmp 0(%r10), %eax\n"
     "ja  1f\n"
 
     // Retrieve function call from system call table
     "mov %rax, %r10\n"
     "shl $4, %r10\n"
-    ".globl syscallTable\n"
-    "add syscallTable@GOTPCREL(%rip), %r10\n"
+    ".globl playground$syscallTable\n"
+    "add playground$syscallTable@GOTPCREL(%rip), %r10\n"
     "mov 0(%r10), %r10\n"
 
     // Jump to function if non-null, otherwise jump to fallback handler
@@ -104,10 +106,10 @@ asm(
     "mov  %rax, %rdi\n"
 
     // Call default handler.
-    "call defaultSystemCallHandler\n"
+    "call playground$defaultSystemCallHandler\n"
     "pop  %r9\n"
     "jmp 0b\n"
-    #else
+    #elif defined(__i386__)
     // Preserve all registers
     "push %ebx\n"
     "push %ecx\n"
@@ -126,12 +128,12 @@ asm(
     "push %eax\n"
 
     // Check range of system call
-    "cmp syscallTable, %eax\n"
+    "cmp playground$syscallTable, %eax\n"
     "ja  1f\n"
 
     // Retrieve function call from system call table
     "shl  $3, %eax\n"
-    "lea  syscallTable, %ebx\n"
+    "lea  playground$syscallTable, %ebx\n"
     "add  %ebx, %eax\n"
     "mov  0(%eax), %eax\n"
 
@@ -157,13 +159,15 @@ asm(
   "1:"
     // Call default handler.
     "push $2f\n"
-    "push defaultSystemCallHandler\n"
+    "push playground$defaultSystemCallHandler\n"
     "ret\n"
   "2:add  $28, %esp\n"
     "jmp 0b\n"
 
+    #else
+    #error Unsupported target platform
     #endif
-    ".size syscallWrapper, .-syscallWrapper\n"
+    ".size playground$syscallWrapper, .-playground$syscallWrapper\n"
     ".popsection\n"
 );
 

@@ -42,7 +42,7 @@ class Mutex {
         : "=m"(*mutex), "=qm"(status)
         : "ir"(0x80000000), "m"(*mutex));
     #else
-      #error Unsupported target platform
+    #error Unsupported target platform
     #endif
     if (status) {
       // Mutex is zero now. No other waiters. So, we can return.
@@ -62,7 +62,7 @@ class Mutex {
         : "=m"(*mutex)
         : "m"(*mutex));
     #else
-      #error Unsupported target platform
+    #error Unsupported target platform
     #endif
     for (;;) {
       // Atomically check whether the mutex is available and if so, acquire it
@@ -74,7 +74,7 @@ class Mutex {
           : "=q"(status), "=m"(*mutex)
           : "m"(*mutex), "ir"(31));
       #else
-        #error Unsupported target platform
+      #error Unsupported target platform
       #endif
       if (!status) {
      done:
@@ -85,7 +85,7 @@ class Mutex {
             : "=m"(*mutex)
             : "m"(*mutex));
         #else
-          #error Unsupported target platform
+        #error Unsupported target platform
         #endif
         return rc;
       }
@@ -110,6 +110,55 @@ class Mutex {
       }
     }
   }
+
+  static bool waitForUnlock(mutex_t* mutex, int timeout = 0) {
+    bool rc        = true;
+    // Increment mutex to add ourselves to the list of waiters
+    #if defined(__x86_64__) || defined(__i386__)
+    asm volatile(
+        "lock; incl %0\n"
+        : "=m"(*mutex)
+        : "m"(*mutex));
+    #else
+    #error Unsupported target platform
+    #endif
+    SysCalls sys;
+    for (;;) {
+      mutex_t value = *mutex;
+      if (value >= 0) {
+     done:
+        // Mutex was not locked. Remove ourselves from list of waiters, notify
+        // any other waiters (if any), and return.
+        #if defined(__x86_64__) || defined(__i386__)
+        asm volatile(
+            "lock; decl %0\n"
+            : "=m"(*mutex)
+            : "m"(*mutex));
+        #else
+        #error Unsupported target platform
+        #endif
+        NOINTR_SYS(sys.futex(mutex, FUTEX_WAKE, 1, 0));
+        return rc;
+      }
+
+      // Wait for mutex to become unlocked
+      SysCalls::kernel_timespec tm;
+      if (timeout) {
+        tm.tv_sec   = timeout / 1000;
+        tm.tv_nsec  = (timeout % 1000) * 1000 * 1000;
+      } else {
+        tm.tv_sec   = 0;
+        tm.tv_nsec  = 0;
+      }
+
+      if (NOINTR_SYS(sys.futex(mutex, FUTEX_WAIT, value, &tm)) &&
+          sys.my_errno == ETIMEDOUT) {
+        rc          = false;
+        goto done;
+      }
+    }
+  }
+
 };
 
 } // namespace

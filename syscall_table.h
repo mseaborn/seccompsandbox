@@ -19,8 +19,9 @@ namespace playground {
     bool  (*trustedProcess)(int parentProc, int sandboxFd, int threadFdPub,
                             int threadFd, SecureMemArgs* mem);
   };
-  extern const struct SyscallTable syscallTable[];
-  extern const unsigned maxSyscall;
+  extern const struct SyscallTable syscallTable[]
+                                                asm("playground$syscallTable");
+  extern const unsigned maxSyscall              asm("playground$maxSyscall");
 #ifdef __cplusplus
 } // namespace
 }

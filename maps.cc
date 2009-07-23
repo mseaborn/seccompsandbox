@@ -26,6 +26,11 @@ class SysCalls {
   #include "linux_syscall_support.h"
   SysCalls() : my_errno(0) { }
   int my_errno;
+  #ifdef __NR_mmap2
+    #define MMAP mmap2
+  #else
+    #define MMAP mmap
+  #endif
 };
 
 Maps::Maps(const std::string& maps_file) :
@@ -300,12 +305,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
       if (start - gap_start >= size) {
         if (reinterpret_cast<long>(addr) - static_cast<long>(start) >= 0) {
           if (reinterpret_cast<long>(addr) - (start - size) < (1536 << 20)) {
-            new_addr = reinterpret_cast<char *>(
-                         #if __WORDSIZE == 64
-                           sys.mmap
-                         #else
-                           sys.mmap2
-                         #endif
+            new_addr = reinterpret_cast<char *>(sys.MMAP
                            (reinterpret_cast<void *>(start - size), size, prot,
                             MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0));
             if (new_addr != MAP_FAILED) {
@@ -314,12 +314,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
           }
         } else if (gap_start + size - reinterpret_cast<long>(addr) <
                    (1536 << 20)) {
-          new_addr = reinterpret_cast<char *>(
-                       #if __WORDSIZE == 64
-                         sys.mmap
-                       #else
-                         sys.mmap2
-                       #endif
+          new_addr = reinterpret_cast<char *>(sys.MMAP
                          (reinterpret_cast<void *>(gap_start), size, prot,
                           MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1 ,0));
           if (new_addr != MAP_FAILED) {

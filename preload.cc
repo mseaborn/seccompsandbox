@@ -10,7 +10,7 @@ extern "C" void preload() {
   asm volatile("int3");
 
 // TODO(markus): This code is just a temporary hack. Remove when not needed.
-#if __WORDSIZE == 64
+#if defined(__x86_64__)
   asm volatile(
       "sub $8, %rsp;"
       "push %rax;push %rbx;push %rcx;push %rdx;push %rbp;push %rsi;push %rdi;"

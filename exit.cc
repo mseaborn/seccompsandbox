@@ -22,9 +22,8 @@ int Sandbox::sandbox_exit(int status) {
 
 bool Sandbox::process_exit(int parentProc, int sandboxFd, int threadFdPub,
                            int threadFd, SecureMem::Args* mem) {
-  int data = __NR_exit;
-  SysCalls sys;
-  write(sys, threadFdPub, &data, sizeof(data));
+  SecureMem::lockSystemCall(parentProc, mem);
+  SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem, __NR_exit, 0);
   return true;
 }
 

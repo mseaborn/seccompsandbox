@@ -26,7 +26,7 @@
 
 #define NOINTR(x) ({ int i__; while ((i__ = (x)) < 0 && errno == EINTR); i__;})
 
-#if __WORDSIZE == 64
+#if defined(__x86_64__)
 typedef Elf64_Phdr    Elf_Phdr;
 typedef Elf64_Rela    Elf_Rel;
 
@@ -48,7 +48,7 @@ typedef Elf64_Versym  Elf_Versym;
 
 #define ELF_REL_PLT   ".rela.plt"
 #define ELF_JUMP_SLOT R_X86_64_JUMP_SLOT
-#elif __WORDSIZE == 32
+#elif defined(__i386__)
 typedef Elf32_Phdr    Elf_Phdr;
 typedef Elf32_Rel     Elf_Rel;
 
@@ -71,7 +71,7 @@ typedef Elf32_Versym  Elf_Versym;
 #define ELF_REL_PLT   ".rel.plt"
 #define ELF_JUMP_SLOT R_386_JMP_SLOT
 #else
-#error "Undefined word size"
+#error Unsupported target platform
 #endif
 
 namespace playground {
@@ -268,7 +268,7 @@ bool Library::isSafeInsn(unsigned short insn) {
   // to make room for the JMP into the scratch space.
   return ((insn & 0x7) < 0x6 && (insn & 0xF0) < 0x40
           /* ADD, OR, ADC, SBB, AND, SUB, XOR, CMP */) ||
-         #if __WORDSIZE == 64
+         #if defined(__x86_64__)
          insn == 0x63 /* MOVSXD */ ||
          #endif
          (insn >= 0x80 && insn <= 0x8E /* ADD, OR, ADC,
@@ -340,7 +340,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
     // Whenever we find a system call, we patch it with a jump to out-of-line
     // code that redirects to our system call wrapper.
-    #if __WORDSIZE == 64
+    #if defined(__x86_64__)
     bool is_indirect_call = false;
     if (code[codeIdx].insn == 0x0F05 /* SYSCALL */ ||
         // In addition, on x86-64, we need to redirect all CALLs between the
@@ -355,9 +355,11 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
          (isVDSO_ && vsys_offset_ && code[codeIdx].insn == 0xFF &&
           !code[codeIdx].is_ip_relative &&
           mod_rm && (*mod_rm & 0x38) == 0x10 /* CALL (indirect) */))) {
-    #else
+    #elif defined(__i386__)
     if (code[codeIdx].insn == 0xCD &&
         code[codeIdx].addr[1] == '\x80' /* INT $0x80 */) {
+    #else
+    #error Unsupported target platform
     #endif
       // Found a system call. Search backwards to figure out how to redirect
       // the code. We will need to overwrite a couple of instructions and,
@@ -389,7 +391,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       }
       // Search forward past the system call, too. Sometimes, we can only
       // find relocatable instructions following the system call.
-      #if __WORDSIZE == 32
+      #if defined(__i386__)
    findEndIdx:
       #endif
       char *next = ptr;
@@ -476,7 +478,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
         // There are a very small number of instruction sequences that we
         // cannot easily intercept, and that have been observed in real world
         // examples. Handle them here:
-        #if __WORDSIZE == 32
+        #if defined(__i386__)
         int diff;
         if (!memcmp(code[codeIdx].addr, "\xCD\x80\xEB", 3) &&
             (diff = *reinterpret_cast<signed char *>(
@@ -520,14 +522,16 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
       // The following is all the code that construct the various bits of
       // assembly code.
-      #if __WORDSIZE == 64
+      #if defined(__x86_64__)
       if (is_indirect_call) {
         needed = 41 + preamble + code[codeIdx].len + postamble;
       } else {
         needed = 52 + preamble + postamble;
       }
-      #else
+      #elif defined(__i386__)
       needed = 12 + preamble + postamble;
+      #else
+      #error Unsupported target platform
       #endif
 
       // Allocate scratch space and copy the preamble of code that was moved
@@ -538,7 +542,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
       // For indirect calls, we need to copy the actual CALL instruction and
       // turn it into a PUSH instruction.
-      #if __WORDSIZE == 64
+      #if defined(__x86_64__)
       if (is_indirect_call) {
         memcpy(dest + preamble, "\xE8\x00\x00\x00\x00\x48\x83\x04\x24", 9);
         dest[preamble + 9] = code[codeIdx].len + 31;
@@ -552,7 +556,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
       // Copy the static body of the assembly code.
       memcpy(dest + preamble,
-           #if __WORDSIZE == 64
+           #if defined(__x86_64__)
            is_indirect_call ?
            "\x48\x81\x3C\x24\x00\x00\x00\xFF\x72\x0F\x81\x2C\x24\x00\x00\x00"
            "\x00\xC7\x44\x24\x04\x00\x00\x00\x00\xC3" :
@@ -560,24 +564,28 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
            "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\x50\x48\x8D\x05\x06\x00"
            "\x00\x00\x48\x87\x44\x24\x10\xC3\x48\x81\xC4\x80\x00\x00",
            is_indirect_call ? 26 : 47
-           #else
+           #elif defined(__i386__)
            "\x68\x00\x00\x00\x00\x68\x00\x00\x00\x00\xC3", 11
+           #else
+           #error Unsupported target platform
            #endif
            );
 
       // Copy the postamble that was moved from the function that we are
       // patching.
       memcpy(dest + preamble +
-             #if __WORDSIZE == 64
+             #if defined(__x86_64__)
              (is_indirect_call ? 26 : 47),
-             #else
+             #elif defined(__i386__)
              11,
+             #else
+             #error Unsupported target platform
              #endif
              code[codeIdx].addr + code[codeIdx].len,
              postamble);
 
       // Patch up the various computed values
-      #if __WORDSIZE == 64
+      #if defined(__x86_64__)
       int post = preamble + (is_indirect_call ? 26 : 47) + postamble;
       dest[post] = '\xE9';
       *reinterpret_cast<int *>(dest + post + 1) =
@@ -590,11 +598,13 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
         *reinterpret_cast<void **>(dest + preamble + 18) =
             reinterpret_cast<void *>(&syscallWrapper);
       }
-      #else
+      #elif defined(__i386__)
       *(dest + preamble + 11 + postamble) = '\xC3';
       *reinterpret_cast<char **>(dest + preamble + 1) =
           dest + preamble + 11;
       *reinterpret_cast<void (**)()>(dest + preamble + 6) = syscallWrapper;
+      #else
+      #error Unsupported target platform
       #endif
 
       // Pad unused space in the original function with NOPs
@@ -602,8 +612,13 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
              code[second].addr + code[second].len - code[first].addr);
 
       // Replace the system call with an unconditional jump to our new code.
-      *code[first].addr = __WORDSIZE == 64 ? '\xE9' : // JMPQ
-                                             '\xE8';  // CALL
+      #if defined(__x86_64__)
+      *code[first].addr = '\xE9'; // JMPQ
+      #elif defined(__i386__)
+      *code[first].addr = '\xE8'; // CALL
+      #else
+      #error Unsupported target platform
+      #endif
       *reinterpret_cast<int *>(code[first].addr + 1) =
           dest - (code[first].addr + 5);
     }
@@ -612,7 +627,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 }
 
 void Library::patchVDSO(char** extraSpace, int* extraLength){
-  #if __WORDSIZE == 32
+  #if defined(__i386__)
   // x86-32 has a small number of well-defined functions in the VDSO library.
   // These functions do not easily lend themselves to be rewritten by the
   // automatic code. Instead, we explicitly find new definitions for them.
@@ -671,7 +686,7 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
 }
 
 int Library::patchVSystemCalls() {
-  #if __WORDSIZE == 64
+  #if defined(__x86_64__)
   // VSyscalls live in a shared 4kB page at the top of the address space. This
   // page cannot be unmapped nor remapped. We have to create a copy within
   // 2GB of the page, and rewrite all IP-relative accesses to shared variables.
@@ -809,10 +824,12 @@ void Library::patchSystemCalls() {
   int nopcount = 0;
   bool has_syscall = false;
   for (char *ptr = start; ptr < stop; ptr++) {
-    #if __WORDSIZE == 64
+    #if defined(__x86_64__)
     if (*ptr == '\x0F' && *++ptr == '\x05' /* SYSCALL */) {
-    #else
+    #elif defined(__i386__)
     if (*ptr == '\xCD' && *++ptr == '\x80' /* INT $0x80 */) {
+    #else
+    #error Unsupported target platform
     #endif
       has_syscall = true;
     } else if (*ptr == '\x90' /* NOP */) {
@@ -1020,7 +1037,7 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
       // from this page, while we relocate the mapping. Finally, we allocate
       // memory at the original location and copy the original data into it.
       // The program can now resume execution.
-      #if __WORDSIZE == 64
+      #if defined(__x86_64__)
       asm volatile(
           // new_addr = 4096 + mmap(0, new_length + 4096,
           //                        PROT_READ|PROT_WRITE|PROT_EXEC,
@@ -1114,7 +1131,7 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
           : "q"(&args)
           : "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
             "r8", "r9", "r10", "r11", "r12", "memory");
-      #else
+      #elif defined(__i386__)
       asm volatile(
           "push %%ebp\n"
           "push %%ebx\n"
@@ -1223,6 +1240,8 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
           :
           : "D"(&args)
           : "eax", "ecx", "edx", "esi", "memory");
+      #else
+      #error Unsupported target platform
       #endif
       if (!args.new_addr) {
         goto failed;
