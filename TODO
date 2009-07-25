@@ -1,4 +1,5 @@
-- add 32 bit assembly.
+- audit error code handling in trusted_thread.cc. Most notably, add error
+  handling, if mprotect() fails.
 
 - get rid of preloader and of ELF helper process.
 

@@ -34,6 +34,7 @@ class SecureMem {
 
             // Used by clone() to allow return from the syscall wrapper.
             void*        ret;
+            #if defined(__x86_64__)
             void*        rbp;
             void*        rbx;
             void*        rcx;
@@ -48,6 +49,16 @@ class SecureMem {
             void*        r13;
             void*        r14;
             void*        r15;
+            #elif defined(__i386__)
+            void*        ebp;
+            void*        edi;
+            void*        esi;
+            void*        edx;
+            void*        ecx;
+            void*        ebx;
+            #else
+            #error Unsupported target platform
+            #endif
 
             // Used by clone() to set up data for the new thread.
             struct Args* newSecureMem;
@@ -56,8 +67,8 @@ class SecureMem {
 
             // The following entries make up the sandboxed thread's TLS
             long long    cookie;
-            long         threadId;
-            long         threadFdPub;
+            long long    threadId;
+            long long    threadFdPub;
           } __attribute__((packed));
           char           header[512];
         };

@@ -188,11 +188,11 @@ class Sandbox {
 
   // Data structures used to forward system calls to the trusted process.
   struct Clone {
-    int   flags;
-    void* stack;
-    int*  pid;
-    int*  ctid;
-    void* tls;
+    int       flags;
+    void*     stack;
+    int*      pid;
+    int*      ctid;
+    void*     tls;
     #if defined(__x86_64__)
       struct {
         void* r15;
@@ -210,24 +210,20 @@ class Sandbox {
         void* rbx;
         void* rbp;
         void* fake_ret;
-        void* ret;
       } regs64 __attribute__((packed));
     #elif defined(__i386__)
       struct {
-        // TODO(markus): if we touch other registers while setting up the
-        //               new thread, we have to save them here
         void* ebp;
         void* edi;
         void* esi;
         void* edx;
         void* ecx;
         void* ebx;
-        void* ret1;
-        void* ret2;
       } regs32 __attribute__((packed));
     #else
     #error Unsupported target platform
     #endif
+    void*     ret;
   } __attribute__((packed));
 
   struct IOCtl {

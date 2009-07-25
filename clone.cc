@@ -26,10 +26,10 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   // created thread prior to returning from the wrapped system call.
   #if defined(__x86_64__)
   memcpy(&request.clone_req.regs64, wrapper_sp,
-         sizeof(request.clone_req.regs64));
+         sizeof(request.clone_req.regs64) + sizeof(void *));
   #elif defined(__i386__)
   memcpy(&request.clone_req.regs32, wrapper_sp,
-         sizeof(request.clone_req.regs32));
+         sizeof(request.clone_req.regs32) + sizeof(void *));
   #else
   #error Unsupported target platform
   #endif
@@ -68,8 +68,8 @@ bool Sandbox::process_clone(int parentProc, int sandboxFd, int threadFdPub,
       // trusted thread, but instead we need to continue execution at the IP
       // where we got called initially.
       SecureMem::lockSystemCall(parentProc, mem);
+      mem->ret              = clone_req.ret;
       #if defined(__x86_64__)
-      mem->ret              = clone_req.regs64.ret;
       mem->rbp              = clone_req.regs64.rbp;
       mem->rbx              = clone_req.regs64.rbx;
       mem->rcx              = clone_req.regs64.rcx;
@@ -85,7 +85,12 @@ bool Sandbox::process_clone(int parentProc, int sandboxFd, int threadFdPub,
       mem->r14              = clone_req.regs64.r14;
       mem->r15              = clone_req.regs64.r15;
       #elif defined(__i386__)
-      // TODO(markus): implement
+      mem->ebp              = clone_req.regs32.ebp;
+      mem->edi              = clone_req.regs32.edi;
+      mem->esi              = clone_req.regs32.esi;
+      mem->edx              = clone_req.regs32.edx;
+      mem->ecx              = clone_req.regs32.ecx;
+      mem->ebx              = clone_req.regs32.ebx;
       #else
       #error Unsupported target platform
       #endif

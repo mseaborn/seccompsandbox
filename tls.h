@@ -80,12 +80,21 @@ class TLS {
         :
         : "q"((void *)val), "q"(8ll * idx));
     #elif defined(__i386__)
-    if (idx < 0 || idx >= 4096/4) {
+    if (idx < 0 || idx >= 4096/8) {
       return false;
     }
-    asm("movl %0, %%fs:(%1)\n"
-        :
-        : "r"(val), "r"(4 * idx));
+    if (sizeof(T) == 8) {
+      asm("movl %0, %%fs:(%1)\n"
+          :
+          : "r"((unsigned)val), "r"(8 * idx));
+      asm("movl %0, %%fs:(%1)\n"
+          :
+          : "r"((unsigned)((unsigned long long)val >> 32)), "r"(8 * idx + 4));
+    } else {
+      asm("movl %0, %%fs:(%1)\n"
+          :
+          : "r"(val), "r"(8 * idx));
+    }
     #else
     #error Unsupported target platform
     #endif
@@ -101,18 +110,30 @@ class TLS {
     asm("movq %%gs:(%1), %0\n"
         : "=q"(rc)
         : "q"(8ll * idx));
+    return (T)rc;
     #elif defined(__i386__)
-    long rc;
-    if (idx < 0 || idx >= 4096/4) {
+    if (idx < 0 || idx >= 4096/8) {
       return 0;
     }
-    asm("movl %%fs:(%1), %0\n"
-        : "=r"(rc)
-        : "r"(4 * idx));
+    if (sizeof(T) == 8) {
+      unsigned lo, hi;
+      asm("movl %%fs:(%1), %0\n"
+          : "=r"(lo)
+          : "r"(8 * idx));
+      asm("movl %%fs:(%1), %0\n"
+          : "=r"(hi)
+          : "r"(8 * idx + 4));
+      return (T)((unsigned long long)lo + ((unsigned long long)hi << 32));
+    } else {
+      long rc;
+      asm("movl %%fs:(%1), %0\n"
+          : "=r"(rc)
+          : "r"(8 * idx));
+      return (T)rc;
+    }
     #else
     #error Unsupported target platform
     #endif
-    return (T)rc;
   }
 
 };
