@@ -46,6 +46,7 @@ const struct SyscallTable syscallTable[] __attribute__((section(".rodata, \"a\",
   [ __NR_mprotect        ] = { (void *)&sandbox_mprotect, process_mprotect  },
   [ __NR_munmap          ] = { (void *)&sandbox_munmap,   process_munmap    },
   [ __NR_open            ] = { (void *)&sandbox_open,     process_open      },
+  [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,      0                 },
   [ __NR_set_robust_list ] = { UNRESTRICTED_SYSCALL,      0                 },
   [ __NR_stat            ] = { (void *)&sandbox_stat,     process_stat      },
   #if defined(__i386__)

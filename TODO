@@ -1,3 +1,5 @@
+- rewrite rdtsc in x86-32 bit mode
+
 - don't derefence the GOT when looking for syscallTable. This must be a
   secure memory access!
 
