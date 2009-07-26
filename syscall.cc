@@ -128,7 +128,7 @@ asm(
     "push %eax\n"
 
     // Check range of system call
-    "cmp playground$syscallTable, %eax\n"
+    "cmp playground$maxSyscall, %eax\n"
     "ja  1f\n"
 
     // Retrieve function call from system call table
@@ -159,7 +159,7 @@ asm(
   "1:"
     // Call default handler.
     "push $2f\n"
-    "push playground$defaultSystemCallHandler\n"
+    "push $playground$defaultSystemCallHandler\n"
     "ret\n"
   "2:add  $28, %esp\n"
     "jmp 0b\n"

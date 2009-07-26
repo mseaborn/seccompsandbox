@@ -2,6 +2,7 @@
 #define MAPS_H__
 
 #include <elf.h>
+#include <string>
 #include <vector>
 
 #if defined(__x86_64__)
@@ -44,6 +45,7 @@ class Maps {
     Library* operator*() const;
     bool operator==(const Iterator& iter) const;
     bool operator!=(const Iterator& iter) const;
+    std::string name() const;
 
    protected:
     mutable LibraryMap::iterator iter_;

@@ -105,9 +105,11 @@ class Library {
   void *getSymbol(const std::string& symbol);
   void makeWritable(bool state) const;
   void patchSystemCalls();
+  bool isVDSO() const { return isVDSO_; }
 
  protected:
   bool parseElf();
+  bool parseSymbols();
   void recoverOriginalDataParent(Maps* maps);
   void recoverOriginalDataChild(const std::string& child);
 
@@ -151,6 +153,9 @@ class Library {
   SectionTable    section_table_;
   SymbolTable     symbols_;
   PltTable        plt_entries_;
+  static char*    __kernel_vsyscall;
+  static char*    __kernel_sigreturn;
+  static char*    __kernel_rt_sigreturn;
 };
 
 } // namespace

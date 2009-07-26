@@ -16,9 +16,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-//#include "valgrind/valgrind.h"
-#define RUNNING_ON_VALGRIND 0 // TODO(markus): remove
-
 #include "library.h"
 #include "syscall.h"
 #include "syscall_table.h"
@@ -75,6 +72,10 @@ typedef Elf32_Versym  Elf_Versym;
 #endif
 
 namespace playground {
+
+char* Library::__kernel_vsyscall;
+char* Library::__kernel_sigreturn;
+char* Library::__kernel_rt_sigreturn;
 
 class SysCalls {
  public:
@@ -327,7 +328,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
     bool           is_ip_relative;
   } code[5] = { { 0 } };
   int codeIdx = 0;
-  char *ptr = start;
+  char* ptr = start;
   while (ptr < end) {
     // Keep a ring-buffer of the last few instruction in order to find the
     // correct place to patch the code.
@@ -356,8 +357,23 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
           !code[codeIdx].is_ip_relative &&
           mod_rm && (*mod_rm & 0x38) == 0x10 /* CALL (indirect) */))) {
     #elif defined(__i386__)
-    if (code[codeIdx].insn == 0xCD &&
-        code[codeIdx].addr[1] == '\x80' /* INT $0x80 */) {
+    bool is_gs_call = false;
+    if (code[codeIdx].len  == 7 &&
+        code[codeIdx].insn == 0xFF &&
+        code[codeIdx].addr[2] == '\x15' /* CALL (indirect) */ &&
+        code[codeIdx].addr[0] == '\x65' /* %gs prefix */) {
+      char* target;
+      asm volatile("mov %%gs:(%1), %0\n"
+                   : "=a"(target)
+                   : "c"(*reinterpret_cast<int *>(code[codeIdx].addr+3)));
+      if (target == __kernel_vsyscall) {
+        is_gs_call = true;
+        // TODO(markus): also handle the other vsyscalls
+      }
+    }
+    if (is_gs_call ||
+        (code[codeIdx].insn == 0xCD &&
+         code[codeIdx].addr[1] == '\x80' /* INT $0x80 */)) {
     #else
     #error Unsupported target platform
     #endif
@@ -628,6 +644,14 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
 void Library::patchVDSO(char** extraSpace, int* extraLength){
   #if defined(__i386__)
+  SysCalls sys;
+  if (!__kernel_vsyscall ||
+      sys.mprotect(reinterpret_cast<void *>(
+                     reinterpret_cast<long>(__kernel_vsyscall) & ~0xFFF),
+                   4096, PROT_READ|PROT_WRITE|PROT_EXEC)) {
+    return;
+  }
+
   // x86-32 has a small number of well-defined functions in the VDSO library.
   // These functions do not easily lend themselves to be rewritten by the
   // automatic code. Instead, we explicitly find new definitions for them.
@@ -638,49 +662,45 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
   //
   // TODO(markus): Investigate whether it is worthwhile to optimize this
   // code path and use the platform-specific entry code.
-  SymbolTable::const_iterator iter = symbols_.find("__kernel_vsyscall");
-  if (iter != symbols_.end() && iter->second.st_value) {
-    char* start = asr_offset_ + iter->second.st_value;
+  if (__kernel_vsyscall) {
     // Replace the kernel entry point with:
     //
     // E9 .. .. .. ..    JMP syscallWrapper
-    *start = '\xE9';
-    *reinterpret_cast<long *>(start + 1) =
+    *__kernel_vsyscall = '\xE9';
+    *reinterpret_cast<long *>(__kernel_vsyscall + 1) =
         reinterpret_cast<char *>(&syscallWrapper) -
-        reinterpret_cast<char *>(start + 5);
+        reinterpret_cast<char *>(__kernel_vsyscall + 5);
   }
-  iter = symbols_.find("__kernel_sigreturn");
-  if (iter != symbols_.end() && iter->second.st_value) {
+  if (__kernel_sigreturn) {
     // Replace the sigreturn() system call with a jump to code that does:
     //
     // 58                POP %eax
     // B8 77 00 00 00    MOV $0x77, %eax
     // E9 .. .. .. ..    JMP syscallWrapper
-    char* start = asr_offset_ + iter->second.st_value;
-    char* dest = getScratchSpace(maps_, start, 11, extraSpace, extraLength);
+    char* dest = getScratchSpace(maps_, __kernel_sigreturn, 11, extraSpace,
+                                 extraLength);
     memcpy(dest, "\x58\xB8\x77\x00\x00\x00\xE9", 7);
     *reinterpret_cast<char *>(dest + 7) =
         reinterpret_cast<char *>(&syscallWrapper) -
         reinterpret_cast<char *>(dest + 11);
-    *start = '\xE9';
-    *reinterpret_cast<char *>(start + 1) =
-        dest - reinterpret_cast<char *>(start + 5);
+    *__kernel_sigreturn = '\xE9';
+    *reinterpret_cast<char *>(__kernel_sigreturn + 1) =
+        dest - reinterpret_cast<char *>(__kernel_sigreturn + 5);
   }
-  iter = symbols_.find("__kernel_rt_sigreturn");
-  if (iter != symbols_.end() && iter->second.st_value) {
+  if (__kernel_rt_sigreturn) {
     // Replace the rt_sigreturn() system call with a jump to code that does:
     //
     // B8 AD 00 00 00    MOV $0xAD, %eax
     // E9 .. .. .. ..    JMP syscallWrapper
-    char* start = asr_offset_ + iter->second.st_value;
-    char* dest = getScratchSpace(maps_, start, 10, extraSpace, extraLength);
+    char* dest = getScratchSpace(maps_, __kernel_rt_sigreturn, 10, extraSpace,
+                                 extraLength);
     memcpy(dest, "\xB8\xAD\x00\x00\x00\xE9", 6);
     *reinterpret_cast<char *>(dest + 6) =
         reinterpret_cast<char *>(&syscallWrapper) -
         reinterpret_cast<char *>(dest + 10);
-    *start = '\xE9';
-    *reinterpret_cast<char *>(start + 1) =
-        dest - reinterpret_cast<char *>(start + 5);
+    *__kernel_rt_sigreturn = '\xE9';
+    *reinterpret_cast<char *>(__kernel_rt_sigreturn + 1) =
+        dest - reinterpret_cast<char *>(__kernel_rt_sigreturn + 5);
   }
   #endif
 }
@@ -812,6 +832,7 @@ void Library::patchSystemCalls() {
     // patchVSystemCalls() first.
     vsys_offset_ = patchVSystemCalls();
     patchVDSO(&extraSpace, &extraLength);
+    return;
   }
   SectionTable::const_iterator iter;
   if ((iter = section_table_.find(".text")) == section_table_.end()) {
@@ -825,9 +846,12 @@ void Library::patchSystemCalls() {
   bool has_syscall = false;
   for (char *ptr = start; ptr < stop; ptr++) {
     #if defined(__x86_64__)
-    if (*ptr == '\x0F' && *++ptr == '\x05' /* SYSCALL */) {
+    if ((*ptr == '\x0F' && *++ptr == '\x05' /* SYSCALL */) ||
+        (isVDSO_ && *ptr == '\xFF')) {
     #elif defined(__i386__)
-    if (*ptr == '\xCD' && *++ptr == '\x80' /* INT $0x80 */) {
+    if ((*ptr   == '\xCD' && *++ptr == '\x80' /* INT $0x80 */) ||
+        (*ptr   == '\x65' && *++ptr == '\xFF' &&
+         *++ptr == '\x15' /* CALL %gs:.. */)) {
     #else
     #error Unsupported target platform
     #endif
@@ -882,6 +906,7 @@ bool Library::parseElf() {
     // Not all memory mappings are necessarily ELF files. Skip memory
     // mappings that we cannot identify.
     valid_ = false;
+    puts("invalid header");
     return false;
   }
 
@@ -912,6 +937,17 @@ bool Library::parseElf() {
        std::make_pair(getOriginal(str_shdr.sh_offset + shdr.sh_name),
                       std::make_pair(i, shdr)));
   }
+
+  return !isVDSO_ || parseSymbols();
+}
+
+bool Library::parseSymbols() {
+  if (!valid_) {
+    return false;
+  }
+
+  Elf_Shdr str_shdr;
+  getOriginal(ehdr_.e_shoff + ehdr_.e_shstrndx * ehdr_.e_shentsize, &str_shdr);
 
   // Find PLT and symbol tables
   const Elf_Shdr* plt = getSection(ELF_REL_PLT);
@@ -976,6 +1012,19 @@ bool Library::parseElf() {
     }
   }
 
+  SymbolTable::const_iterator iter = symbols_.find("__kernel_vsyscall");
+  if (iter != symbols_.end() && iter->second.st_value) {
+    __kernel_vsyscall = asr_offset_ + iter->second.st_value;
+  }
+  iter = symbols_.find("__kernel_sigreturn");
+  if (iter != symbols_.end() && iter->second.st_value) {
+    __kernel_sigreturn = asr_offset_ + iter->second.st_value;
+  }
+  iter = symbols_.find("__kernel_rt_sigreturn");
+  if (iter != symbols_.end() && iter->second.st_value) {
+    __kernel_rt_sigreturn = asr_offset_ + iter->second.st_value;
+  }
+
   return true;
 }
 
@@ -984,275 +1033,258 @@ void Library::recoverOriginalDataParent(Maps* maps) {
 }
 
 void Library::recoverOriginalDataChild(const std::string& filename) {
-  if (RUNNING_ON_VALGRIND) {
-    // TODO(markus): Dereferencing the file name from /proc/self/maps is
-    // unreliable. For now, leave this code enabled, as valgrind doesn't
-    // understand the correct solution involving m(re)map(). We should
-    // eventually remove valgrind support, as it just doesn't work for
-    // the sandbox.
-    memory_ranges_.clear();
-    int fd = open(filename.c_str(), O_RDONLY);
-    if (fd >= 0) {
-      struct stat sb;
-      fstat(fd, &sb);
-      size_t len = (sb.st_size + 4095) & ~4095;
-      void *start = mmap(0, len, PROT_READ, MAP_SHARED, fd, 0);
-      NOINTR(close(fd));
-      memory_ranges_.insert(
-          std::make_pair(0, Range(start, reinterpret_cast<char *>(start) + len,
-                                  PROT_READ)));
-    }
+  if (isVDSO_) {
     valid_ = true;
+    return;
+  }
+  if (memory_ranges_.empty() || memory_ranges_.rbegin()->first) {
+ failed:
+    memory_ranges_.clear();
   } else {
-    if (memory_ranges_.empty() || memory_ranges_.rbegin()->first) {
-   failed:
-      memory_ranges_.clear();
-    } else {
-      const Range& range = memory_ranges_.rbegin()->second;
-      struct Args {
-        void* old_addr;
-        long  old_length;
-        void* new_addr;
-        long  new_length;
-        long  prot;
-      } args = {
-        range.start,
-        (reinterpret_cast<long>(range.stop) -
-         reinterpret_cast<long>(range.start) + 4095) & ~4095,
-        0,
-        (memory_ranges_.begin()->first +
-         (reinterpret_cast<long>(memory_ranges_.begin()->second.stop) -
-          reinterpret_cast<long>(memory_ranges_.begin()->second.start)) +
-         4095) & ~4095,
-        range.prot
-      };
-      // We find the memory mapping that starts at file offset zero and
-      // extend it to cover the entire file. This is a little difficult to
-      // do, as the mapping needs to be moved to a different address. But
-      // we potentially running code that is inside of this mapping at the
-      // time when it gets moved.
-      //
-      // We have to write the code in assembly. We allocate temporary
-      // storage and copy the critical code into this page. We then execute
-      // from this page, while we relocate the mapping. Finally, we allocate
-      // memory at the original location and copy the original data into it.
-      // The program can now resume execution.
-      #if defined(__x86_64__)
-      asm volatile(
-          // new_addr = 4096 + mmap(0, new_length + 4096,
-          //                        PROT_READ|PROT_WRITE|PROT_EXEC,
-          //                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-          "mov  $0, %%r9\n"
-          "mov  $-1, %%r8\n"
-          "mov  $0x22, %%r10\n"
-          "mov  $7, %%rdx\n"
-          "mov  0x18(%0), %%rsi\n"
-          "add  $4096, %%rsi\n"
-          "mov  $0, %%rdi\n"
-          "mov  $9, %%rax\n"
-          "syscall\n"
-          "cmp  $-4096, %%rax\n"
-          "ja   6f\n"
-          "mov  %%rax, %%r12\n"
-          "add  $4096, %%r12\n"
+    const Range& range = memory_ranges_.rbegin()->second;
+    struct Args {
+      void* old_addr;
+      long  old_length;
+      void* new_addr;
+      long  new_length;
+      long  prot;
+    } args = {
+      range.start,
+      (reinterpret_cast<long>(range.stop) -
+       reinterpret_cast<long>(range.start) + 4095) & ~4095,
+      0,
+      (memory_ranges_.begin()->first +
+       (reinterpret_cast<long>(memory_ranges_.begin()->second.stop) -
+        reinterpret_cast<long>(memory_ranges_.begin()->second.start)) +
+       4095) & ~4095,
+      range.prot
+    };
+    // We find the memory mapping that starts at file offset zero and
+    // extend it to cover the entire file. This is a little difficult to
+    // do, as the mapping needs to be moved to a different address. But
+    // we potentially running code that is inside of this mapping at the
+    // time when it gets moved.
+    //
+    // We have to write the code in assembly. We allocate temporary
+    // storage and copy the critical code into this page. We then execute
+    // from this page, while we relocate the mapping. Finally, we allocate
+    // memory at the original location and copy the original data into it.
+    // The program can now resume execution.
+    #if defined(__x86_64__)
+    asm volatile(
+        // new_addr = 4096 + mmap(0, new_length + 4096,
+        //                        PROT_READ|PROT_WRITE|PROT_EXEC,
+        //                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+        "mov  $0, %%r9\n"
+        "mov  $-1, %%r8\n"
+        "mov  $0x22, %%r10\n"
+        "mov  $7, %%rdx\n"
+        "mov  0x18(%0), %%rsi\n"
+        "add  $4096, %%rsi\n"
+        "mov  $0, %%rdi\n"
+        "mov  $9, %%rax\n"
+        "syscall\n"
+        "cmp  $-4096, %%rax\n"
+        "ja   6f\n"
+        "mov  %%rax, %%r12\n"
+        "add  $4096, %%r12\n"
 
-          // memcpy(new_addr - 4096, &&asm, asm_length)
-          "lea  2f(%%rip), %%rsi\n"
-          "lea  6f(%%rip), %%rdi\n"
-          "sub  %%rsi, %%rdi\n"
-        "0:sub  $1, %%rdi\n"
-          "test %%rdi, %%rdi\n"
-          "js   1f\n"
-          "movzbl (%%rsi, %%rdi, 1), %%ebx\n"
-          "mov  %%bl, (%%rax, %%rdi, 1)\n"
-          "jmp  0b\n"
-       "1:\n"
+        // memcpy(new_addr - 4096, &&asm, asm_length)
+        "lea  2f(%%rip), %%rsi\n"
+        "lea  6f(%%rip), %%rdi\n"
+        "sub  %%rsi, %%rdi\n"
+      "0:sub  $1, %%rdi\n"
+        "test %%rdi, %%rdi\n"
+        "js   1f\n"
+        "movzbl (%%rsi, %%rdi, 1), %%ebx\n"
+        "mov  %%bl, (%%rax, %%rdi, 1)\n"
+        "jmp  0b\n"
+     "1:\n"
 
-          // ((void (*)())new_addr - 4096)()
-          "lea  6f(%%rip), %%rbx\n"
-          "push %%rbx\n"
-          "jmp  *%%rax\n"
+        // ((void (*)())new_addr - 4096)()
+        "lea  6f(%%rip), %%rbx\n"
+        "push %%rbx\n"
+        "jmp  *%%rax\n"
 
-          // mremap(old_addr, old_length, new_length,
-          //        MREMAP_MAYMOVE|MREMAP_FIXED, new_addr)
-        "2:mov  %%r12, %%r8\n"
-          "mov  $3, %%r10\n"
-          "mov  0x18(%0), %%rdx\n"
-          "mov  0x8(%0), %%rsi\n"
-          "mov  0(%0), %%rdi\n"
-          "mov  $25, %%rax\n"
-          "syscall\n"
-          "cmp  $-4096, %%rax\n"
-          "ja   5f\n"
+        // mremap(old_addr, old_length, new_length,
+        //        MREMAP_MAYMOVE|MREMAP_FIXED, new_addr)
+      "2:mov  %%r12, %%r8\n"
+        "mov  $3, %%r10\n"
+        "mov  0x18(%0), %%rdx\n"
+        "mov  0x8(%0), %%rsi\n"
+        "mov  0(%0), %%rdi\n"
+        "mov  $25, %%rax\n"
+        "syscall\n"
+        "cmp  $-4096, %%rax\n"
+        "ja   5f\n"
 
-          // mmap(old_addr, old_length, PROT_WRITE,
-          //      MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)
-          "mov  $0, %%r9\n"
-          "mov  $-1, %%r8\n"
-          "mov  $0x32, %%r10\n"
-          "mov  $2, %%rdx\n"
-          "mov  0x8(%0), %%rsi\n"
-          "mov  0(%0), %%rdi\n"
-          "mov  $9, %%rax\n"
-          "syscall\n"
-          "cmp  $-12, %%eax\n"
-          "jz   4f\n"
-          "cmp  $-4096, %%rax\n"
-          "ja   5f\n"
+        // mmap(old_addr, old_length, PROT_WRITE,
+        //      MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)
+        "mov  $0, %%r9\n"
+        "mov  $-1, %%r8\n"
+        "mov  $0x32, %%r10\n"
+        "mov  $2, %%rdx\n"
+        "mov  0x8(%0), %%rsi\n"
+        "mov  0(%0), %%rdi\n"
+        "mov  $9, %%rax\n"
+        "syscall\n"
+        "cmp  $-12, %%eax\n"
+        "jz   4f\n"
+        "cmp  $-4096, %%rax\n"
+        "ja   5f\n"
 
-          // memcpy(old_addr, new_addr, old_length)
-          "mov  0x8(%0), %%rdi\n"
-        "3:sub  $1, %%rdi\n"
-          "test %%rdi, %%rdi\n"
-          "js   4f\n"
-          "movzbl (%%r12, %%rdi, 1), %%ebx\n"
-          "mov  %%bl, (%%rax, %%rdi, 1)\n"
-          "jmp  3b\n"
-        "4:\n"
+        // memcpy(old_addr, new_addr, old_length)
+        "mov  0x8(%0), %%rdi\n"
+      "3:sub  $1, %%rdi\n"
+        "test %%rdi, %%rdi\n"
+        "js   4f\n"
+        "movzbl (%%r12, %%rdi, 1), %%ebx\n"
+        "mov  %%bl, (%%rax, %%rdi, 1)\n"
+        "jmp  3b\n"
+      "4:\n"
 
-          // mprotect(old_addr, old_length, prot)
-          "mov  0x20(%0), %%rdx\n"
-          "mov  0x8(%0), %%rsi\n"
-          "mov  %%rax, %%rdi\n"
-          "mov  $10, %%rax\n"
-          "syscall\n"
+        // mprotect(old_addr, old_length, prot)
+        "mov  0x20(%0), %%rdx\n"
+        "mov  0x8(%0), %%rsi\n"
+        "mov  %%rax, %%rdi\n"
+        "mov  $10, %%rax\n"
+        "syscall\n"
 
-          // args.new_addr = new_addr
-          "mov  %%r12, 0x10(%0)\n"
-        "5:retq\n"
+        // args.new_addr = new_addr
+        "mov  %%r12, 0x10(%0)\n"
+      "5:retq\n"
 
-          // munmap(new_addr - 4096, 4096)
-        "6:mov  $4096, %%rsi\n"
-          "mov  %%r12, %%rdi\n"
-          "sub  %%rsi, %%rdi\n"
-          "mov  $11, %%rax\n"
-          "syscall\n"
-          :
-          : "q"(&args)
-          : "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
-            "r8", "r9", "r10", "r11", "r12", "memory");
-      #elif defined(__i386__)
-      asm volatile(
-          "push %%ebp\n"
-          "push %%ebx\n"
-          "push %%edi\n"
+        // munmap(new_addr - 4096, 4096)
+      "6:mov  $4096, %%rsi\n"
+        "mov  %%r12, %%rdi\n"
+        "sub  %%rsi, %%rdi\n"
+        "mov  $11, %%rax\n"
+        "syscall\n"
+        :
+        : "q"(&args)
+        : "rax", "rbx", "rcx", "rdx", "rsi", "rdi",
+          "r8", "r9", "r10", "r11", "r12", "memory");
+    #elif defined(__i386__)
+    asm volatile(
+        "push %%ebp\n"
+        "push %%ebx\n"
+        "push %%edi\n"
 
-          // new_addr = 4096 + mmap(0, new_length + 4096,
-          //                        PROT_READ|PROT_WRITE|PROT_EXEC,
-          //                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-          "mov  $0, %%ebp\n"
-          "mov  $0x22, %%esi\n"
-          "mov  $7, %%edx\n"
-          "mov  12(%%edi), %%ecx\n"
-          "add  $4096, %%ecx\n"
-          "mov  $-1, %%edi\n"
-          "mov  $0, %%ebx\n"
-          "mov  $192, %%eax\n"
-          "int  $0x80\n"
-          "cmp  $-4096, %%eax\n"
-          "ja   6f\n"
-          "mov  %%eax, %%ebp\n"
-          "add  $4096, %%ebp\n"
+        // new_addr = 4096 + mmap(0, new_length + 4096,
+        //                        PROT_READ|PROT_WRITE|PROT_EXEC,
+        //                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+        "mov  $0, %%ebp\n"
+        "mov  $0x22, %%esi\n"
+        "mov  $7, %%edx\n"
+        "mov  12(%%edi), %%ecx\n"
+        "add  $4096, %%ecx\n"
+        "mov  $-1, %%edi\n"
+        "mov  $0, %%ebx\n"
+        "mov  $192, %%eax\n"
+        "int  $0x80\n"
+        "cmp  $-4096, %%eax\n"
+        "ja   6f\n"
+        "mov  %%eax, %%ebp\n"
+        "add  $4096, %%ebp\n"
 
-          // memcpy(new_addr - 4096, &&asm, asm_length)
-          "lea  2f, %%ecx\n"
-          "lea  6f, %%ebx\n"
-          "sub  %%ecx, %%ebx\n"
-        "0:dec  %%ebx\n"
-          "test %%ebx, %%ebx\n"
-          "js   1f\n"
-          "movzbl (%%ecx, %%ebx, 1), %%edx\n"
-          "mov  %%dl, (%%eax, %%ebx, 1)\n"
-          "jmp  0b\n"
-        "1:\n"
+        // memcpy(new_addr - 4096, &&asm, asm_length)
+        "lea  2f, %%ecx\n"
+        "lea  6f, %%ebx\n"
+        "sub  %%ecx, %%ebx\n"
+      "0:dec  %%ebx\n"
+        "test %%ebx, %%ebx\n"
+        "js   1f\n"
+        "movzbl (%%ecx, %%ebx, 1), %%edx\n"
+        "mov  %%dl, (%%eax, %%ebx, 1)\n"
+        "jmp  0b\n"
+      "1:\n"
 
-          // ((void (*)())new_addr - 4096)()
-          "lea  6f, %%ebx\n"
-          "push %%ebx\n"
-          "jmp  *%%eax\n"
+        // ((void (*)())new_addr - 4096)()
+        "lea  6f, %%ebx\n"
+        "push %%ebx\n"
+        "jmp  *%%eax\n"
 
-          // mremap(old_addr, old_length, new_length,
-          //        MREMAP_MAYMOVE|MREMAP_FIXED, new_addr)
-        "2:push %%ebp\n"
-          "mov  $3, %%esi\n"
-          "mov  8(%%esp), %%edi\n"
-          "mov  12(%%edi), %%edx\n"
-          "mov  4(%%edi), %%ecx\n"
-          "mov  0(%%edi), %%ebx\n"
-          "mov  %%ebp, %%edi\n"
-          "mov  $163, %%eax\n"
-          "int  $0x80\n"
-          "cmp  $-4096, %%eax\n"
-          "ja   5f\n"
+        // mremap(old_addr, old_length, new_length,
+        //        MREMAP_MAYMOVE|MREMAP_FIXED, new_addr)
+      "2:push %%ebp\n"
+        "mov  $3, %%esi\n"
+        "mov  8(%%esp), %%edi\n"
+        "mov  12(%%edi), %%edx\n"
+        "mov  4(%%edi), %%ecx\n"
+        "mov  0(%%edi), %%ebx\n"
+        "mov  %%ebp, %%edi\n"
+        "mov  $163, %%eax\n"
+        "int  $0x80\n"
+        "cmp  $-4096, %%eax\n"
+        "ja   5f\n"
 
-          // mmap(old_addr, old_length, PROT_WRITE,
-          //      MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)
-          "mov  $0, %%ebp\n"
-          "mov  $0x32, %%esi\n"
-          "mov  $2, %%edx\n"
-          "mov  8(%%esp), %%edi\n"
-          "mov  4(%%edi), %%ecx\n"
-          "mov  0(%%edi), %%ebx\n"
-          "mov  $-1, %%edi\n"
-          "mov  $192, %%eax\n"
-          "int  $0x80\n"
-          "cmp  $-12, %%eax\n"
-          "jz   4f\n"
-          "cmp  $-4096, %%eax\n"
-          "ja   5f\n"
+        // mmap(old_addr, old_length, PROT_WRITE,
+        //      MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0)
+        "mov  $0, %%ebp\n"
+        "mov  $0x32, %%esi\n"
+        "mov  $2, %%edx\n"
+        "mov  8(%%esp), %%edi\n"
+        "mov  4(%%edi), %%ecx\n"
+        "mov  0(%%edi), %%ebx\n"
+        "mov  $-1, %%edi\n"
+        "mov  $192, %%eax\n"
+        "int  $0x80\n"
+        "cmp  $-12, %%eax\n"
+        "jz   4f\n"
+        "cmp  $-4096, %%eax\n"
+        "ja   5f\n"
 
-          // memcpy(old_addr, new_addr, old_length)
-          "mov  0(%%esp), %%ecx\n"
-          "mov  8(%%esp), %%edi\n"
-          "mov  4(%%edi), %%ebx\n"
-        "3:dec  %%ebx\n"
-          "test %%ebx, %%ebx\n"
-          "js   4f\n"
-          "movzbl (%%ecx, %%ebx, 1), %%edx\n"
-          "mov  %%dl, (%%eax, %%ebx, 1)\n"
-          "jmp  3b\n"
-        "4:\n"
+        // memcpy(old_addr, new_addr, old_length)
+        "mov  0(%%esp), %%ecx\n"
+        "mov  8(%%esp), %%edi\n"
+        "mov  4(%%edi), %%ebx\n"
+      "3:dec  %%ebx\n"
+        "test %%ebx, %%ebx\n"
+        "js   4f\n"
+        "movzbl (%%ecx, %%ebx, 1), %%edx\n"
+        "mov  %%dl, (%%eax, %%ebx, 1)\n"
+        "jmp  3b\n"
+      "4:\n"
 
-          // mprotect(old_addr, old_length, prot)
-          "mov  8(%%esp), %%edi\n"
-          "mov  16(%%edi), %%edx\n"
-          "mov  4(%%edi), %%ecx\n"
-          "mov  %%eax, %%ebx\n"
-          "mov  $125, %%eax\n"
-          "int  $0x80\n"
+        // mprotect(old_addr, old_length, prot)
+        "mov  8(%%esp), %%edi\n"
+        "mov  16(%%edi), %%edx\n"
+        "mov  4(%%edi), %%ecx\n"
+        "mov  %%eax, %%ebx\n"
+        "mov  $125, %%eax\n"
+        "int  $0x80\n"
 
-          // args.new_addr = new_addr
-          "mov  8(%%esp), %%edi\n"
-          "mov  0(%%esp), %%ebp\n"
-          "mov  %%ebp, 0x8(%%edi)\n"
+        // args.new_addr = new_addr
+        "mov  8(%%esp), %%edi\n"
+        "mov  0(%%esp), %%ebp\n"
+        "mov  %%ebp, 0x8(%%edi)\n"
 
-        "5:pop  %%ebx\n"
-          "ret\n"
+      "5:pop  %%ebx\n"
+        "ret\n"
 
-          // munmap(new_addr - 4096, 4096)
-        "6:mov  $4096, %%ecx\n"
-          "sub  %%ecx, %%ebx\n"
-          "mov  $91, %%eax\n"
-          "int  $0x80\n"
-          "pop  %%edi\n"
-          "pop  %%ebx\n"
-          "pop  %%ebp\n"
-          :
-          : "D"(&args)
-          : "eax", "ecx", "edx", "esi", "memory");
-      #else
-      #error Unsupported target platform
-      #endif
-      if (!args.new_addr) {
-        goto failed;
-      }
-
-      memory_ranges_.clear();
-      memory_ranges_.insert(std::make_pair(0, Range(args.new_addr,
-                   reinterpret_cast<char *>(args.new_addr) + args.new_length,
-                   PROT_READ)));
-      valid_ = true;
+        // munmap(new_addr - 4096, 4096)
+      "6:mov  $4096, %%ecx\n"
+        "sub  %%ecx, %%ebx\n"
+        "mov  $91, %%eax\n"
+        "int  $0x80\n"
+        "pop  %%edi\n"
+        "pop  %%ebx\n"
+        "pop  %%ebp\n"
+        :
+        : "D"(&args)
+        : "eax", "ecx", "edx", "esi", "memory");
+    #else
+    #error Unsupported target platform
+    #endif
+    if (!args.new_addr) {
+      goto failed;
     }
+
+    memory_ranges_.clear();
+    memory_ranges_.insert(std::make_pair(0, Range(args.new_addr,
+                 reinterpret_cast<char *>(args.new_addr) + args.new_length,
+                 PROT_READ)));
+    valid_ = true;
   }
 }
 

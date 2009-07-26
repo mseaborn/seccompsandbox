@@ -1,3 +1,6 @@
+- don't derefence the GOT when looking for syscallTable. This must be a
+  secure memory access!
+
 - audit error code handling in trusted_thread.cc. Most notably, add error
   handling, if mprotect() fails.
 

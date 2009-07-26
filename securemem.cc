@@ -27,7 +27,7 @@ void SecureMem::dieIfParentDied(int parentProc) {
 }
 
 void SecureMem::lockSystemCall(int parentProc, Args* mem) {
-  while (!Mutex::lockMutex(Sandbox::syscall_mutex_, 500)) {
+  while (!Mutex::lockMutex(&Sandbox::syscall_mutex_, 500)) {
     dieIfParentDied(parentProc);
   }
   asm volatile(
@@ -84,7 +84,7 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, int parentProc,
     Sandbox::die("Failed to send system call");
   }
   if (parentProc >= 0) {
-    while (!Mutex::waitForUnlock(Sandbox::syscall_mutex_, 500)) {
+    while (!Mutex::waitForUnlock(&Sandbox::syscall_mutex_, 500)) {
       dieIfParentDied(parentProc);
     }
   }

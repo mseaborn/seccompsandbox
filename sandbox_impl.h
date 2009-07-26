@@ -1,6 +1,7 @@
 #ifndef SANDBOX_IMPL_H__
 #define SANDBOX_IMPL_H__
 
+#include <asm/ldt.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -219,6 +220,7 @@ class Sandbox {
         void* edx;
         void* ecx;
         void* ebx;
+        void* ret2;
       } regs32 __attribute__((packed));
     #else
     #error Unsupported target platform
@@ -317,7 +319,7 @@ class Sandbox {
   // require passing additional data, and that require the trusted process to
   // wait until the trusted thread is done processing (e.g. exit(), clone(),
   // open(), stat())
-  static Mutex::mutex_t* syscall_mutex_ asm("playground$syscall_mutex");
+  static Mutex::mutex_t syscall_mutex_ asm("playground$syscall_mutex");
 
   // Available in trusted process, only
   typedef std::map<void *, long>       ProtectedMap;

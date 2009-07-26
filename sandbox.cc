@@ -2,14 +2,10 @@
 #include "sandbox_impl.h"
 #include "syscall_table.h"
 
-//#include "valgrind/valgrind.h"
-#define RUNNING_ON_VALGRIND 1 // TODO(markus): remove
-
 namespace playground {
 
 // Global variables
 int                           Sandbox::pid_;
-Mutex::mutex_t*               Sandbox::syscall_mutex_;
 int                           Sandbox::processFdPub_;
 int                           Sandbox::cloneFdPub_;
 Sandbox::ProtectedMap         Sandbox::protectedMap_;
@@ -147,24 +143,23 @@ void Sandbox::startSandbox() {
   // correctly.
   {
     Maps maps("/proc/self/maps");
-    const char *system_calls[] = {
-      "brk", "close", "exit_group", "fcntl", "fstat", "futex", "getdents",
-      "ioctl", "mmap", "munmap", "open", "stat", "clock_gettime",
-      "__kernel_vsyscall", "__kernel_sigreturn", "__kernel_rt_sigreturn",
-      "__vdso_clock_gettime", "__vdso_getcpu", "__vdso_gettimeofday",
-      NULL
-    };
+    const char *libs[] = { "libc", "librt", "libpthread", NULL };
 
-    // Intercept system calls in libc, libpthread, librt, and any other
-    // library that might be interposed.
+    // Intercept system calls in libraries that are known to have them.
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){
       Library* library = *iter;
       library->makeWritable(true);
-      for (const char **ptr = system_calls; *ptr; ptr++) {
-        void *sym = library->getSymbol(*ptr);
-        if (sym != NULL) {
-          library->patchSystemCalls();
-          break;
+      if (library->isVDSO()) {
+        library->patchSystemCalls();
+      } else {
+        for (const char **ptr = libs; *ptr; ptr++) {
+          char *name = strstr(iter.name().c_str(), *ptr);
+          if (name) {
+            char ch = name[strlen(*ptr)];
+            if (ch < 'A' || (ch > 'Z' && ch < 'a') || ch > 'z') {
+              library->patchSystemCalls();
+            }
+          }
         }
       }
       library->makeWritable(false);

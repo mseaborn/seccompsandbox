@@ -9,7 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define THREADS 100
+#define THREADS 1000
 #define ITER    100
 
 static void *empty(void *arg) {
@@ -67,5 +67,6 @@ int main(int argc, char *argv[]) {
   }
 
   puts("Done");
+  exit(0);
   return 0;
 }

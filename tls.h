@@ -47,7 +47,8 @@ class TLS {
     if (sys.set_thread_area(&u) < 0) {
       return NULL;
     }
-    asm("movw %w0, %%fs"
+    asm volatile(
+        "movw %w0, %%fs"
         :
         : "q"(8*u.entry_number+3));
     #else
@@ -76,7 +77,8 @@ class TLS {
     if (idx < 0 || idx >= 4096/8) {
       return false;
     }
-    asm("movq %0, %%gs:(%1)\n"
+    asm volatile(
+        "movq %0, %%gs:(%1)\n"
         :
         : "q"((void *)val), "q"(8ll * idx));
     #elif defined(__i386__)
@@ -84,14 +86,17 @@ class TLS {
       return false;
     }
     if (sizeof(T) == 8) {
-      asm("movl %0, %%fs:(%1)\n"
+      asm volatile(
+          "movl %0, %%fs:(%1)\n"
           :
           : "r"((unsigned)val), "r"(8 * idx));
-      asm("movl %0, %%fs:(%1)\n"
+      asm volatile(
+          "movl %0, %%fs:(%1)\n"
           :
           : "r"((unsigned)((unsigned long long)val >> 32)), "r"(8 * idx + 4));
     } else {
-      asm("movl %0, %%fs:(%1)\n"
+      asm volatile(
+          "movl %0, %%fs:(%1)\n"
           :
           : "r"(val), "r"(8 * idx));
     }
@@ -107,7 +112,8 @@ class TLS {
     if (idx < 0 || idx >= 4096/8) {
       return 0;
     }
-    asm("movq %%gs:(%1), %0\n"
+    asm volatile(
+        "movq %%gs:(%1), %0\n"
         : "=q"(rc)
         : "q"(8ll * idx));
     return (T)rc;
@@ -117,16 +123,19 @@ class TLS {
     }
     if (sizeof(T) == 8) {
       unsigned lo, hi;
-      asm("movl %%fs:(%1), %0\n"
+      asm volatile(
+          "movl %%fs:(%1), %0\n"
           : "=r"(lo)
           : "r"(8 * idx));
-      asm("movl %%fs:(%1), %0\n"
+      asm volatile(
+          "movl %%fs:(%1), %0\n"
           : "=r"(hi)
           : "r"(8 * idx + 4));
       return (T)((unsigned long long)lo + ((unsigned long long)hi << 32));
     } else {
       long rc;
-      asm("movl %%fs:(%1), %0\n"
+      asm volatile(
+          "movl %%fs:(%1), %0\n"
           : "=r"(rc)
           : "r"(8 * idx));
       return (T)rc;

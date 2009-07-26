@@ -273,6 +273,10 @@ bool Maps::Iterator::operator!=(const Maps::Iterator& iter) const {
   return !operator==(iter);
 }
 
+std::string Maps::Iterator::name() const {
+  return getIterator()->first;
+}
+
 char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
   // We try to allocate memory within 1.5GB of a target address. This means,
   // we will be able to perform relative 32bit jumps from the target address.

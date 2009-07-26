@@ -50,6 +50,7 @@ class SecureMem {
             void*        r14;
             void*        r15;
             #elif defined(__i386__)
+            void*        ret2;
             void*        ebp;
             void*        edi;
             void*        esi;

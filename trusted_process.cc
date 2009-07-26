@@ -156,21 +156,26 @@ void Sandbox::initializeProtectedMap(int fd) {
 
 SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
                                                int cloneFdPub, int cloneFd) {
-  // Allocate memory that will be used for our syscall_mutex, followed by
-  // an arena for storing the secure memory. While we allow this memory area
-  // to be empty at times (e.g. when not all threads are in use), we make
-  // sure that it never gets overwritten by user-allocated memory.
-  // This happens in initializeProtectedMap() and snapshotMemoryMappings().
-  syscall_mutex_               = reinterpret_cast<Mutex::mutex_t*>(
-      mmap(NULL, 8192*kMaxThreads+4096, PROT_READ|PROT_WRITE,
+  // Allocate memory that will be used by an arena for storing the secure
+  // memory. While we allow this memory area to be empty at times (e.g. when
+  // not all threads are in use), we make sure that it never gets overwritten
+  // by user-allocated memory. This happens in initializeProtectedMap() and
+  // snapshotMemoryMappings().
+  SecureMem::Args* secureArena = reinterpret_cast<SecureMem::Args*>(
+      mmap(NULL, 8192*kMaxThreads, PROT_READ|PROT_WRITE,
            MAP_SHARED|MAP_ANONYMOUS, -1, 0));
-  if (syscall_mutex_ == MAP_FAILED) {
+  if (secureArena == MAP_FAILED) {
     die("Failed to allocate secure memory arena");
   }
-  *syscall_mutex_              = 0x80000000;
 
-  SecureMem::Args* secureArena = reinterpret_cast<SecureMem::Args*>(
-      reinterpret_cast<char *>(syscall_mutex_) + 4096);
+  // Set up the mutex to be accessible from the trusted process and from
+  // children of the trusted thread(s)
+  if (mmap(&syscall_mutex_, 4096, PROT_READ|PROT_WRITE,
+           MAP_SHARED|MAP_ANONYMOUS|MAP_FIXED, -1, 0) != &syscall_mutex_) {
+    die("Failed to initialize secure mutex");
+  }
+  syscall_mutex_ = 0x80000000;
+
 
   // Hold on to a file handle in the parent's process directory. We can use
   // this later to reliably tell if the parent died.
@@ -227,7 +232,8 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
   }
 
   // We are still in the untrusted code. Deny access to restricted resources.
-  mprotect(syscall_mutex_, 4096+8192*kMaxThreads, PROT_NONE);
+  mprotect(secureArena, 8192*kMaxThreads, PROT_NONE);
+  mprotect(&syscall_mutex_, 4096, PROT_NONE);
   close(parentProc);
   close(sandboxFd);
 

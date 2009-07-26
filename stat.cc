@@ -15,7 +15,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   request                       = reinterpret_cast<struct Request*>(data);
   request->sysnum               = __NR_stat;
   request->cookie               = cookie();
-  request->sysnum               = __NR_stat;
+  request->stat_req.sysnum      = __NR_stat;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
@@ -43,7 +43,7 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
   request                       = reinterpret_cast<struct Request*>(data);
   request->sysnum               = __NR_stat64;
   request->cookie               = cookie();
-  request->sysnum               = __NR_stat64;
+  request->stat_req.sysnum      = __NR_stat64;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
