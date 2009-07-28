@@ -7,7 +7,8 @@ namespace playground {
 asm(
     ".pushsection .text, \"ax\", @progbits\n"
 
-    // This code relies on the stack layout of the system call wrapper. It
+    // This is the special wrapper for the clone() system call. The code
+    // relies on the stack layout of the system call wrapper (c.f. below). It
     // passes the stack pointer as an additional argument to sandbox__clone(),
     // so that upon starting the child, register values can be restored and
     // the child can start executing at the correct IP, instead of trying to
@@ -15,11 +16,15 @@ asm(
     "playground$sandbox_clone:"
     ".globl playground$sandbox_clone\n"
     ".type playground$sandbox_clone, @function\n"
-    ".globl playground$sandbox__clone\n"
     #if defined(__x86_64__)
+    // Skip the 8 byte return address into the system call wrapper. The
+    // following bytes are the saved register values that we need to restore
+    // upon return from clone() in the new thread.
     "lea 8(%rsp), %r9\n"
     "jmp playground$sandbox__clone\n"
     #elif defined(__i386__)
+    // As i386 passes function arguments on the stack, we need to skip a few
+    // more values before we can get to the saved registers.
     "lea 28(%esp), %eax\n"
     "mov %eax, 24(%esp)\n"
     "jmp playground$sandbox__clone\n"
@@ -29,6 +34,8 @@ asm(
     ".size playground$sandbox_clone, .-playground$sandbox_clone\n"
 
 
+    // This is the wrapper which is called by the untrusted code, trying to
+    // make a system call.
     "playground$syscallWrapper:"
     ".globl playground$syscallWrapper\n"
     ".type playground$syscallWrapper, @function\n"
@@ -50,29 +57,34 @@ asm(
     "push %r14\n"
     "push %r15\n"
 
-    // Convert from syscall calling conventions to C calling conventions
+    // Convert from syscall calling conventions to C calling conventions.
+    // System calls have a subtly different register ordering than the user-
+    // space x86-64 ABI.
     "mov %r10, %rcx\n"
 
     // Check range of system call
-    ".globl playground$maxSyscall\n"
-    "mov playground$maxSyscall@GOTPCREL(%rip), %r10\n"
-    "cmp 0(%r10), %eax\n"
+    "cmp playground$maxSyscall(%rip), %eax\n"
     "ja  1f\n"
 
-    // Retrieve function call from system call table
+    // Retrieve function call from system call table (c.f. syscall_table.c).
+    // We have three different types of entries; zero for denied system calls,
+    // that should be handled by the defaultSystemCallHandler(); minus one
+    // for unrestricted system calls that need to be forwarded to the trusted
+    // thread; and function pointers to specific handler functions.
     "mov %rax, %r10\n"
     "shl $4, %r10\n"
-    ".globl playground$syscallTable\n"
-    "add playground$syscallTable@GOTPCREL(%rip), %r10\n"
+    "lea playground$syscallTable(%rip), %r11\n"
+    "add %r11, %r10\n"
     "mov 0(%r10), %r10\n"
 
-    // Jump to function if non-null, otherwise jump to fallback handler
+    // Jump to function if non-null and not UNRESTRICTED_SYSCALL, otherwise
+    // jump to fallback handler.
     "cmp $1, %r10\n"
     "jbe 1f\n"
     "call *%r10\n"
   "0:"
 
-    // Restore CPU registers
+    // Restore CPU registers, except for %rax which was set by the system call.
     "pop %r15\n"
     "pop %r14\n"
     "pop %r13\n"
@@ -88,14 +100,17 @@ asm(
     "pop %rbx\n"
     "pop %rbp\n"
 
-    // Remove fake return address
+    // Remove fake return address. This is added in the patching code in
+    // library.cc and it makes stack traces a little cleaner.
     "add $8, %rsp\n"
 
     // Return to caller
     "ret\n"
 
   "1:"
-    // Shift registers so that the system call number becomes visible as the
+    // If we end up calling a specific handler, we don't need to know the
+    // system call number. However, in the generic case, we do. Shift
+    // registers so that the system call number becomes visible as the
     // first function argument.
     "push %r9\n"
     "mov  %r8, %r9\n"
@@ -131,13 +146,18 @@ asm(
     "cmp playground$maxSyscall, %eax\n"
     "ja  1f\n"
 
-    // Retrieve function call from system call table
+    // Retrieve function call from system call table (c.f. syscall_table.c).
+    // We have three different types of entries; zero for denied system calls,
+    // that should be handled by the defaultSystemCallHandler(); minus one
+    // for unrestricted system calls that need to be forwarded to the trusted
+    // thread; and function pointers to specific handler functions.
     "shl  $3, %eax\n"
     "lea  playground$syscallTable, %ebx\n"
     "add  %ebx, %eax\n"
     "mov  0(%eax), %eax\n"
 
-    // Jump to function if non-null, otherwise jump to fallback handler
+    // Jump to function if non-null and not UNRESTRICTED_SYSCALL, otherwise
+    // jump to fallback handler.
     "cmp  $1, %eax\n"
     "jbe  1f\n"
     "add  $4, %esp\n"
@@ -145,7 +165,7 @@ asm(
     "add  $24, %esp\n"
   "0:"
 
-    // Restore CPU registers
+    // Restore CPU registers, except for %eax which was set by the system call.
     "pop  %ebp\n"
     "pop  %edi\n"
     "pop  %esi\n"

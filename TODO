@@ -1,7 +1,6 @@
-- rewrite rdtsc in x86-32 bit mode
-
-- don't derefence the GOT when looking for syscallTable. This must be a
-  secure memory access!
+- for better efficiency, try to find instances of RDTSC in glibc and rewrite
+  them. That would avoid the signal handling, when it is not strictly
+  necessary.
 
 - audit error code handling in trusted_thread.cc. Most notably, add error
   handling, if mprotect() fails.

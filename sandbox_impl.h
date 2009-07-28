@@ -5,13 +5,14 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/futex.h>
 #include <linux/prctl.h>
 #include <linux/unistd.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdarg.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -25,13 +26,12 @@
 #include <unistd.h>
 
 #define NOINTR_SYS(x)                                                         \
- ({ int i__; while ((i__ = (x)) < 0 && sys.my_errno == EINTR); i__;})
+  ({ typeof(x) i__; while ((i__ = (x)) < 0 && sys.my_errno == EINTR); i__;})
 
 #ifdef __cplusplus
 #include <iostream>
 #include <map>
 #include <vector>
-#include "mutex.h"
 #include "sandbox.h"
 #include "securemem.h"
 #include "tls.h"
@@ -58,13 +58,17 @@ class Sandbox {
 // something that is palatable to a C compiler.
 #define STATIC static
 #define SecureMemArgs SecureMem::Args
-  // Clone is special as it needs a wrapper in syscall_table.c
-  static int sandbox_clone(int, void*, int*, int*, void*,void*)
+  // Clone() is special as it has a wrapper in syscall_table.c. The wrapper
+  // adds one extra argument (the pointer to the saved registers) and then
+  // calls playground$sandbox__clone().
+  static int sandbox_clone(int flags, void* stack, int* pid, int* ctid,
+                           void* tls, void* wrapper_sp)
                                             asm("playground$sandbox__clone");
 #else
 #define STATIC
 #define bool int
 #define SecureMemArgs void
+  // This is the wrapper entry point that is found in the syscall_table.
   int sandbox_clone(int flags, void* stack, int* pid, int* ctid, void* tls)
                                             asm("playground$sandbox_clone");
 #endif
@@ -112,7 +116,11 @@ class Sandbox {
                                             asm("playground$process_stat");
 
 #ifdef __cplusplus
+  friend class Library;
+  friend class Maps;
+  friend class Mutex;
   friend class SecureMem;
+  friend class TLS;
 
   // Define our own inline system calls. These calls will not be rewritten
   // to point to the sandboxed wrapper functions. They thus allow us to
@@ -152,15 +160,15 @@ class Sandbox {
 
   // Wrapper around "read()" that can deal with partial and interrupted reads
   // and that does not modify the global errno variable.
-  static int read(SysCalls& sys, int fd, void *buf, ssize_t len) {
+  static ssize_t read(SysCalls& sys, int fd, void* buf, size_t len) {
     if (len < 0) {
       sys.my_errno = EINVAL;
       return -1;
     }
-    int offset = 0;
+    size_t offset = 0;
     while (offset < len) {
-      int partial =
-          NOINTR_SYS(sys.read(fd, reinterpret_cast<char *>(buf) + offset,
+      ssize_t partial =
+          NOINTR_SYS(sys.read(fd, reinterpret_cast<char*>(buf) + offset,
                               len - offset));
       if (partial < 0) {
         return partial;
@@ -174,18 +182,18 @@ class Sandbox {
 
   // Wrapper around "write()" that can deal with interrupted writes and that
   // does not modify the global errno variable.
-  static int write(SysCalls& sys, int fd, const void *buf, size_t len){
+  static ssize_t write(SysCalls& sys, int fd, const void* buf, size_t len){
     return NOINTR_SYS(sys.write(fd, buf, len));
   }
 
   // Sends a file handle to another process.
-  static bool sendFd(int transport, int fd0, int fd1, void* buf,
-                     ssize_t len) asm("playground$sendFd");
+  static bool sendFd(int transport, int fd0, int fd1, const void* buf,
+                     size_t len) asm("playground$sendFd");
 
   // If getFd() fails, it will set the first valid fd slot (e.g. fd0) to
   // -errno.
   static bool getFd(int transport, int* fd0, int* fd1, void* buf,
-                    ssize_t* len);
+                    size_t* len);
 
   // Data structures used to forward system calls to the trusted process.
   struct Clone {
@@ -255,15 +263,15 @@ class Sandbox {
   } __attribute__((packed));
 
   struct Open {
-    int    path_length;
+    size_t path_length;
     int    flags;
     mode_t mode;
   } __attribute__((packed));
 
   struct Stat {
-    int   sysnum;
-    int   path_length;
-    void* buf;
+    int    sysnum;
+    size_t path_length;
+    void*  buf;
   } __attribute__((packed));
 
   // Thread local data available from each sandboxed thread.
@@ -272,6 +280,10 @@ class Sandbox {
   static int tid()          { return TLS::getTLSValue<int>(TLS_TID); }
   static int threadFdPub()  { return TLS::getTLSValue<int>(TLS_THREAD_FD); }
   static int processFdPub() { return processFdPub_; }
+
+  // The SEGV handler knows how to handle RDTSC instructions
+  static void setupSignalHandlers();
+  static void segv(int signo);
 
   // If no specific handler has been registered for a system call, call this
   // function which asks the trusted thread to perform the call. This is used
@@ -319,7 +331,7 @@ class Sandbox {
   // require passing additional data, and that require the trusted process to
   // wait until the trusted thread is done processing (e.g. exit(), clone(),
   // open(), stat())
-  static Mutex::mutex_t syscall_mutex_ asm("playground$syscall_mutex");
+  static int syscall_mutex_ asm("playground$syscall_mutex");
 
   // Available in trusted process, only
   typedef std::map<void *, long>       ProtectedMap;

@@ -11,27 +11,9 @@
 
 #include "library.h"
 #include "maps.h"
-
-#define NOINTR(x) ({ int i__; while ((i__ = (x)) < 0 && errno == EINTR); i__;})
+#include "sandbox_impl.h"
 
 namespace playground {
-
-class SysCalls {
- public:
-  #define SYS_CPLUSPLUS
-  #define SYS_ERRNO     my_errno
-  #define SYS_INLINE    inline
-  #define SYS_PREFIX    -1
-  #undef  SYS_LINUX_SYSCALL_SUPPORT_H
-  #include "linux_syscall_support.h"
-  SysCalls() : my_errno(0) { }
-  int my_errno;
-  #ifdef __NR_mmap2
-    #define MMAP mmap2
-  #else
-    #define MMAP mmap
-  #endif
-};
 
 Maps::Maps(const std::string& maps_file) :
     maps_file_(maps_file),
@@ -41,18 +23,17 @@ Maps::Maps(const std::string& maps_file) :
     vsyscall_(0) {
   memset(fds_, -1, sizeof(fds_));
   int fd = open(maps_file.c_str(), O_RDONLY);
+  Sandbox::SysCalls sys;
   if (fd >= 0) {
     char buf[256] = { 0 };
     int len = 0, rc = 1;
     bool long_line = false;
     do {
       if (rc > 0) {
-        do {
-          rc = NOINTR(read(fd, buf + len, sizeof(buf) - len - 1));
-          if (rc > 0) {
-            len += rc;
-          }
-        } while (rc > 0 && len < (int)sizeof(buf) - 1);
+        rc = Sandbox::read(sys, fd, buf + len, sizeof(buf) - len - 1);
+        if (rc > 0) {
+          len += rc;
+        }
       }
       char *ptr = buf;
       if (!long_line) {
@@ -115,7 +96,7 @@ Maps::Maps(const std::string& maps_file) :
         }
       }
     } while (len || long_line);
-    NOINTR(close(fd));
+    NOINTR_SYS(close(fd));
 
     // The runtime loader clobbers some of the data that we want to read,
     // when it relocates objects. As we cannot trust the filename that we
@@ -130,8 +111,8 @@ Maps::Maps(const std::string& maps_file) :
       // between parent and child.
       fds_[ !pid_] = tmp_fds[     !pid_];
       fds_[!!pid_] = tmp_fds[2 + !!pid_];
-      NOINTR(close(  tmp_fds[    !!pid_]));
-      NOINTR(close(  tmp_fds[2 +  !pid_]));
+      NOINTR_SYS(close(  tmp_fds[    !!pid_]));
+      NOINTR_SYS(close(  tmp_fds[2 +  !pid_]));
 
       for (LibraryMap::iterator iter = libs_.begin(); iter != libs_.end(); ){
         Library* lib = &iter->second;
@@ -151,7 +132,7 @@ Maps::Maps(const std::string& maps_file) :
       if (!pid_) {
         Request req;
         for (;;) {
-          if (NOINTR(read(fds_[0], &req, sizeof(Request))) !=
+          if (Sandbox::read(sys, fds_[0], &req, sizeof(Request)) !=
               sizeof(Request)) {
             _exit(0);
           }
@@ -161,10 +142,10 @@ Maps::Maps(const std::string& maps_file) :
                 char *buf = new char[req.length];
                 if (!req.library->get(req.offset, buf, req.length)) {
                   req.length = -1;
-                  NOINTR(write(fds_[1], &req.length, sizeof(req.length)));
+                  Sandbox::write(sys, fds_[1], &req.length,sizeof(req.length));
                 } else {
-                  NOINTR(write(fds_[1], &req.length, sizeof(req.length)));
-                  NOINTR(write(fds_[1], buf, req.length));
+                  Sandbox::write(sys, fds_[1], &req.length,sizeof(req.length));
+                  Sandbox::write(sys, fds_[1], buf, req.length);
                 }
                 delete[] buf;
               }
@@ -173,8 +154,8 @@ Maps::Maps(const std::string& maps_file) :
               {
                 std::string s = req.library->get(req.offset);
                 req.length = s.length();
-                NOINTR(write(fds_[1], &req.length, sizeof(req.length)));
-                NOINTR(write(fds_[1], s.c_str(), req.length));
+                Sandbox::write(sys, fds_[1], &req.length, sizeof(req.length));
+                Sandbox::write(sys, fds_[1], s.c_str(), req.length);
               }
               break;
           }
@@ -182,14 +163,14 @@ Maps::Maps(const std::string& maps_file) :
       }
     } else {
       for (int i = 0; i < 4; i++) {
-        NOINTR(close(tmp_fds[i]));
+        NOINTR_SYS(close(tmp_fds[i]));
       }
     }
   }
 }
 
 Maps::~Maps() {
-  SysCalls sys;
+  Sandbox::SysCalls sys;
   sys.kill(pid_, SIGKILL);
   sys.waitpid(pid_, NULL, 0);
 }
@@ -197,11 +178,12 @@ Maps::~Maps() {
 char *Maps::forwardGetRequest(Library *library, Elf_Addr offset,
                               char *buf, size_t length) const {
   Request req(Request::REQ_GET, library, offset, length);
-  if (NOINTR(write(fds_[1], &req, sizeof(Request))) != sizeof(Request) ||
-      NOINTR(read(fds_[0], &req.length, sizeof(req.length))) !=
+  Sandbox::SysCalls sys;
+  if (Sandbox::write(sys, fds_[1], &req, sizeof(Request)) != sizeof(Request) ||
+      Sandbox::read(sys, fds_[0], &req.length, sizeof(req.length)) !=
       sizeof(req.length) ||
       req.length == -1 ||
-      NOINTR(read(fds_[0], buf, length)) != (ssize_t)length) {
+      Sandbox::read(sys, fds_[0], buf, length) != (ssize_t)length) {
     memset(buf, 0, length);
     return NULL;
   }
@@ -211,13 +193,14 @@ char *Maps::forwardGetRequest(Library *library, Elf_Addr offset,
 std::string Maps::forwardGetRequest(Library *library,
                                     Elf_Addr offset) const {
   Request req(Request::REQ_GET_STR, library, offset, -1);
-  if (NOINTR(write(fds_[1], &req, sizeof(Request))) != sizeof(Request) ||
-      NOINTR(read(fds_[0], &req.length, sizeof(req.length))) !=
+  Sandbox::SysCalls sys;
+  if (Sandbox::write(sys, fds_[1], &req, sizeof(Request)) != sizeof(Request) ||
+      Sandbox::read(sys, fds_[0], &req.length, sizeof(req.length)) !=
       sizeof(req.length)) {
     return "";
   }
   char *buf = new char[req.length];
-  if (NOINTR(read(fds_[0], buf, req.length)) != (ssize_t)req.length) {
+  if (Sandbox::read(sys, fds_[0], buf, req.length) != (ssize_t)req.length) {
     delete[] buf;
     return "";
   }
@@ -281,7 +264,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
   // We try to allocate memory within 1.5GB of a target address. This means,
   // we will be able to perform relative 32bit jumps from the target address.
   size = (size + 4095) & ~4095;
-  SysCalls sys;
+  Sandbox::SysCalls sys;
   int fd = sys.open(maps_file_.c_str(), O_RDONLY, 0);
   if (fd < 0) {
     return NULL;
@@ -295,7 +278,7 @@ char* Maps::allocNearAddr(char* addr, size_t size, int prot) const {
   do {
     if (rc > 0) {
       do {
-        rc = NOINTR(sys.read(fd, buf + len, sizeof(buf) - len - 1));
+        rc = Sandbox::read(sys, fd, buf + len, sizeof(buf) - len - 1);
         if (rc > 0) {
           len += rc;
         }

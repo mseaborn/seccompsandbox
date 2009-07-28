@@ -43,7 +43,7 @@ newThreadCreated:
     int              fdPub;
   } __attribute__((packed)) data;
 
-  ssize_t dataLen                = sizeof(data);
+  size_t dataLen                 = sizeof(data);
   if (!getFd(cloneFd, &newThread->fdPub, &newThread->fd, &data, &dataLen) ||
       dataLen != sizeof(data)) {
     // We get here either because the sandbox got corrupted, or because our

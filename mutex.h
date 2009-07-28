@@ -1,28 +1,11 @@
 #ifndef MUTEX_H__
 #define MUTEX_H__
 
-#include <linux/futex.h>
-#include "linux_syscall_support.h"
-
-#define NOINTR_SYS(x)                                                         \
- ({ int i__; while ((i__ = (x)) < 0 && sys.my_errno == EINTR); i__;})
+#include "sandbox_impl.h"
 
 namespace playground {
 
 class Mutex {
- private:
-  class SysCalls {
-   public:
-    #define SYS_CPLUSPLUS
-    #define SYS_ERRNO     my_errno
-    #define SYS_INLINE    inline
-    #define SYS_PREFIX    -1
-    #undef  SYS_LINUX_SYSCALL_SUPPORT_H
-    #include "linux_syscall_support.h"
-    SysCalls() : my_errno(0) { }
-    int my_errno;
-  };
-
  public:
   typedef int mutex_t;
 
@@ -49,7 +32,7 @@ class Mutex {
       return;
     }
     // We unlocked the mutex, but still need to wake up other waiters.
-    SysCalls sys;
+    Sandbox::SysCalls sys;
     sys.futex(mutex, FUTEX_WAKE, 1, NULL);
   }
 
@@ -94,8 +77,8 @@ class Mutex {
         // Mutex has just become available, no need to call kernel
         continue;
       }
-      SysCalls sys;
-      SysCalls::kernel_timespec tm;
+      Sandbox::SysCalls sys;
+      Sandbox::SysCalls::kernel_timespec tm;
       if (timeout) {
         tm.tv_sec  = timeout / 1000;
         tm.tv_nsec = (timeout % 1000) * 1000 * 1000;
@@ -122,7 +105,7 @@ class Mutex {
     #else
     #error Unsupported target platform
     #endif
-    SysCalls sys;
+    Sandbox::SysCalls sys;
     for (;;) {
       mutex_t value = *mutex;
       if (value >= 0) {
@@ -142,7 +125,7 @@ class Mutex {
       }
 
       // Wait for mutex to become unlocked
-      SysCalls::kernel_timespec tm;
+      Sandbox::SysCalls::kernel_timespec tm;
       if (timeout) {
         tm.tv_sec   = timeout / 1000;
         tm.tv_nsec  = (timeout % 1000) * 1000 * 1000;

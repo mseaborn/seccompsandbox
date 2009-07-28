@@ -17,11 +17,10 @@
 #include <sys/types.h>
 
 #include "library.h"
+#include "sandbox_impl.h"
 #include "syscall.h"
 #include "syscall_table.h"
 #include "x86_decode.h"
-
-#define NOINTR(x) ({ int i__; while ((i__ = (x)) < 0 && errno == EINTR); i__;})
 
 #if defined(__x86_64__)
 typedef Elf64_Phdr    Elf_Phdr;
@@ -77,27 +76,6 @@ char* Library::__kernel_vsyscall;
 char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
 
-class SysCalls {
- public:
-  #define SYS_CPLUSPLUS
-  #define SYS_ERRNO     my_errno
-  #define SYS_INLINE    inline
-  #define SYS_PREFIX    -1
-  #undef  SYS_LINUX_SYSCALL_SUPPORT_H
-  #include "linux_syscall_support.h"
-  SysCalls() : my_errno(0) { }
-  int my_errno;
-};
-#define ERRNO sys.my_errno
-
-static void die(const char *msg) __attribute__((noreturn));
-static void die(const char *msg) {
-  SysCalls sys;
-  sys.write(2, msg, strlen(msg));
-  sys.write(2, "\n", 1);
-  _exit(1);
-}
-
 char *Library::get(Elf_Addr offset, char *buf, size_t len) {
   if (!valid_) {
     memset(buf, 0, len);
@@ -118,7 +96,7 @@ char *Library::get(Elf_Addr offset, char *buf, size_t len) {
       // library. We are trying to read data past the end of what is currently
       // mapped. Check if we can expand the memory mapping to recover the
       // needed data
-      SysCalls sys;
+      Sandbox::SysCalls sys;
       long new_size = (offset + len + 4095) & ~4095;
       void *new_start = sys.mremap(iter->second.start, size, new_size,
                                    MREMAP_MAYMOVE);
@@ -159,7 +137,7 @@ std::string Library::get(Elf_Addr offset) {
       // library. We are trying to read data past the end of what is currently
       // mapped. Check if we can expand the memory mapping to recover the
       // needed data. We assume that strings are never long than 4kB.
-      SysCalls sys;
+      Sandbox::SysCalls sys;
       long new_size = (offset + 4096 + 4095) & ~4095;
       void *new_start = sys.mremap(iter->second.start, size, new_size,
                                    MREMAP_MAYMOVE);
@@ -256,7 +234,7 @@ void Library::makeWritable(bool state) const {
     const Range& range = iter->second;
     long length = reinterpret_cast<char *>(range.stop) -
                   reinterpret_cast<char *>(range.start);
-    SysCalls sys;
+    Sandbox::SysCalls sys;
     sys.mprotect(range.start, length,
                  range.prot | (state ? PROT_WRITE : 0));
   }
@@ -289,7 +267,7 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
       labs(*extraSpace - reinterpret_cast<char *>(near)) > (1536 << 20)) {
     if (*extraSpace) {
       // Start a new scratch page and mark any previous page as write-protected
-      SysCalls sys;
+      Sandbox::SysCalls sys;
       sys.mprotect(*extraSpace, 4096, PROT_READ|PROT_EXEC);
     }
     // Our new scratch space is initially executable and writable.
@@ -301,7 +279,7 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
     *extraLength -= needed;
     return *extraSpace + *extraLength;
   }
-  die("Insufficient space to intercept system call");
+  Sandbox::die("Insufficient space to intercept system call");
 }
 
 void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
@@ -518,7 +496,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
           goto findEndIdx;
         }
         #endif
-        die("Cannot intercept system call");
+        Sandbox::die("Cannot intercept system call");
       }
       int needed = 5 - code[codeIdx].len;
       int first = codeIdx;
@@ -644,7 +622,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
 void Library::patchVDSO(char** extraSpace, int* extraLength){
   #if defined(__i386__)
-  SysCalls sys;
+  Sandbox::SysCalls sys;
   if (!__kernel_vsyscall ||
       sys.mprotect(reinterpret_cast<void *>(
                      reinterpret_cast<long>(__kernel_vsyscall) & ~0xFFF),
@@ -750,7 +728,7 @@ int Library::patchVSystemCalls() {
           }
           offset += adjust;
           if ((offset >> 32) && (offset >> 32) != -1) {
-            die("Cannot patch [vsystemcall]");
+            Sandbox::die("Cannot patch [vsystemcall]");
           }
           *reinterpret_cast<int *>(mod_rm + 1) = offset;
         }
@@ -812,7 +790,7 @@ int Library::patchVSystemCalls() {
     }
 
     // We are done. Write-protect our code and make it executable.
-    SysCalls sys;
+    Sandbox::SysCalls sys;
     sys.mprotect(copy, 0x1000, PROT_READ|PROT_EXEC);
     return maps_->vsyscall() - copy;
   }
@@ -887,7 +865,7 @@ void Library::patchSystemCalls() {
 
   // Mark our scratch space as write-protected and executable.
   if (extraSpace) {
-    SysCalls sys;
+    Sandbox::SysCalls sys;
     sys.mprotect(extraSpace, 4096, PROT_READ|PROT_EXEC);
   }
 }
@@ -906,7 +884,6 @@ bool Library::parseElf() {
     // Not all memory mappings are necessarily ELF files. Skip memory
     // mappings that we cannot identify.
     valid_ = false;
-    puts("invalid header");
     return false;
   }
 

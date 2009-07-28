@@ -27,6 +27,9 @@ class Maps {
                           size_t length) const;
   std::string forwardGetRequest(Library *library, Elf_Addr offset) const;
 
+  // A map with all the libraries currently loaded into the application.
+  // The key is a unique combination of device number, inode number, and
+  // file name. It should be treated as opaque.
   typedef std::map<std::string, Library> LibraryMap;
   friend class Iterator;
   class Iterator {
@@ -87,9 +90,10 @@ class Maps {
   };
 
  protected:
-  std::string maps_file_;
-  Iterator    begin_iter_;
-  Iterator    end_iter_;
+  const std::string maps_file_;
+  const Iterator    begin_iter_;
+  const Iterator    end_iter_;
+
   LibraryMap  libs_;
   pid_t       pid_;
   int         fds_[2];

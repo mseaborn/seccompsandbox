@@ -8,9 +8,21 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define THREADS 1000
 #define ITER    100
+
+static long long tsc() {
+  long long rc;
+  asm volatile(
+      "rdtsc\n"
+      "mov %%eax, (%0)\n"
+      "mov %%edx, 4(%0)\n"
+      :
+      : "c"(&rc), "a"(-1), "d"(-1));
+  return rc;
+}
 
 static void *empty(void *arg) {
   return mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -23,6 +35,7 @@ static void *fnc(void *arg) {
   } else {
     printf("In thread: usec: %ld\n", (long)tv.tv_usec);
   }
+  printf("In thread: TSC: %llx\n", tsc());
   for (int i = 0; i < ITER; i++) {
     pthread_t t;
     if (!pthread_create(&t, NULL, empty, NULL)) {
@@ -36,12 +49,16 @@ int main(int argc, char *argv[]) {
   startSandbox();
   write(2, "In secure mode, now!\n", 21);
 
+  printf("TSC: %llx\n", tsc());
+  printf("TSC: %llx\n", tsc());
+
   struct timeval tv;
   if (gettimeofday(&tv, 0)) {
     printf("gettimeofday() failed\n");
   } else {
     printf("usec: %ld\n", (long)tv.tv_usec);
   }
+  fflush(stdout);
   fopen("/usr/share/doc", "r");
   fopen("/usr/share/doc", "r");
   isatty(0);

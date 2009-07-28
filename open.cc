@@ -5,7 +5,7 @@ namespace playground {
 int Sandbox::sandbox_open(const char *pathname, int flags, mode_t mode) {
   SysCalls sys;
   write(sys, 2, "open()\n", 7);
-  int len                = strlen(pathname);
+  size_t len                    = strlen(pathname);
   struct Request {
     int       sysnum;
     long long cookie;
@@ -39,10 +39,12 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for open() [process]");
   }
   int   rc                  = -ENAMETOOLONG;
-  if (open_req.path_length >= (int)sizeof(mem->pathname)) {
+  if (open_req.path_length >= sizeof(mem->pathname)) {
     char buf[32];
     while (open_req.path_length > 0) {
-      int i = read(sys, sandboxFd, buf, sizeof(buf));
+      size_t len            = open_req.path_length > sizeof(buf) ?
+                              sizeof(buf) : open_req.path_length;
+      ssize_t i             = read(sys, sandboxFd, buf, len);
       if (i <= 0) {
         goto read_parm_failed;
       }
@@ -55,7 +57,7 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
   }
   SecureMem::lockSystemCall(parentProc, mem);
   if (read(sys, sandboxFd, mem->pathname, open_req.path_length) !=
-      open_req.path_length) {
+      (ssize_t)open_req.path_length) {
     goto read_parm_failed;
   }
   mem->pathname[open_req.path_length] = '\000';

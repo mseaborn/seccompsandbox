@@ -17,7 +17,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %0, %%rbp\n"           // %rbp = args
       "xor  %%rbx, %%rbx\n"        // initial sequence number
       "lea  999f(%%rip), %%r15\n"  // continue in same thread
-      "jmp  13f\n"                 // create trusted thread
+      "jmp  15f\n"                 // create trusted thread
 
       // TODO(markus): Coalesce the read() operations by reading into a bigger
       // buffer.
@@ -77,6 +77,13 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       //   0x24: fifth argument; passed in %r8
       //   0x2C: sixth argument; passed in %r9
       //   0x34: return value
+      //   0x3C: RDTSC result (%eax)
+      //   0x40: RDTSC result (%edx)
+
+      // We use the %fs register for accessing the secure read-only page, and
+      // the untrusted scratch space immediately following it. The segment
+      // register and the local descriptor table is set up by passing
+      // appropriate arguments to clone().
 
     "0:xor  %%rsp, %%rsp\n"
       "mov  $2, %%ebx\n"           // %rbx  = initial sequence number
@@ -93,19 +100,19 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "cmp  $-4, %%rax\n"          // EINTR
       "jz   2b\n"
       "cmp  %%rdx, %%rax\n"
-      "jnz  19f\n"                 // exit process
+      "jnz  21f\n"                 // exit process
 
       // Retrieve system call number. It is crucial that we only dereference
       // %fs:0x1000 exactly once. Afterwards, memory becomes untrusted and
       // we must use the value that we have read the first time.
       "mov  0(%%rsi), %%eax\n"
 
-      // If syscall number is -1, execute system call from the secure memory
-      // area
+      // If syscall number is -1, execute an unlocked system call from the
+      // secure memory area
       "cmp  $-1, %%eax\n"
       "jnz  4f\n"
     "3:cmp  %%rbx, %%fs:0x8\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "mov  %%fs:0x10, %%rax\n"
       "mov  %%fs:0x18, %%rdi\n"
       "mov  %%fs:0x20, %%rsi\n"
@@ -114,17 +121,18 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%fs:0x38, %%r8\n"
       "mov  %%fs:0x40, %%r9\n"
       "cmp %%rbx, %%fs:0x8\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "add  $2, %%rbx\n"
       "syscall\n"
-      "jmp  9f\n"                  // return result
+      "jmp  10f\n"                 // return result
 
       // If syscall number is -2, execute locked system call from the
       // secure memory area
-    "4:cmp  $-2, %%eax\n"
+    "4:jg   8f\n"
+      "cmp  $-2, %%eax\n"
       "jnz  7f\n"
       "cmp  %%rbx, %%fs:0x8\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "mov  %%fs:0x10, %%rax\n"
       "mov  %%fs:0x18, %%rdi\n"
       "mov  %%fs:0x20, %%rsi\n"
@@ -133,22 +141,22 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%fs:0x38, %%r8\n"
       "mov  %%fs:0x40, %%r9\n"
       "cmp  %%rbx, %%fs:0x8\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
 
       // clone() has unusual calling conventions and must be handled specially
       "cmp  $56, %%rax\n"          // NR_clone
-      "jz   12f\n"
+      "jz   14f\n"
 
       // exit() terminates trusted thread
       "cmp  $60, %%eax\n"          // NR_exit
-      "jz   11f\n"
+      "jz   13f\n"
 
       // Perform requested system call
       "syscall\n"
 
       // Unlock mutex
     "5:cmp  %%rbx, %%fs:0x8\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "add  $2, %%rbx\n"
       "mov  %%rax, %%r8\n"
       "mov  $56, %%eax\n"          // NR_clone
@@ -156,8 +164,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $1, %%rsi\n"           // stack = 1
       "syscall\n"
       "test %%rax, %%rax\n"
-      "js   19f\n"                 // exit process
-      "jz   16f\n"                 // unlock and exit
+      "js   21f\n"                 // exit process
+      "jz   18f\n"                 // unlock and exit
       "mov  %%rax, %%rdi\n"
     "6:xor  %%rsi, %%rsi\n"
       "xor  %%rdx, %%rdx\n"
@@ -167,20 +175,29 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "cmp  $-4, %%eax\n"          // EINTR
       "jz   6b\n"
       "mov  %%r8, %%rax\n"
-      "jmp  9f\n"                  // return result
+      "jmp  10f\n"                 // return result
+
+      // If syscall number is -3, read the time stamp counter
+    "7:cmp  $-3, %%eax\n"
+      "jnz  8f\n"
+      "rdtsc\n"                    // sets edx:eax
+      "add  $0x3C, %%rsi\n"
+      "mov  %%eax, 0(%%rsi)\n"
+      "mov  %%edx, 4(%%rsi)\n"
+      "jmp  11f\n"                 // return result
+
+
 
       // Check in syscallTable whether this system call is unrestricted
-    "7:mov  %%rax, %%r9\n"
-      ".globl playground$maxSyscall\n"
-      "mov  playground$maxSyscall@GOTPCREL(%%rip), %%r11\n"
-      "cmp  0(%%r11), %%eax\n"
-      "ja   19f\n"                 // exit process
+    "8:mov  %%rax, %%r9\n"
+      "cmp  playground$maxSyscall(%%rip), %%eax\n"
+      "ja   21f\n"                 // exit process
       "shl  $4, %%rax\n"
-      ".globl playground$syscallTable\n"
-      "add  playground$syscallTable@GOTPCREL(%%rip), %%rax\n"
+      "lea  playground$syscallTable(%%rip), %%rdi\n"
+      "add  %%rdi, %%rax\n"
       "mov  0(%%rax), %%rax\n"
       "cmp  $1, %%rax\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
 
       // Default behavior for unrestricted system calls is to just execute
       // them. Read the remaining arguments first.
@@ -189,11 +206,11 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%r13, %%rdi\n"        // fd  = threadFd
       "add  $4, %%rsi\n"           // buf = &scratch + 4
       "mov  $48, %%edx\n"          // len = 6*sizeof(void *)
-    "8:syscall\n"
+    "9:syscall\n"
       "cmp  $-4, %%rax\n"          // EINTR
-      "jz   8b\n"
+      "jz   9b\n"
       "cmp  %%rdx, %%rax\n"
-      "jnz  19f\n"                 // exit process
+      "jnz  21f\n"                 // exit process
       "mov  %%r9, %%rax\n"
       "mov  0x04(%%r8), %%rdi\n"
       "mov  0x0C(%%r8), %%rsi\n"
@@ -202,26 +219,26 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  0x2C(%%r8), %%r9\n"
       "mov  0x24(%%r8), %%r8\n"
       "cmp  $231, %%rax\n"         // NR_exit_group
-      "jz   20f\n"
+      "jz   22f\n"
       "syscall\n"
 
       // Return result of system call to sandboxed thread
-    "9:mov  %%fs:0x0, %%rsi\n"
+   "10:mov  %%fs:0x0, %%rsi\n"
       "add  $0x1034, %%rsi\n"      // buf   = &scratch + 52
       "mov  %%rax, (%%rsi)\n"
-      "mov  $1, %%eax\n"           // NR_write
+   "11:mov  $8, %%edx\n"           // len   = 8
       "mov  %%r13, %%rdi\n"        // fd    = threadFd
-      "mov  $8, %%edx\n"           // len   = 8
-   "10:syscall\n"
+      "mov  $1, %%eax\n"           // NR_write
+   "12:syscall\n"
       "cmp  %%rdx, %%rax\n"
       "jz   1b\n"
       "cmp  $-4, %%rax\n"          // EINTR
-      "jz   10b\n"
-      "jmp  19f\n"                 // exit process
+      "jz   12b\n"
+      "jmp  21f\n"                 // exit process
 
       // NR_exit:
       // Exit trusted thread after cleaning up resources
-   "11:mov  %%fs:0x0, %%rsi\n"
+   "13:mov  %%fs:0x0, %%rsi\n"
       "mov  0xE0(%%rsi), %%rdi\n"  // fd     = threadFdPub
       "mov  $3, %%eax\n"           // NR_close
       "syscall\n"
@@ -239,8 +256,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "syscall\n"
       "mov  %%rax, %%rdi\n"
       "test %%rax, %%rax\n"
-      "jne  15f\n"                 // reap helper, exit thread
-      "jmp  16f\n"                 // unlock mutex
+      "jne  17f\n"                 // reap helper, exit thread
+      "jmp  18f\n"                 // unlock mutex
 
       // NR_clone:
       // Original trusted thread calls clone() to create new nascent
@@ -253,20 +270,20 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // terminates the program. But if we ever support signal handling,
       // we have to be careful that the user cannot install a SIGSEGV
       // handler that gets executed with elevated privileges.
-   "12:mov  %%fs:0x0, %%rbp\n"     // %rbp = old_shared_mem
+   "14:mov  %%fs:0x0, %%rbp\n"     // %rbp = old_shared_mem
       "syscall\n"                  // calls NR_clone
-      "cmp  $-4095, %%rax\n"
+      "cmp  $-4095, %%rax\n"       // return codes -1..-4095 are errno values
       "jae  5b\n"
       "add  $2, %%rbx\n"
       "test %%rax, %%rax\n"
-      "jne  9b\n"                  // return result
+      "jne  10b\n"                 // return result
 
       // In nascent thread, now.
       "sub  $2, %%rbx\n"
       "xor  %%r15, %%r15\n"        // Request to return from clone() when done
 
       // Get thread id of nascent thread
-   "13:mov  $186, %%eax\n"         // NR_gettid
+   "15:mov  $186, %%eax\n"         // NR_gettid
       "syscall\n"
       "mov  %%rax, %%r14\n"
 
@@ -284,56 +301,55 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%rsp, %%r10\n"
       "syscall\n"
       "test %%rax, %%rax\n"
-      "jz   21f\n"
+      "jz   23f\n"
 
       // If things went wrong, we don't have an (easy) way of signaling
       // the parent. For our purposes, it is sufficient to fail with a
       // fatal error.
-      "jmp  19f\n"                 // exit process
-   "14:mov  $56, %%eax\n"          // NR_clone
+      "jmp  21f\n"                 // exit process
+   "16:mov  $56, %%eax\n"          // NR_clone
       "mov  $17, %%rdi\n"          // flags = SIGCHLD
       "mov  $1, %%rsi\n"           // stack = 1
       "syscall\n"
       "test %%rax, %%rax\n"
-      "js   19f\n"                 // exit process
-      "jz   16f\n"                 // unlock and exit
+      "js   21f\n"                 // exit process
+      "jz   18f\n"                 // unlock and exit
       "mov  %%rax, %%rdi\n"
-   "15:xor  %%rsi, %%rsi\n"
+   "17:xor  %%rsi, %%rsi\n"
       "xor  %%rdx, %%rdx\n"
       "xor  %%r10, %%r10\n"
       "mov  $61, %%eax\n"          // NR_wait4
       "syscall\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   15b\n"
-      "jmp  17f\n"                 // exit thread (no message)
-      ".globl playground$syscall_mutex\n"
-   "16:mov  playground$syscall_mutex@GOTPCREL(%%rip), %%rdi\n"
+      "jz   17b\n"
+      "jmp  19f\n"                 // exit thread (no message)
+   "18:lea  playground$syscall_mutex(%%rip), %%rdi\n"
       "mov  $4096, %%esi\n"
       "mov  $3, %%edx\n"           // prot = PROT_READ | PROT_WRITE
       "mov  $10, %%eax\n"          // NR_mprotect
       "syscall\n"
       "lock; addl $0x80000000, (%%rdi)\n"
-      "jz   17f\n"                 // exit thread
+      "jz   19f\n"                 // exit thread
       "mov  $1, %%edx\n"
       "mov  %%rdx, %%rsi\n"        // FUTEX_WAKE
       "mov  $202, %%eax\n"         // NR_futex
       "syscall\n"
-   "17:mov  $60, %%eax\n"          // NR_exit
+   "19:mov  $60, %%eax\n"          // NR_exit
       "mov  $1, %%edi\n"           // status = 1
-   "18:syscall\n"
-   "19:mov  $1, %%eax\n"           // NR_write
+   "20:syscall\n"
+   "21:mov  $1, %%eax\n"           // NR_write
       "mov  $2, %%edi\n"           // fd = stderr
       "lea  100f(%%rip), %%rsi\n"
       "mov  $101f-100f, %%edx\n"   // len = strlen(msg)
       "syscall\n"
       "mov  $1, %%edi\n"
-   "20:mov  $231, %%eax\n"         // NR_exit_group
-      "jmp  18b\n"
+   "22:mov  $231, %%eax\n"         // NR_exit_group
+      "jmp  20b\n"
 
       // The first page is mapped read-only for use as securely shared memory
-   "21:mov  0xC0(%%rbp), %%r12\n"  // %r12 = secure shared memory
+   "23:mov  0xC0(%%rbp), %%r12\n"  // %r12 = secure shared memory
       "cmp  %%rbx, 8(%%rbp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "mov  $10, %%eax\n"          // NR_mprotect
       "mov  %%r12, %%rdi\n"        // addr = secure_mem
       "mov  $4096, %%esi\n"        // len  = 4096
@@ -358,14 +374,14 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%r12, %%r8\n"         // tls   = new_secure_mem
       "mov  0xC8(%%rbp), %%r15d\n" // %r15  = processFdPub
       "cmp  %%rbx, 8(%%rbp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "syscall\n"
       "test %%rax, %%rax\n"
-      "js   19b\n"                 // exit process
+      "js   21b\n"                 // exit process
       "jz   0b\n"                  // invoke trustedThreadFnc()
 
       // Done creating trusted thread. We can now get ready to return to caller
-      "mov  0(%%rsp), %%r9d\n"     // %r13 = threadFdPub
+      "mov  0(%%rsp), %%r9d\n"     // %r9 = threadFdPub
       "add  $8, %%rsp\n"
 
       // Set up thread local storage with information on how to talk to
@@ -374,13 +390,17 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $158, %%eax\n"         // NR_arch_prctl
       "mov  $0x1001, %%edi\n"      // option = ARCH_SET_GS
       "syscall\n"
-      "cmp  $-4095, %%rax\n"
-      "jae  14b\n"                 // exit thread, unlock global mutex
+      "cmp  $-4095, %%rax\n"       // return codes -1..-4095 are errno values
+      "jae  16b\n"                 // exit thread, unlock global mutex
 
-      // Check whether this is the initial thread, or a newly created one
+      // Check whether this is the initial thread, or a newly created one.
+      // At startup we run the same code as when we create a new thread. At
+      // the very top of this function, you will find that we push 999(%rip)
+      // on the stack. That is the signal that we should return on the same
+      // stack rather than return to where clone was called.
       "pop  %%r15\n"
       "test %%r15, %%r15\n"
-      "jne  22f\n"
+      "jne  24f\n"
 
       // Returning from clone() into the newly created thread is special. We
       // cannot unroll the stack, as we just set up a new stack for this
@@ -418,25 +438,25 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  0xB8(%%rbp), %%rax\n"
       "push %%rax\n"
       "cmp  %%rbx, 8(%%rbp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
 
       // Nascent thread launches a helper that doesn't share any of our
       // resources, except for pages mapped as MAP_SHARED.
       // clone(0, %rsp)
-   "22:mov  $56, %%eax\n"          // NR_clone
+   "24:mov  $56, %%eax\n"          // NR_clone
       "mov  $17, %%rdi\n"          // flags = SIGCHLD
       "mov  %%rsp, %%rsi\n"        // stack = %rsp
       "syscall\n"
       "test %%rax, %%rax\n"
-      "js   19b\n"                 // exit process
-      "jne  23f\n"
+      "js   21b\n"                 // exit process
+      "jne  25f\n"
 
       // Use sendmsg() to send to the trusted process the file handles for
       // communicating with the new trusted thread. We also send the address
       // of the secure memory area and the thread id.
       "mov  0xCC(%%rbp), %%edi\n"  // transport = Sandbox::cloneFdPub()
       "cmp  %%rbx, 8(%%rbp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "mov  %%r9, %%rsi\n"         // fd0       = threadFdPub
       "mov  %%r13, %%rdx\n"        // fd1       = threadFd
       "push %%r14\n"               // threadId
@@ -444,33 +464,32 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "push %%r12\n"               // secure_mem
       "mov  %%rsp, %%rcx\n"        // buf       = &data
       "mov  $16, %%r8\n"           // len       = sizeof(void*) + 2*sizeof(int)
-      ".globl playground$sendFd\n"
       "call playground$sendFd\n"
 
       // Release syscall_mutex_. This signals the trusted process that
       // it can write into the original thread's secure memory again.
       "mov  $10, %%eax\n"          // NR_mprotect
-      "mov  playground$syscall_mutex@GOTPCREL(%%rip), %%rdi\n"
+      "lea  playground$syscall_mutex(%%rip), %%rdi\n"
       "mov  $4096, %%esi\n"
       "mov  $3, %%edx\n"           // PROT_READ | PROT_WRITE
       "syscall\n"
       "lock; addl $0x80000000, (%%rdi)\n"
-      "jz   20b\n"                 // exit process (no error message)
+      "jz   22b\n"                 // exit process (no error message)
       "mov  $1, %%edx\n"
       "mov  %%rdx, %%rsi\n"        // FUTEX_WAKE
       "mov  $202, %%eax\n"         // NR_futex
       "syscall\n"
-      "jmp  20b\n"                 // exit process (no error message)
+      "jmp  22b\n"                 // exit process (no error message)
 
       // Reap helper
-   "23:mov  %%rax, %%rdi\n"
-   "24:xor  %%rsi, %%rsi\n"
+   "25:mov  %%rax, %%rdi\n"
+   "26:xor  %%rsi, %%rsi\n"
       "xor  %%rdx, %%rdx\n"
       "xor  %%r10, %%r10\n"
       "mov  $61, %%eax\n"          // NR_wait4
       "syscall\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   24\n"
+      "jz   26\n"
 
       // Release privileges by entering seccomp mode.
       "mov  $157, %%eax\n"         // NR_prctl
@@ -478,22 +497,23 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $1, %%esi\n"
       "syscall\n"
       "test %%rax, %%rax\n"
-      "jnz  19b\n"                 // exit process
+      "jnz  21b\n"                 // exit process
 
-      // Wait for trusted process to receive request. It is possible for
-      // an attacker to make us continue even before the trusted process is
-      // done. This is OK. It'll result in us putting stale values into the
-      // new thread's TLS. But that data is considered untrusted anyway.
+      // Back in the newly created sandboxed thread, wait for trusted process
+      // to receive request. It is possible for an attacker to make us
+      // continue even before the trusted process is done. This is OK. It'll
+      // result in us putting stale values into the new thread's TLS. But that
+      // data is considered untrusted anyway.
       "push %%rax\n"
       "mov  $1, %%edx\n"           // len       = 1
       "mov  %%rsp, %%rsi\n"        // buf       = %rsp
       "mov  %%r9, %%rdi\n"         // fd        = threadFdPub
-   "25:xor  %%rax, %%rax\n"        // NR_read
+   "27:xor  %%rax, %%rax\n"        // NR_read
       "syscall\n"
       "cmp  $-4, %%rax\n"          // EINTR
-      "jz   25b\n"
+      "jz   27b\n"
       "cmp  %%rdx, %%rax\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "pop  %%rax\n"
 
       // Return to caller. We are in the new thread, now.
@@ -501,11 +521,11 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "test %%r15, %%r15\n"
 
       // Returning to createTrustedThread()
-      "jz   26f\n"
+      "jz   28f\n"
       "jmp  *%%r15\n"
 
       // Returning to the place where clone() had been called
-   "26:pop  %%r15\n"
+   "28:pop  %%r15\n"
       "pop  %%r14\n"
       "pop  %%r13\n"
       "pop  %%r12\n"
@@ -558,7 +578,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%ebx, %%mm3\n"
       "xor  %%ebx, %%ebx\n"        // initial sequence number
       "movd %%ebx, %%mm2\n"
-      "jmp  13f\n"                 // create trusted thread
+      "jmp  15f\n"                 // create trusted thread
 
       // TODO(markus): Coalesce the read() operations by reading into a bigger
       // buffer.
@@ -614,6 +634,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       //   0x14: fifth argument; passed in %edi
       //   0x18: sixth argument; passed in %ebp
       //   0x1C: return value
+      //   0x20: RDTSC result (%eax)
+      //   0x24: RDTSC result (%edx)
 
     "0:xor  %%esp, %%esp\n"
       "mov  $2, %%eax\n"           // %mm2 = initial sequence number
@@ -631,20 +653,20 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "cmp  $-4, %%eax\n"          // EINTR
       "jz   2b\n"
       "cmp  %%edx, %%eax\n"
-      "jnz  19f\n"                 // exit process
+      "jnz  21f\n"                 // exit process
 
       // Retrieve system call number. It is crucial that we only dereference
       // 0x1000(%mm5) exactly once. Afterwards, memory becomes untrusted and
       // we must use the value that we have read the first time.
       "mov  0(%%ecx), %%eax\n"
 
-      // If syscall number is -1, execute system call from the secure memory
-      // area
+      // If syscall number is -1, execute an unlocked system call from the
+      // secure memory area
       "cmp  $-1, %%eax\n"
       "jnz  4f\n"
     "3:movd %%mm2, %%ebp\n"
       "cmp  %%ebp, 0x4-0x1000(%%ecx)\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "mov  0x08-0x1000(%%ecx), %%eax\n"
       "mov  0x0C-0x1000(%%ecx), %%ebx\n"
       "mov  0x14-0x1000(%%ecx), %%edx\n"
@@ -657,21 +679,22 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%mm2, %%ebp\n"
       "movd %%mm5, %%edi\n"
       "cmp  %%ebp, 4(%%edi)\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "add  $2, %%ebp\n"
       "movd %%ebp, %%mm2\n"
       "movd %%mm4, %%edi\n"
       "movd %%mm7, %%ebp\n"
       "int  $0x80\n"
-      "jmp  9f\n"                  // return result
+      "jmp  10f\n"                 // return result
 
       // If syscall number is -2, execute locked system call from the
       // secure memory area
-    "4:cmp  $-2, %%eax\n"
+    "4:jg   8f\n"
+      "cmp  $-2, %%eax\n"
       "jnz  7f\n"
       "movd %%mm2, %%ebp\n"
       "cmp  %%ebp, 0x4-0x1000(%%ecx)\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "mov  0x08-0x1000(%%ecx), %%eax\n"
       "mov  0x0C-0x1000(%%ecx), %%ebx\n"
       "mov  0x14-0x1000(%%ecx), %%edx\n"
@@ -684,15 +707,15 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%mm2, %%ebp\n"
       "movd %%mm5, %%edi\n"
       "cmp  %%ebp, 4(%%edi)\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
 
       // clone() has unusual calling conventions and must be handled specially
       "cmp  $120, %%eax\n"         // NR_clone
-      "jz   12f\n"
+      "jz   14f\n"
 
       // exit() terminates trusted thread
       "cmp  $1, %%eax\n"           // NR_exit
-      "jz   11f\n"
+      "jz   13f\n"
 
       // Perform requested system call
       "movd %%mm4, %%edi\n"
@@ -703,7 +726,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
     "5:movd %%mm2, %%ebp\n"
       "movd %%mm5, %%edi\n"
       "cmp  %%ebp, 4(%%edi)\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
       "add  $2, %%ebp\n"
       "movd %%ebp, %%mm2\n"
       "mov  %%eax, %%ebp\n"
@@ -712,8 +735,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $1, %%ecx\n"           // stack = 1
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "js   19f\n"                 // exit process
-      "jz   16f\n"                 // unlock and exit
+      "js   21f\n"                 // exit process
+      "jz   18f\n"                 // unlock and exit
       "mov  %%eax, %%ebx\n"
     "6:xor  %%ecx, %%ecx\n"
       "xor  %%edx, %%edx\n"
@@ -722,19 +745,27 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "cmp  $-4, %%eax\n"          // EINTR
       "jz   6\n"
       "mov  %%ebp, %%eax\n"
-      "jmp  9f\n"                  // return result
+      "jmp  10f\n"                 // return result
+
+      // If syscall number is -3, read the time stamp counter
+    "7:cmp  $-3, %%eax\n"
+      "jnz  8f\n"
+      "rdtsc\n"                    // sets edx:eax
+      "add  $0x20, %%ecx\n"
+      "mov  %%eax, 0(%%ecx)\n"
+      "mov  %%edx, 4(%%ecx)\n"
+      "mov  $8, %%edx\n"
+      "jmp  11f\n"                 // return result
 
       // Check in syscallTable whether this system call is unrestricted
-    "7:mov  %%eax, %%ebp\n"
-      ".globl playground$maxSyscall\n"
+    "8:mov  %%eax, %%ebp\n"
       "cmp  playground$maxSyscall, %%eax\n"
-      "ja   19f\n"                 // exit process
+      "ja   21f\n"                 // exit process
       "shl  $3, %%eax\n"
-      ".globl playground$syscallTable\n"
       "add  $playground$syscallTable, %%eax\n"
       "mov  0(%%eax), %%eax\n"
       "cmp  $1, %%eax\n"
-      "jne  19f\n"                 // exit process
+      "jne  21f\n"                 // exit process
 
       // Default behavior for unrestricted system calls is to just execute
       // them. Read the remaining arguments first.
@@ -742,11 +773,11 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%mm0, %%ebx\n"        // fd  = threadFd
       "add  $4, %%ecx\n"           // buf = &scratch + 4
       "mov  $24, %%edx\n"          // len = 6*sizeof(void *)
-    "8:int  $0x80\n"
+    "9:int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   8b\n"
+      "jz   9b\n"
       "cmp  %%edx, %%eax\n"
-      "jnz  19f\n"                 // exit process
+      "jnz  21f\n"                 // exit process
       "mov  %%ebp, %%eax\n"
       "mov  0x00(%%ecx), %%ebx\n"
       "mov  0x08(%%ecx), %%edx\n"
@@ -755,26 +786,26 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  0x14(%%ecx), %%ebp\n"
       "mov  0x04(%%ecx), %%ecx\n"
       "cmp  $252, %%eax\n"         // NR_exit_group
-      "jz   20f\n"
+      "jz   22f\n"
       "int  $0x80\n"
 
       // Return result of system call to sandboxed thread
-    "9:movd %%mm5, %%ecx\n"
+   "10:movd %%mm5, %%ecx\n"
       "add  $0x101C, %%ecx\n"      // buf   = &scratch + 28
       "mov  %%eax, (%%ecx)\n"
-      "mov  $4, %%eax\n"           // NR_write
-      "movd %%mm0, %%ebx\n"        // fd    = threadFd
       "mov  $4, %%edx\n"           // len   = 4
-   "10:int  $0x80\n"
+   "11:movd %%mm0, %%ebx\n"        // fd    = threadFd
+      "mov  $4, %%eax\n"           // NR_write
+   "12:int  $0x80\n"
       "cmp  %%edx, %%eax\n"
       "jz   1b\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   10b\n"
-      "jmp  19f\n"                 // exit process
+      "jz   12b\n"
+      "jmp  21f\n"                 // exit process
 
       // NR_exit:
       // Exit trusted thread after cleaning up resources
-   "11:mov  %%edi, %%ecx\n"
+   "13:mov  %%edi, %%ecx\n"
       "mov  0x60(%%ecx), %%ebx\n"  // fd     = threadFdPub
       "mov  $6, %%eax\n"           // NR_close
       "int  $0x80\n"
@@ -792,8 +823,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "int  $0x80\n"
       "mov  %%eax, %%ebx\n"
       "test %%eax, %%eax\n"
-      "jne  15f\n"                 // reap helper, exit thread
-      "jmp  16f\n"                 // unlock mutex
+      "jne  17f\n"                 // reap helper, exit thread
+      "jmp  18f\n"                 // unlock mutex
 
       // NR_clone:
       // Original trusted thread calls clone() to create new nascent
@@ -806,17 +837,17 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // terminates the program. But if we ever support signal handling,
       // we have to be careful that the user cannot install a SIGSEGV
       // handler that gets executed with elevated privileges.
-   "12:movd %%edi, %%mm6\n"        // %mm6 = old_shared_mem
+   "14:movd %%edi, %%mm6\n"        // %mm6 = old_shared_mem
       "movd %%mm4, %%edi\n"
       "movd %%mm7, %%ebp\n"
       "int  $0x80\n"               // calls NR_clone
-      "cmp  $-4095, %%eax\n"
+      "cmp  $-4095, %%eax\n"       // return codes -1..-4095 are errno values
       "jae  5b\n"
       "movd %%mm2, %%edi\n"
       "add  $2, %%edi\n"
       "movd %%edi, %%mm2\n"
       "test %%eax, %%eax\n"
-      "jne  9b\n"                  // return result
+      "jne  10b\n"                 // return result
 
       // In nascent thread, now.
       "sub  $2, %%edi\n"
@@ -824,7 +855,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%eax, %%mm3\n"        // Request to return from clone() when done
 
       // Get thread id of nascent thread
-   "13:mov  $224, %%eax\n"         // NR_gettid
+   "15:mov  $224, %%eax\n"         // NR_gettid
       "int  $0x80\n"
       "movd %%eax, %%mm4\n"
 
@@ -846,58 +877,57 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "int  $0x80\n"
       "add  $0x10, %%esp\n"
       "test %%eax, %%eax\n"
-      "jz   21f\n"
+      "jz   23f\n"
 
       // If things went wrong, we don't have an (easy) way of signaling
       // the parent. For our purposes, it is sufficient to fail with a
       // fatal error.
-      "jmp  19f\n"                 // exit process
-   "14:mov  $120, %%eax\n"         // NR_clone
+      "jmp  21f\n"                 // exit process
+   "16:mov  $120, %%eax\n"         // NR_clone
       "mov  $17, %%ebx\n"          // flags = SIGCHLD
       "mov  $1, %%ecx\n"           // stack = 1
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "js   19f\n"                 // exit process
-      "jz   16f\n"                 // unlock and exit
+      "js   21f\n"                 // exit process
+      "jz   18f\n"                 // unlock and exit
       "mov  %%eax, %%ebx\n"
-   "15:xor  %%ecx, %%ecx\n"
+   "17:xor  %%ecx, %%ecx\n"
       "xor  %%edx, %%edx\n"
       "mov  $7, %%eax\n"           // NR_waitpid
       "int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   15b\n"
-      "jmp  17f\n"                 // exit thread (no message)
-      ".globl playground$syscall_mutex\n"
-   "16:lea  playground$syscall_mutex, %%ebx\n"
+      "jz   17b\n"
+      "jmp  19f\n"                 // exit thread (no message)
+   "18:lea  playground$syscall_mutex, %%ebx\n"
       "mov  $4096, %%ecx\n"
       "mov  $3, %%edx\n"           // prot = PROT_READ | PROT_WRITE
       "mov  $125, %%eax\n"         // NR_mprotect
       "int  $0x80\n"
       "lock; addl $0x80000000, (%%ebx)\n"
-      "jz   17f\n"                 // exit thread
+      "jz   19f\n"                 // exit thread
       "mov  $1, %%edx\n"
       "mov  %%edx, %%ecx\n"        // FUTEX_WAKE
       "mov  $240, %%eax\n"         // NR_futex
       "int  $0x80\n"
-   "17:mov  $1, %%eax\n"           // NR_exit
+   "19:mov  $1, %%eax\n"           // NR_exit
       "mov  $1, %%ebx\n"           // status = 1
-   "18:int  $0x80\n"
-   "19:mov  $4, %%eax\n"           // NR_write
+   "20:int  $0x80\n"
+   "21:mov  $4, %%eax\n"           // NR_write
       "mov  $2, %%ebx\n"           // fd = stderr
       "lea  100f, %%ecx\n"
       "mov  $101f-100f, %%edx\n"   // len = strlen(msg)
       "int  $0x80\n"
       "mov  $1, %%ebx\n"
-   "20:mov  $252, %%eax\n"         // NR_exit_group
-      "jmp  18b\n"
+   "22:mov  $252, %%eax\n"         // NR_exit_group
+      "jmp  20b\n"
 
       // The first page is mapped read-only for use as securely shared memory
-   "21:movd %%mm6, %%ebp\n"
+   "23:movd %%mm6, %%ebp\n"
       "mov  0x44(%%ebp), %%esi\n"
       "movd %%esi, %%mm5\n"        // %mm5 = secure shared memory
       "movd %%mm2, %%edi\n"
       "cmp  %%edi, 4(%%ebp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "mov  $125, %%eax\n"         // NR_mprotect
       "mov  %%esi, %%ebx\n"
       "mov  $4096, %%ecx\n"        // len  = 4096
@@ -922,10 +952,10 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $1, %%ecx\n"           // stack = 1
       "movd 0x48(%%ebp), %%mm1\n"  // %mm1  = processFdPub
       "cmp  %%edi, 4(%%ebp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "js   19b\n"                 // exit process
+      "js   21b\n"                 // exit process
       "jz   0b\n"                  // invoke trustedThreadFnc()
 
       // Set up thread local storage
@@ -942,17 +972,21 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%esp, %%ebx\n"
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "jnz 19b\n"                  // exit process
+      "jnz 21b\n"                  // exit process
       "add $16, %%esp\n"
 
       // Done creating trusted thread. We can now get ready to return to caller
       "mov  0(%%esp), %%esi\n"     // %esi = threadFdPub
       "add  $8, %%esp\n"
 
-      // Check whether this is the initial thread, or a newly created one
+      // Check whether this is the initial thread, or a newly created one.
+      // At startup we run the same code as when we create a new thread. At
+      // the very top of this function, you will find that we store 999(%rip)
+      // in %%mm3. That is the signal that we should return on the same
+      // stack rather than return to where clone was called.
       "movd %%mm3, %%eax\n"
       "test %%eax, %%eax\n"
-      "jne  22f\n"
+      "jne  24f\n"
 
       // Returning from clone() into the newly created thread is special. We
       // cannot unroll the stack, as we just set up a new stack for this
@@ -975,18 +1009,18 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  0x40(%%ebp), %%eax\n"
       "push %%eax\n"
       "cmp  %%edi, 4(%%ebp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
 
       // Nascent thread launches a helper that doesn't share any of our
       // resources, except for pages mapped as MAP_SHARED.
       // clone(0, %esp)
-   "22:mov  $120, %%eax\n"         // NR_clone
+   "24:mov  $120, %%eax\n"         // NR_clone
       "mov  $17, %%ebx\n"          // flags = SIGCHLD
       "mov  %%esp, %%ecx\n"        // stack = %esp
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "js   19b\n"                 // exit process
-      "jne  23f\n"
+      "js   21b\n"                 // exit process
+      "jne  25f\n"
 
       // Use sendmsg() to send to the trusted process the file handles for
       // communicating with the new trusted thread. We also send the address
@@ -1005,9 +1039,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "push %%esi\n"               // fd0       = threadFdPub
       "mov  0x4C(%%ebp), %%eax\n"  // transport = Sandbox::cloneFdPub()
       "cmp  %%edi, 4(%%ebp)\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "push %%eax\n"
-      ".globl playground$sendFd\n"
       "call playground$sendFd\n"
 
       // Release syscall_mutex_. This signals the trusted process that
@@ -1018,21 +1051,21 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $3, %%edx\n"           // PROT_READ | PROT_WRITE
       "int  $0x80\n"
       "lock; addl $0x80000000, (%%ebx)\n"
-      "jz   20b\n"                 // exit process (no error message)
+      "jz   22b\n"                 // exit process (no error message)
       "mov  $1, %%edx\n"
       "mov  %%edx, %%ecx\n"        // FUTEX_WAKE
       "mov  $240, %%eax\n"         // NR_futex
       "int  $0x80\n"
-      "jmp  20b\n"                 // exit process (no error message)
+      "jmp  22b\n"                 // exit process (no error message)
 
       // Reap helper
-   "23:mov  %%eax, %%ebx\n"
-   "24:xor  %%ecx, %%ecx\n"
+   "25:mov  %%eax, %%ebx\n"
+   "26:xor  %%ecx, %%ecx\n"
       "xor  %%edx, %%edx\n"
       "mov  $7, %%eax\n"           // NR_waitpid
       "int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   24\n"
+      "jz   26\n"
 
       // Release privileges by entering seccomp mode.
       "mov  $172, %%eax\n"         // NR_prctl
@@ -1040,22 +1073,23 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $1, %%ecx\n"
       "int  $0x80\n"
       "test %%eax, %%eax\n"
-      "jnz  19b\n"                 // exit process
+      "jnz  21b\n"                 // exit process
 
-      // Wait for trusted process to receive request. It is possible for
-      // an attacker to make us continue even before the trusted process is
-      // done. This is OK. It'll result in us putting stale values into the
-      // new thread's TLS. But that data is considered untrusted anyway.
+      // Back in the newly created sandboxed thread, wait for trusted process
+      // to receive request. It is possible for an attacker to make us
+      // continue even before the trusted process is done. This is OK. It'll
+      // result in us putting stale values into the new thread's TLS. But that
+      // data is considered untrusted anyway.
       "push %%eax\n"
       "mov  $1, %%edx\n"           // len       = 1
       "mov  %%esp, %%ecx\n"        // buf       = %rsp
       "mov  %%esi, %%ebx\n"        // fd        = threadFdPub
-   "25:mov  $3, %%eax\n"           // NR_read
+   "27:mov  $3, %%eax\n"           // NR_read
       "int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   25b\n"
+      "jz   27b\n"
       "cmp  %%edx, %%eax\n"
-      "jne  19b\n"                 // exit process
+      "jne  21b\n"                 // exit process
       "pop  %%eax\n"
 
       // Release MMX registers, so that they can be used for floating point
@@ -1068,11 +1102,11 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "test %%ebx, %%ebx\n"
 
       // Returning to createTrustedThread()
-      "jz   26f\n"
+      "jz   28f\n"
       "jmp  *%%ebx\n"
 
       // Returning to the place where clone() had been called
-   "26:pop  %%ebx\n"
+   "28:pop  %%ebx\n"
       "pop  %%ecx\n"
       "pop  %%edx\n"
       "pop  %%esi\n"

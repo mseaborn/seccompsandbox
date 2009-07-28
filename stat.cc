@@ -4,7 +4,7 @@ namespace playground {
 int Sandbox::sandbox_stat(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat()\n", 7);
-  int len                       = strlen(path);
+  size_t len                    = strlen(path);
   struct Request {
     int       sysnum;
     long long cookie;
@@ -32,7 +32,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
 int Sandbox::sandbox_stat64(const char *path, void *buf) {
   SysCalls sys;
   write(sys, 2, "stat64()\n", 9);
-  int len                       = strlen(path);
+  size_t len                    = strlen(path);
   struct Request {
     int       sysnum;
     long long cookie;
@@ -70,7 +70,9 @@ bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
   if (stat_req.path_length >= (int)sizeof(mem->pathname)) {
     char buf[32];
     while (stat_req.path_length > 0) {
-      int i = read(sys, sandboxFd, buf, sizeof(buf));
+      size_t len            = stat_req.path_length > sizeof(buf) ?
+                              sizeof(buf) : stat_req.path_length;
+      ssize_t i             = read(sys, sandboxFd, buf, len);
       if (i <= 0) {
         goto read_parm_failed;
       }
@@ -83,7 +85,7 @@ bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
   }
   SecureMem::lockSystemCall(parentProc, mem);
   if (read(sys, sandboxFd, mem->pathname, stat_req.path_length) !=
-      stat_req.path_length) {
+      (ssize_t)stat_req.path_length) {
     goto read_parm_failed;
   }
   mem->pathname[stat_req.path_length] = '\000';
