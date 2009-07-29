@@ -943,8 +943,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Call clone() to create new trusted thread().
       // clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|
-      //       CLONE_SYSVSEM|CLONE_UNTRACED, stack, NULL, NULL,
-      //       tls)
+      //       CLONE_SYSVSEM|CLONE_UNTRACED, stack, NULL, NULL, NULL)
       "mov  4(%%esp), %%eax\n"
       "movd %%eax, %%mm0\n"        // %mm0  = threadFd
       "mov  $120, %%eax\n"         // NR_clone
@@ -1119,8 +1118,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       ".zero  8\n"
       ".align 16\n"
 
-  "999:pop  %%ebx\n"
-      "pop  %%ebp\n"
+  "999:pop  %%ebp\n"
+      "pop  %%ebx\n"
       :
       : "g"(&args)
       : "eax", "ecx", "edx", "edi", "esi"

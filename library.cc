@@ -76,6 +76,50 @@ char* Library::__kernel_vsyscall;
 char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
 
+char* Library::getBytes(char* dst, const char* src, ssize_t len) {
+  // Read up to "len" bytes from "src" and copy them to "dst". Short
+  // copies are possible, if we are at the end of a mapping. Returns
+  // NULL, if the operation failed completely.
+  static int helper_socket[2];
+  Sandbox::SysCalls sys;
+  if (!helper_socket[0] && !helper_socket[1]) {
+    // Copy data through a socketpair, as this allows us to access it
+    // without incurring a segmentation fault.
+    sys.socketpair(AF_UNIX, SOCK_STREAM, 0, helper_socket);
+  }
+  char* ptr = dst;
+  int   inc = 4096;
+  while (len > 0) {
+    ssize_t l = inc == 1 ? inc : 4096 - (reinterpret_cast<long>(src) & 0xFFF);
+    if (l > len) {
+      l = len;
+    }
+    l = NOINTR_SYS(sys.write(helper_socket[0], src, l));
+    if (l == -1) {
+      if (sys.my_errno == EFAULT) {
+        if (inc == 1) {
+          if (ptr == dst) {
+            return NULL;
+          }
+          break;
+        }
+        inc = 1;
+        continue;
+      } else {
+        return NULL;
+      }
+    }
+    l = sys.read(helper_socket[1], ptr, l);
+    if (l <= 0) {
+      return NULL;
+    }
+    ptr += l;
+    src += l;
+    len -= l;
+  }
+  return dst;
+}
+
 char *Library::get(Elf_Addr offset, char *buf, size_t len) {
   if (!valid_) {
     memset(buf, 0, len);
@@ -91,7 +135,7 @@ char *Library::get(Elf_Addr offset, char *buf, size_t len) {
               reinterpret_cast<char *>(iter->second.start);
   if (offset > size - len) {
     if (!maps_ && memory_ranges_.size() == 1 &&
-        !memory_ranges_.begin()->first) {
+        !memory_ranges_.begin()->first && !isVDSO_) {
       // We are in the child and have exactly one mapping covering the whole
       // library. We are trying to read data past the end of what is currently
       // mapped. Check if we can expand the memory mapping to recover the
@@ -115,7 +159,10 @@ char *Library::get(Elf_Addr offset, char *buf, size_t len) {
   }
 ok:
   char *src = reinterpret_cast<char *>(iter->second.start) + offset;
-  memcpy(buf, src, len);
+  memset(buf, 0, len);
+  if (!getBytes(buf, src, len)) {
+    return NULL;
+  }
   return buf;
 }
 
@@ -132,11 +179,11 @@ std::string Library::get(Elf_Addr offset) {
                 reinterpret_cast<char *>(iter->second.start);
   if (offset > size - 4096) {
     if (!maps_ && memory_ranges_.size() == 1 &&
-        !memory_ranges_.begin()->first) {
+        !memory_ranges_.begin()->first && !isVDSO_) {
       // We are in the child and have exactly one mapping covering the whole
       // library. We are trying to read data past the end of what is currently
       // mapped. Check if we can expand the memory mapping to recover the
-      // needed data. We assume that strings are never long than 4kB.
+      // needed data. We assume that strings are never longer than 4kB.
       Sandbox::SysCalls sys;
       long new_size = (offset + 4096 + 4095) & ~4095;
       void *new_start = sys.mremap(iter->second.start, size, new_size,
@@ -154,8 +201,13 @@ std::string Library::get(Elf_Addr offset) {
   }
 ok:
   const char *start = reinterpret_cast<char *>(iter->second.start) + offset;
-  const char *stop  = start;
-  while (stop < reinterpret_cast<char *>(iter->second.stop) && *stop) {
+  const char *stop  = reinterpret_cast<char *>(iter->second.stop) + offset;
+  char buf[4096]    = { 0 };
+  getBytes(buf, start, stop - start >= (int)sizeof(buf) ?
+           sizeof(buf) - 1 : stop - start);
+  start             = buf;
+  stop              = buf;
+  while (*stop) {
     ++stop;
   }
   std::string s = stop > start ? std::string(start, stop - start) : "";
@@ -1039,7 +1091,7 @@ void Library::recoverOriginalDataChild(const std::string& filename) {
     // We find the memory mapping that starts at file offset zero and
     // extend it to cover the entire file. This is a little difficult to
     // do, as the mapping needs to be moved to a different address. But
-    // we potentially running code that is inside of this mapping at the
+    // we are potentially running code that is inside of this mapping at the
     // time when it gets moved.
     //
     // We have to write the code in assembly. We allocate temporary

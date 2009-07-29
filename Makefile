@@ -39,8 +39,8 @@ testbin64: test.cc ${OBJS64}
 	${CXX} -g -o testbin64 testbin.o64 ${OBJS64} -lpthread
 
 testbin32: test.cc ${OBJS32}
-	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-g++ -c -Werror -Wall -g -O0 -o testbin.o32 $<
-	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-g++ -g -o testbin32 testbin.o32 ${OBJS32} -lpthread
+	${CXX} -m32 -c -Werror -Wall -g -O0 -o testbin.o32 $<
+	${CXX} -m32 -g -o testbin32 testbin.o32 ${OBJS32} -lpthread
 
 playground: playground.o
 	${CXX} -g -o $@ $<
@@ -52,7 +52,7 @@ preload64.so: ${OBJS64}
 	${CXX} -shared -g -o $@ $+ -lpthread
 
 preload32.so: ${OBJS32}
-	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-g++ -shared -g -o $@ $+ -lpthread
+	${CXX} -m32 -shared -g -o $@ $+ -lpthread
 
 .cc.o64: ${HEADERS}
 	${CXX} -fPIC -Werror -Wall -g -O0 -c -o $@ $<
@@ -61,7 +61,7 @@ preload32.so: ${OBJS32}
 	${CC} --std=gnu99 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
 
 .cc.o32: ${HEADERS}
-	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-g++ -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CXX} -m32 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
 
 .c.o32: ${HEADERS}
-	/usr/crosstool/v12/gcc-4.3.1-glibc-2.3.6-grte/i686-unknown-linux-gnu/bin/i686-unknown-linux-gnu-gcc --std=gnu99 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CC} -m32 --std=gnu99 -fPIC -Werror -Wall -g -O0 -c -o $@ $<

@@ -107,8 +107,18 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, size_t*len) {
 }
 
 void Sandbox::setupSignalHandlers() {
-  // Block signals in sandboxed threads
   SysCalls sys;
+  struct SysCalls::kernel_sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler_ = SIG_DFL;
+  sys.sigaction(SIGCHLD, &sa, NULL);
+
+  // Set up SEGV handler for dealing with RDTSC instructions
+  sa.sa_handler_ = segv;
+  sys.sigaction(SIGSEGV, &sa, NULL);
+
+  // Block all asynchronous signals, except for SIGCHLD which needs to be
+  // set to SIG_DFL for waitpid() to work.
   SysCalls::kernel_sigset_t mask;
   memset(&mask, 0xFF, sizeof(mask));
   mask.sig[0]   &= ~((1 << (SIGSEGV - 1)) | (1 << (SIGINT  - 1)) |
@@ -116,12 +126,6 @@ void Sandbox::setupSignalHandlers() {
                      (1 << (SIGHUP  - 1)) | (1 << (SIGABRT - 1)) |
                      (1 << (SIGCHLD - 1)));
   sys.sigprocmask(SIG_SETMASK, &mask, 0);
-
-  // Set up SEGV handler for dealing with RDTSC instructions
-  struct SysCalls::kernel_sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_handler_ = segv;
-  sys.sigaction(SIGSEGV, &sa, NULL);
 }
 
 void Sandbox::segv(int signo) {
