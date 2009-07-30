@@ -186,8 +186,6 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %%edx, 4(%%rsi)\n"
       "jmp  11f\n"                 // return result
 
-
-
       // Check in syscallTable whether this system call is unrestricted
     "8:mov  %%rax, %%r9\n"
       "cmp  playground$maxSyscall(%%rip), %%eax\n"
@@ -196,8 +194,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "lea  playground$syscallTable(%%rip), %%rdi\n"
       "add  %%rdi, %%rax\n"
       "mov  0(%%rax), %%rax\n"
-      "cmp  $1, %%rax\n"
-      "jne  21f\n"                 // exit process
+// TODO(markus): disabled for debugging, only
+//      "cmp  $1, %%rax\n"
+//      "jne  21f\n"                 // exit process
 
       // Default behavior for unrestricted system calls is to just execute
       // them. Read the remaining arguments first.
@@ -764,8 +763,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "shl  $3, %%eax\n"
       "add  $playground$syscallTable, %%eax\n"
       "mov  0(%%eax), %%eax\n"
-      "cmp  $1, %%eax\n"
-      "jne  21f\n"                 // exit process
+// TODO(markus): disabled for debugging, only
+//      "cmp  $1, %%eax\n"
+//      "jne  21f\n"                 // exit process
 
       // Default behavior for unrestricted system calls is to just execute
       // them. Read the remaining arguments first.
@@ -1091,16 +1091,16 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "jne  21b\n"                 // exit process
       "pop  %%eax\n"
 
+      // Return to caller. We are in the new thread, now.
+      "xor  %%eax, %%eax\n"
+      "movd %%mm3, %%ebx\n"
+
       // Release MMX registers, so that they can be used for floating point
       // operations.
       "emms\n"
 
-      // Return to caller. We are in the new thread, now.
-      "xor  %%eax, %%eax\n"
-      "movd %%mm3, %%ebx\n"
-      "test %%ebx, %%ebx\n"
-
       // Returning to createTrustedThread()
+      "test %%ebx, %%ebx\n"
       "jz   28f\n"
       "jmp  *%%ebx\n"
 

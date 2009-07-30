@@ -1,5 +1,6 @@
 #include "sandbox_impl.h"
 #include <dirent.h>
+#include <dlfcn.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -51,6 +52,8 @@ int main(int argc, char *argv[]) {
 
   printf("TSC: %llx\n", tsc());
   printf("TSC: %llx\n", tsc());
+
+  dlopen("libncurses.so.5", RTLD_LAZY);
 
   struct timeval tv;
   if (gettimeofday(&tv, 0)) {

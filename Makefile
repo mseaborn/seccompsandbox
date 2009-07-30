@@ -1,6 +1,6 @@
 MODS := preload library maps x86_decode securemem sandbox syscall             \
         syscall_table trusted_thread trusted_process                          \
-        exit clone getpid ioctl mmap mprotect munmap open stat
+        exit clone getpid gettid ioctl mmap mprotect munmap open stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
@@ -36,11 +36,11 @@ strace: testbin32
 
 testbin64: test.cc ${OBJS64}
 	${CXX} -c -Werror -Wall -g -O0 -o testbin.o64 $<
-	${CXX} -g -o testbin64 testbin.o64 ${OBJS64} -lpthread
+	${CXX} -g -o testbin64 testbin.o64 ${OBJS64} -lpthread -ldl
 
 testbin32: test.cc ${OBJS32}
 	${CXX} -m32 -c -Werror -Wall -g -O0 -o testbin.o32 $<
-	${CXX} -m32 -g -o testbin32 testbin.o32 ${OBJS32} -lpthread
+	${CXX} -m32 -g -o testbin32 testbin.o32 ${OBJS32} -lpthread -ldl
 
 playground: playground.o
 	${CXX} -g -o $@ $<

@@ -216,8 +216,9 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
       break;
     default:
       if (syscallNum == __NR_close && arg0 == (void *)2) return 0; // TODO(markus): remove
-      if ((unsigned)syscallNum <= maxSyscall &&
-          syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
+if (true) { // TODO(markus): disabled for debugging, only
+//      if ((unsigned)syscallNum <= maxSyscall &&
+//          syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
         { char buf[80]; sprintf(buf, "Unrestricted syscall %d\n", syscallNum); write(sys, 2, buf, strlen(buf)); } // TODO(markus): remove
         struct {
           int          sysnum;

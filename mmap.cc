@@ -38,20 +38,18 @@ bool Sandbox::process_mmap(int parentProc, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for mmap() [process]");
   }
   int rc = -EINVAL;
-  if (mmap_req.flags & MAP_FIXED) {
-    // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
-    // mappings.
-    SecureMem::abandonSystemCall(threadFd, rc);
-    return false;
-  } else {
-    // TODO(markus): Even without MAP_FIXED, we have to ensure that we never
-    // return addresses that are in our "protected" area at the bottom of
-    // memory.
+// TODO(markus): disabled for debugging, only
+//  if (mmap_req.flags & MAP_FIXED) {
+//    // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
+//    // mappings.
+//    SecureMem::abandonSystemCall(threadFd, rc);
+//    return false;
+//  } else {
     SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_MMAP,
                               mmap_req.start, mmap_req.length, mmap_req.prot,
                               mmap_req.flags, mmap_req.fd, mmap_req.offset);
     return true;
-  }
+//  }
 }
 
 } // namespace

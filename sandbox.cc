@@ -133,20 +133,27 @@ void Sandbox::segv(int signo) {
   // appropriate registers upon returning.
   #if defined(__x86_64__)
   unsigned short **ip = reinterpret_cast<unsigned short **>(
-                        reinterpret_cast<char *>(&signo) + 220);
+                        __builtin_frame_address(0)) + 23;
   unsigned long  *eax = reinterpret_cast<unsigned long   *>(
-                        reinterpret_cast<char *>(&signo) + 196);
+                        __builtin_frame_address(0)) + 20;
   unsigned long  *edx = reinterpret_cast<unsigned long   *>(
-                        reinterpret_cast<char *>(&signo) + 188);
+                        __builtin_frame_address(0)) + 19;
+  unsigned long  *mask= reinterpret_cast<unsigned long  *>(
+                        __builtin_frame_address(0)) + 39;
   #elif defined(__i386__)
-  unsigned short **ip = reinterpret_cast<unsigned short **>(&signo) + 15;
-  unsigned long  *eax = reinterpret_cast<unsigned long   *>(&signo) + 12;
-  unsigned long  *edx = reinterpret_cast<unsigned long   *>(&signo) + 10;
+  unsigned short **ip = reinterpret_cast<unsigned short **>(
+                        __builtin_frame_address(0)) + 17;
+  unsigned long  *eax = reinterpret_cast<unsigned long   *>(
+                        __builtin_frame_address(0)) + 14;
+  unsigned long  *edx = reinterpret_cast<unsigned long   *>(
+                        __builtin_frame_address(0)) + 12;
+  unsigned int   *mask= reinterpret_cast<unsigned int    *>(
+                        __builtin_frame_address(0)) + 23;
   #else
   #error Unsupported target platform
   #endif
+  SysCalls sys;
   if (**ip == 0x310F /* RDTSC */) {
-    SysCalls sys;
     write(sys, 2, "RDTSC\n", 6);
     int request       = -3;
     struct {
@@ -163,8 +170,16 @@ void Sandbox::segv(int signo) {
     *eax              = response.eax;
     *edx              = response.edx;
     return;
+  } else if (**ip == 0x00CD /* INT 0 */) {
+    die("Need to handle INT 0"); // TODO(markus):
   }
-  _exit(1);
+  sys.write(2, "Segmentation fault\n", 19);
+
+  // We block the signal and return from the signal handler. This will retry
+  // the operation, which will fail again. This time, the kernel performs the
+  // default disposition (i.e. dump a core file).
+  *mask |= (1 << (signo - 1));
+  return;
 }
 
 void Sandbox::snapshotMemoryMappings(int processFd) {
@@ -209,7 +224,7 @@ void Sandbox::startSandbox() {
   // correctly.
   {
     Maps maps("/proc/self/maps");
-    const char *libs[] = { "libc", "librt", "libpthread", NULL };
+    const char *libs[] = { "ld", "libc", "librt", "libpthread", NULL };
 
     // Intercept system calls in libraries that are known to have them.
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){

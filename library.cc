@@ -371,6 +371,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
     // Whenever we find a system call, we patch it with a jump to out-of-line
     // code that redirects to our system call wrapper.
+    bool is_syscall = true;
     #if defined(__x86_64__)
     bool is_indirect_call = false;
     if (code[codeIdx].insn == 0x0F05 /* SYSCALL */ ||
@@ -386,6 +387,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
          (isVDSO_ && vsys_offset_ && code[codeIdx].insn == 0xFF &&
           !code[codeIdx].is_ip_relative &&
           mod_rm && (*mod_rm & 0x38) == 0x10 /* CALL (indirect) */))) {
+      is_syscall = !is_indirect_call;
     #elif defined(__i386__)
     bool is_gs_call = false;
     if (code[codeIdx].len  == 7 &&
@@ -548,7 +550,19 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
           goto findEndIdx;
         }
         #endif
-        Sandbox::die("Cannot intercept system call");
+        // If we cannot figure out any other way to intercept this system call,
+        // we replace it with a call to INT0. This causes a SEGV which we then
+        // handle in the signal handler. That's a lot slower than rewriting the
+        // instruction with a jump, but it should only happen very rarely.
+        if (is_syscall) {
+          memcpy(code[codeIdx].addr, "\xCD", 2);
+          if (code[codeIdx].len > 2) {
+            memset(code[codeIdx].addr + 2, 0x90, code[codeIdx].len - 2);
+          }
+          goto replaced;
+        } else {
+          Sandbox::die("Cannot intercept system call");
+        }
       }
       int needed = 5 - code[codeIdx].len;
       int first = codeIdx;
@@ -668,6 +682,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       *reinterpret_cast<int *>(code[first].addr + 1) =
           dest - (code[first].addr + 5);
     }
+   replaced:
     codeIdx = (codeIdx + 1) % (sizeof(code) / sizeof(struct Code));
   }
 }

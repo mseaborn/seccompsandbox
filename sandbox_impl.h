@@ -74,10 +74,9 @@ class Sandbox {
 #endif
 
   // Entry points for sandboxed code that is attempting to make system calls
-  STATIC int sandbox_exit(int status)
-                                            asm("playground$sandbox_exit");
-  STATIC int sandbox_getpid()
-                                            asm("playground$sandbox_getpid");
+  STATIC int sandbox_exit(int status)       asm("playground$sandbox_exit");
+  STATIC int sandbox_getpid()               asm("playground$sandbox_getpid");
+  STATIC int sandbox_gettid()               asm("playground$sandbox_gettid");
   STATIC int sandbox_ioctl(int d, int req, void* arg)
                                             asm("playground$sandbox_ioctl");
   STATIC void *sandbox_mmap(void* start, size_t length, int prot, int flags,
@@ -105,8 +104,7 @@ class Sandbox {
                                             asm("playground$process_ioctl");
   STATIC bool process_mmap(int, int, int, int, SecureMemArgs*)
                                             asm("playground$process_mmap");
-  STATIC bool process_mprotect(int, int, int, int,
-                               SecureMemArgs*)
+  STATIC bool process_mprotect(int, int, int, int, SecureMemArgs*)
                                             asm("playground$process_mprotect");
   STATIC bool process_munmap(int, int, int, int, SecureMemArgs*)
                                             asm("playground$process_munmap");

@@ -33,6 +33,7 @@ const struct SyscallTable syscallTable[] __attribute__((section(".rodata, \"a\",
   [ __NR_getdents        ] = { UNRESTRICTED_SYSCALL,      0                 },
   [ __NR_getdents64      ] = { UNRESTRICTED_SYSCALL,      0                 },
   [ __NR_getpid          ] = { (void *)&sandbox_getpid,   0                 },
+  [ __NR_gettid          ] = { (void *)&sandbox_gettid,   0                 },
   [ __NR_gettimeofday    ] = { UNRESTRICTED_SYSCALL,      0                 },
   [ __NR_ioctl           ] = { (void *)&sandbox_ioctl,    process_ioctl     },
   #if defined(__x86_64__)
