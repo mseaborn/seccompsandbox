@@ -77,6 +77,19 @@ char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
 
 char* Library::getBytes(char* dst, const char* src, ssize_t len) {
+  // Some kernels don't allow accessing the VDSO from write()
+  if (isVDSO_ &&
+      src >= memory_ranges_.begin()->second.start &&
+      src <= memory_ranges_.begin()->second.stop) {
+    ssize_t max =
+      reinterpret_cast<char *>(memory_ranges_.begin()->second.stop) - src;
+    if (len > max) {
+      len = max;
+    }
+    memcpy(dst, src, len);
+    return dst;
+  }
+
   // Read up to "len" bytes from "src" and copy them to "dst". Short
   // copies are possible, if we are at the end of a mapping. Returns
   // NULL, if the operation failed completely.
@@ -898,16 +911,18 @@ void Library::patchSystemCalls() {
   bool has_syscall = false;
   for (char *ptr = start; ptr < stop; ptr++) {
     #if defined(__x86_64__)
-    if ((*ptr == '\x0F' && *++ptr == '\x05' /* SYSCALL */) ||
+    if ((*ptr == '\x0F' && ptr[1] == '\x05' /* SYSCALL */) ||
         (isVDSO_ && *ptr == '\xFF')) {
     #elif defined(__i386__)
-    if ((*ptr   == '\xCD' && *++ptr == '\x80' /* INT $0x80 */) ||
-        (*ptr   == '\x65' && *++ptr == '\xFF' &&
-         *++ptr == '\x15' /* CALL %gs:.. */)) {
+    if ((*ptr   == '\xCD' && ptr[1] == '\x80' /* INT $0x80 */) ||
+        (*ptr   == '\x65' && ptr[1] == '\xFF' &&
+         ptr[2] == '\x15' /* CALL %gs:.. */)) {
     #else
     #error Unsupported target platform
     #endif
+      ptr++;
       has_syscall = true;
+      nopcount    = 0;
     } else if (*ptr == '\x90' /* NOP */) {
       nopcount++;
     } else if (!(reinterpret_cast<long>(ptr) & 0xF)) {
@@ -928,6 +943,8 @@ void Library::patchSystemCalls() {
         }
         func = ptr;
       }
+      nopcount = 0;
+    } else {
       nopcount = 0;
     }
   }

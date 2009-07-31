@@ -134,7 +134,7 @@ class Library {
   typedef std::map<std::string, Elf_Sym> SymbolTable;
   typedef std::map<std::string, Elf_Addr> PltTable;
 
-  static char* getBytes(char* dst, const char* src, ssize_t len);
+  char* getBytes(char* dst, const char* src, ssize_t len);
   static bool isSafeInsn(unsigned short insn);
   static int isSimpleSystemCall(char *start, char *end);
   static char* getScratchSpace(const Maps* maps, char* near, int needed,
