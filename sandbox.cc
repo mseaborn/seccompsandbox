@@ -137,12 +137,12 @@ void (*Sandbox::segv())(int signo) {
       // happened. If it is RDTSC, forward the request to the trusted
       // thread.
       "mov  $-3, %%edi\n"          // request for RDTSC
-      "mov  0xB0(%%rsp), %%r10\n"  // %rip at time of segmentation fault
-      "cmpw $0x310F, (%%r10)\n"    // RDTSC
+      "mov  0xB0(%%rsp), %%r15\n"  // %rip at time of segmentation fault
+      "cmpw $0x310F, (%%r15)\n"    // RDTSC
       "jz   0f\n"
-      "cmpw $0x010F, (%%r10)\n"    // RDTSCP
-      "jnz  7f\n"
-      "cmpb $0xF9, 2(%%r10)\n"
+      "cmpw $0x010F, (%%r15)\n"    // RDTSCP
+      "jnz  8f\n"
+      "cmpb $0xF9, 2(%%r15)\n"
       "jnz  8f\n"
       "mov  $-4, %%edi\n"          // request for RDTSCP
     "0:sub  $4, %%rsp\n"
@@ -159,11 +159,11 @@ void (*Sandbox::segv())(int signo) {
     "2:add  $12, %%rsp\n"
       "movq $0, 0x98(%%rsp)\n"     // %rax at time of segmentation fault
       "movq $0, 0x90(%%rsp)\n"     // %rdx at time of segmentation fault
-      "cmpw $0x310F, (%%r10)\n"    // RDTSC
+      "cmpw $0x310F, (%%r15)\n"    // RDTSC
       "jz   3f\n"
       "movq $0, 0xA0(%%rsp)\n"     // %rcx at time of segmentation fault
     "3:addq $2, 0xB0(%%rsp)\n"     // %rip at time of segmentation fault
-      "cmpw $0x010F, (%%r10)\n"    // RDTSC
+      "cmpw $0x010F, (%%r15)\n"    // RDTSC
       "jnz  4f\n"
       "addq $1, 0xB0(%%rsp)\n"     // %rip at time of segmentation fault
     "4:ret\n"
@@ -179,7 +179,7 @@ void (*Sandbox::segv())(int signo) {
       "mov  8(%%rsp), %%ecx\n"
       "add  $12, %%rsp\n"
       "mov  %%rdx, 0x90(%%rsp)\n"  // %rdx at time of segmentation fault
-      "cmpw $0x310F, (%%r10)\n"    // RDTSC
+      "cmpw $0x310F, (%%r15)\n"    // RDTSC
       "jz   7f\n"
       "mov  %%rcx, 0xA0(%%rsp)\n"  // %rcx at time of segmentation fault
     "7:mov  %%rax, 0x98(%%rsp)\n"  // %rax at time of segmentation fault
@@ -189,7 +189,7 @@ void (*Sandbox::segv())(int signo) {
       // of playground::Library being unable to find a way to safely
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
-    "8:cmpw $0xCD, (%%r10)\n"      // INT $0x0
+    "8:cmpw $0xCD, (%%r15)\n"      // INT $0x0
       "jnz  9f\n"
       "mov  0x98(%%rsp), %%rax\n"  // %rax at time of segmentation fault
       "mov  0x70(%%rsp), %%rdi\n"  // %rdi at time of segmentation fault
@@ -245,6 +245,7 @@ void (*Sandbox::segv())(int signo) {
       "jz   3f\n"
       "movl $0, 0x30(%%esp)\n"     // %ecx at time of segmentation fault
     "3:addl $2, 0x40(%%esp)\n"     // %eip at time of segmentation fault
+      "mov  0x40(%%esp), %%ebp\n"  // %eip at time of segmentation fault
       "cmpw $0x010F, (%%ebp)\n"    // RDTSC
       "jnz  4f\n"
       "addl $1, 0x40(%%esp)\n"     // %eip at time of segmentation fault
