@@ -1,7 +1,3 @@
-- implement MAP_FIXED support
-
-- implement signal handler for INT 0
-
 - find commonly called missing system calls and add them
 
 - for better efficiency, try to find instances of RDTSC in glibc and rewrite

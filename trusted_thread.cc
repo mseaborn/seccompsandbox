@@ -77,8 +77,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       //   0x24: fifth argument; passed in %r8
       //   0x2C: sixth argument; passed in %r9
       //   0x34: return value
-      //   0x3C: RDTSC result (%eax)
-      //   0x40: RDTSC result (%edx)
+      //   0x3C: RDTSCP result (%eax)
+      //   0x40: RDTSCP result (%edx)
+      //   0x44: RDTSCP result (%ecx)
 
       // We use the %fs register for accessing the secure read-only page, and
       // the untrusted scratch space immediately following it. The segment
@@ -180,10 +181,12 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // If syscall number is -3, read the time stamp counter
     "7:cmp  $-3, %%eax\n"
       "jnz  8f\n"
-      "rdtsc\n"                    // sets edx:eax
+      "rdtscp\n"                   // sets %edx:%eax and %ecx
       "add  $0x3C, %%rsi\n"
       "mov  %%eax, 0(%%rsi)\n"
       "mov  %%edx, 4(%%rsi)\n"
+      "mov  %%ecx, 8(%%rsi)\n"
+      "mov  $12, %%edx\n"
       "jmp  11f\n"                 // return result
 
       // Check in syscallTable whether this system call is unrestricted
@@ -225,8 +228,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
    "10:mov  %%fs:0x0, %%rsi\n"
       "add  $0x1034, %%rsi\n"      // buf   = &scratch + 52
       "mov  %%rax, (%%rsi)\n"
-   "11:mov  $8, %%edx\n"           // len   = 8
-      "mov  %%r13, %%rdi\n"        // fd    = threadFd
+      "mov  $8, %%edx\n"           // len   = 8
+   "11:mov  %%r13, %%rdi\n"        // fd    = threadFd
       "mov  $1, %%eax\n"           // NR_write
    "12:syscall\n"
       "cmp  %%rdx, %%rax\n"
@@ -633,8 +636,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       //   0x14: fifth argument; passed in %edi
       //   0x18: sixth argument; passed in %ebp
       //   0x1C: return value
-      //   0x20: RDTSC result (%eax)
-      //   0x24: RDTSC result (%edx)
+      //   0x20: RDTSCP result (%eax)
+      //   0x24: RDTSCP result (%edx)
+      //   0x28: RDTSCP result (%ecx)
 
     "0:xor  %%esp, %%esp\n"
       "mov  $2, %%eax\n"           // %mm2 = initial sequence number
@@ -749,11 +753,14 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // If syscall number is -3, read the time stamp counter
     "7:cmp  $-3, %%eax\n"
       "jnz  8f\n"
-      "rdtsc\n"                    // sets edx:eax
-      "add  $0x20, %%ecx\n"
-      "mov  %%eax, 0(%%ecx)\n"
-      "mov  %%edx, 4(%%ecx)\n"
-      "mov  $8, %%edx\n"
+      "rdtscp\n"                   // sets %edx:%eax and %ecx
+      "movd %%mm5, %%ebx\n"
+      "add  $0x1020, %%ebx\n"
+      "mov  %%eax, 0(%%ebx)\n"
+      "mov  %%edx, 4(%%ebx)\n"
+      "mov  %%ecx, 8(%%ebx)\n"
+      "mov  %%ebx, %%ecx\n"
+      "mov  $12, %%edx\n"
       "jmp  11f\n"                 // return result
 
       // Check in syscallTable whether this system call is unrestricted

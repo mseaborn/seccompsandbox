@@ -53,6 +53,32 @@ int main(int argc, char *argv[]) {
   printf("TSC: %llx\n", tsc());
   printf("TSC: %llx\n", tsc());
 
+  #if defined(__x86_64__)
+  asm volatile("mov $2, %%edi\n"
+               "lea 100f, %%rsi\n"
+               "mov $101f-100f, %%edx\n"
+               "mov $1, %%eax\n"
+               "int $0\n"
+               "jmp 101f\n"
+          "100:.ascii \"Hello world (INT $0 worked)\\n\"\n"
+          "101:\n"
+               :
+               :
+               : "rax", "rdi", "rsi", "rdx");
+  #elif defined(__i386__)
+  asm volatile("mov $2, %%ebx\n"
+               "lea 100f, %%ecx\n"
+               "mov $101f-100f, %%edx\n"
+               "mov $4, %%eax\n"
+               "int $0\n"
+               "jmp 101f\n"
+          "100:.ascii \"Hello world (INT $0 worked)\\n\"\n"
+          "101:\n"
+               :
+               :
+               : "eax", "ebx", "ecx", "edx");
+  #endif
+
   dlopen("libncurses.so.5", RTLD_LAZY);
 
   struct timeval tv;

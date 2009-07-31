@@ -37,19 +37,32 @@ bool Sandbox::process_mmap(int parentProc, int sandboxFd, int threadFdPub,
   if (read(sys, sandboxFd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
     die("Failed to read parameters for mmap() [process]");
   }
-  int rc = -EINVAL;
-// TODO(markus): disabled for debugging, only
-//  if (mmap_req.flags & MAP_FIXED) {
-//    // TODO(markus): Allow MAP_FIXED if it doesn't clobber any reserved
-//    // mappings.
-//    SecureMem::abandonSystemCall(threadFd, rc);
-//    return false;
-//  } else {
-    SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_MMAP,
-                              mmap_req.start, mmap_req.length, mmap_req.prot,
-                              mmap_req.flags, mmap_req.fd, mmap_req.offset);
-    return true;
-//  }
+
+  if (mmap_req.flags & MAP_FIXED) {
+    // Cannot map a memory area that was part of the original memory mappings.
+    void *stop = reinterpret_cast<void *>(
+        (char *)mmap_req.start + mmap_req.length);
+    ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
+        (void *)mmap_req.start);
+    if (iter != protectedMap_.begin()) {
+      --iter;
+    }
+    for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
+      if (mmap_req.start < reinterpret_cast<void *>(
+              reinterpret_cast<char *>(iter->first) + iter->second) &&
+          stop > iter->first) {
+        int rc = -EINVAL;
+        SecureMem::abandonSystemCall(threadFd, rc);
+        return false;
+      }
+    }
+  }
+
+  // All other mmap() requests are OK
+  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_MMAP,
+                            mmap_req.start, mmap_req.length, mmap_req.prot,
+                            mmap_req.flags, mmap_req.fd, mmap_req.offset);
+  return true;
 }
 
 } // namespace

@@ -114,7 +114,7 @@ void Sandbox::setupSignalHandlers() {
   sys.sigaction(SIGCHLD, &sa, NULL);
 
   // Set up SEGV handler for dealing with RDTSC instructions
-  sa.sa_handler_ = segv;
+  sa.sa_handler_ = segv();
   sys.sigaction(SIGSEGV, &sa, NULL);
 
   // Block all asynchronous signals, except for SIGCHLD which needs to be
@@ -128,58 +128,162 @@ void Sandbox::setupSignalHandlers() {
   sys.sigprocmask(SIG_SETMASK, &mask, 0);
 }
 
-void Sandbox::segv(int signo) {
-  // We need to patch the signal call frame so that sigreturn() sets the
-  // appropriate registers upon returning.
-  #if defined(__x86_64__)
-  unsigned short **ip = reinterpret_cast<unsigned short **>(
-                        __builtin_frame_address(0)) + 23;
-  unsigned long  *eax = reinterpret_cast<unsigned long   *>(
-                        __builtin_frame_address(0)) + 20;
-  unsigned long  *edx = reinterpret_cast<unsigned long   *>(
-                        __builtin_frame_address(0)) + 19;
-  unsigned long  *mask= reinterpret_cast<unsigned long  *>(
-                        __builtin_frame_address(0)) + 39;
-  #elif defined(__i386__)
-  unsigned short **ip = reinterpret_cast<unsigned short **>(
-                        __builtin_frame_address(0)) + 17;
-  unsigned long  *eax = reinterpret_cast<unsigned long   *>(
-                        __builtin_frame_address(0)) + 14;
-  unsigned long  *edx = reinterpret_cast<unsigned long   *>(
-                        __builtin_frame_address(0)) + 12;
-  unsigned int   *mask= reinterpret_cast<unsigned int    *>(
-                        __builtin_frame_address(0)) + 23;
-  #else
-  #error Unsupported target platform
-  #endif
-  SysCalls sys;
-  if (**ip == 0x310F /* RDTSC */) {
-    write(sys, 2, "RDTSC\n", 6);
-    int request       = -3;
-    struct {
-      unsigned eax;
-      unsigned edx;
-    } __attribute__((packed)) response;
-    if (write(sys, threadFdPub(), &request, sizeof(request)) !=
-        sizeof(request) ||
-        read(sys, threadFdPub(), &response, sizeof(response)) !=
-        sizeof(response)) {
-      die("Failed to forward RDTSC request [sandbox]");
-    }
-    ++*ip;
-    *eax              = response.eax;
-    *edx              = response.edx;
-    return;
-  } else if (**ip == 0x00CD /* INT 0 */) {
-    die("Need to handle INT 0"); // TODO(markus):
-  }
-  sys.write(2, "Segmentation fault\n", 19);
+void (*Sandbox::segv())(int signo) {
+  void (*fnc)(int signo);
+  asm volatile(
+      "call 999f\n"
+#if defined(__x86_64__)
+      // Inspect instruction at the point where the segmentation fault
+      // happened. If it is RDTSC, forward the request to the trusted
+      // thread.
+      "mov  0xB0(%%rsp), %%rax\n"  // %rip at time of segmentation fault
+      "cmpw $0x310F, (%%rax)\n"    // RDTSC
+      "jz   0f\n"
+      "cmpw $0x010F, (%%rax)\n"    // RDTSCP
+      "jnz  7f\n"
+      "cmpb $0xF9, 2(%%rax)\n"
+      "jnz  7f\n"
+    "0:sub  $4, %%rsp\n"
+      "mov  $-3, %%eax\n"          // request for current timestamp
+      "push %%rax\n"
+      "mov  %%gs:24, %%edi\n"      // fd  = threadFdPub
+      "mov  %%rsp, %%rsi\n"        // buf = %esp
+      "mov  $4, %%edx\n"           // len = sizeof(int)
+    "1:mov  $1, %%eax\n"           // NR_write
+      "syscall\n"
+      "cmp  %%rax, %%rdx\n"
+      "jz   4f\n"
+      "cmp  $-4, %%eax\n"          // EINTR
+      "jz   1b\n"
+    "2:add  $12, %%rsp\n"
+      "movq $0, 0x98(%%rsp)\n"     // %rax at time of segmentation fault
+      "movq $0, 0x90(%%rsp)\n"     // %rdx at time of segmentation fault
+      "cmpw $0x310F, 0xB0(%%rsp)\n"// RDTSC
+      "jz   3f\n"
+      "movq $0, 0xA0(%%rsp)\n"     // %rcx at time of segmentation fault
+    "3:addq $2, 0xB0(%%rsp)\n"     // %rip at time of segmentation fault
+      "ret\n"
+    "4:mov  $12, %%edx\n"          // len = 3*sizeof(int)
+    "5:mov  $0, %%eax\n"           // NR_read
+      "syscall\n"
+      "cmp  $-4, %%eax\n"          // EINTR
+      "jz   5b\n"
+      "cmp  %%rax, %%rdx\n"
+      "jnz  2b\n"
+      "mov  0(%%rsp), %%eax\n"
+      "mov  4(%%rsp), %%edx\n"
+      "mov  8(%%rsp), %%ecx\n"
+      "add  $12, %%rsp\n"
+      "mov  %%rdx, 0x90(%%rsp)\n"  // %rdx at time of segmentation fault
+      "cmpw $0x310F, 0xB0(%%rsp)\n"// RDTSC
+      "jz   6f\n"
+      "mov  %%rcx, 0xA0(%%rsp)\n"  // %rcx at time of segmentation fault
+    "6:mov  %%rax, 0x98(%%rsp)\n"  // %rax at time of segmentation fault
+      "jmp  3b\n"
 
-  // We block the signal and return from the signal handler. This will retry
-  // the operation, which will fail again. This time, the kernel performs the
-  // default disposition (i.e. dump a core file).
-  *mask |= (1 << (signo - 1));
-  return;
+      // If the instruction is INT 0, then this was probably the result
+      // of playground::Library being unable to find a way to safely
+      // rewrite the system call instruction. Retrieve the CPU register
+      // at the time of the segmentation fault and invoke syscallWrapper().
+    "7:cmpw $0xCD, (%%rax)\n"      // INT $0x0
+      "jnz  8f\n"
+      "mov  0x98(%%rsp), %%rax\n"  // %rax at time of segmentation fault
+      "mov  0x70(%%rsp), %%rdi\n"  // %rdi at time of segmentation fault
+      "mov  0x78(%%rsp), %%rsi\n"  // %rsi at time of segmentation fault
+      "mov  0x90(%%rsp), %%rdx\n"  // %rdx at time of segmentation fault
+      "mov  0x40(%%rsp), %%r10\n"  // %r10 at time of segmentation fault
+      "mov  0x30(%%rsp), %%r8\n"   // %r8  at time of segmentation fault
+      "mov  0x38(%%rsp), %%r9\n"   // %r9  at time of segmentation fault
+      "lea  6b(%%rip), %%rcx\n"
+      "push %%rcx\n"
+      "push 0xB8(%%rsp)\n"         // %rip at time of segmentation fault
+      "lea  playground$syscallWrapper(%%rip), %%rcx\n"
+      "jmp  *%%rcx\n"
+
+      // This was a genuine segmentation fault. Trigger the kernel's default
+      // signal disposition. The only way we can do this from seccomp mode
+      // is by blocking the signal and retriggering it.
+    "8:mov  $2, %%edi\n"           // stderr
+      "lea  100f(%%rip), %%rsi\n"  // "Segmentation fault\n"
+      "mov  $101f-100f, %%edx\n"
+      "mov  $1, %%eax\n"           // NR_write
+      "syscall\n"
+      "orb  $4, 0x131(%%rsp)\n"    // signal mask at time of segmentation fault
+      "ret\n"
+#elif defined(__i386__)
+      // Inspect instruction at the point where the segmentation fault
+      // happened. If it is RDTSC, forward the request to the trusted
+      // thread.
+      "mov  0x40(%%esp), %%eax\n"  // %eip at time of segmentation fault
+      "cmpw $0x310F, (%%eax)\n"    // RDTSC
+      "jnz  6f\n"
+      "mov  $-3, %%eax\n"          // request for current timestamp
+      "push %%eax\n"
+      "push %%eax\n"
+      "mov  %%fs:24, %%ebx\n"      // fd  = threadFdPub
+      "mov  %%esp, %%ecx\n"        // buf = %esp
+      "mov  $4, %%edx\n"           // len = sizeof(int)
+    "0:mov  %%edx, %%eax\n"        // NR_write
+      "int  $0x80\n"
+      "cmp  %%eax, %%edx\n"
+      "jz   3f\n"
+      "cmp  $-4, %%eax\n"          // EINTR
+      "jz   0b\n"
+    "1:add  $8, %%esp\n"
+      "movl $0, 0x34(%%esp)\n"     // %eax at time of segmentation fault
+      "movl $0, 0x2C(%%esp)\n"     // %edx at time of segmentation fault
+    "2:addl $2, 0x40(%%esp)\n"     // %eip at time of segmentation fault
+      "ret\n"
+    "3:mov  $8, %%edx\n"           // len = 2*sizeof(int)
+    "4:mov  $3, %%eax\n"           // NR_read
+      "int  $0x80\n"
+      "cmp  $-4, %%eax\n"          // EINTR
+      "jz   4b\n"
+      "cmp  %%eax, %%edx\n"
+      "jnz  1b\n"
+      "pop  %%eax\n"
+      "pop  %%edx\n"
+      "mov  %%edx, 0x2C(%%esp)\n"  // %edx at time of segmentation fault
+    "5:mov  %%eax, 0x34(%%esp)\n"  // %eax at time of segmentation fault
+      "jmp  2b\n"
+
+      // If the instruction is INT 0, then this was probably the result
+      // of playground::Library being unable to find a way to safely
+      // rewrite the system call instruction. Retrieve the CPU register
+      // at the time of the segmentation fault and invoke syscallWrapper().
+    "6:cmpw $0xCD, (%%eax)\n"      // INT $0x0
+      "jnz  7f\n"
+      "mov  0x34(%%esp), %%eax\n"  // %eax at time of segmentation fault
+      "mov  0x28(%%esp), %%ebx\n"  // %ebx at time of segmentation fault
+      "mov  0x30(%%esp), %%ecx\n"  // %ecx at time of segmentation fault
+      "mov  0x2C(%%esp), %%edx\n"  // %edx at time of segmentation fault
+      "mov  0x1C(%%esp), %%esi\n"  // %esi at time of segmentation fault
+      "mov  0x18(%%esp), %%edi\n"  // %edi at time of segmentation fault
+      "mov  0x20(%%esp), %%ebp\n"  // %ebp at time of segmentation fault
+      "call playground$syscallWrapper\n"
+      "jmp  5b\n"
+
+      // This was a genuine segmentation fault. Trigger the kernel's default
+      // signal disposition. The only way we can do this from seccomp mode
+      // is by blocking the signal and retriggering it.
+    "7:mov  $2, %%ebx\n"           // stderr
+      "lea  100f, %%ecx\n"         // "Segmentation fault\n"
+      "mov  $101f-100f, %%edx\n"
+      "mov  $4, %%eax\n"           // NR_write
+      "int  $0x80\n"
+      "orb  $4, 0x59(%%esp)\n"     // signal mask at time of segmentation fault
+      "ret\n"
+#else
+#error Unsupported target platform
+#endif
+  "100:.ascii \"Segmentation fault\\n\"\n"
+  "101:\n"
+      ".zero  8\n"
+      ".align 16\n"
+  "999:pop  %0\n"
+      : "=g"(fnc)
+  );
+  return fnc;
 }
 
 void Sandbox::snapshotMemoryMappings(int processFd) {

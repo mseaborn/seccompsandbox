@@ -511,16 +511,20 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       // .. .. .. .. ; any leading instructions copied from original code
       // E8 00 00 00 00              CALL .
       // 48 83 04 24 ..              ADDQ $.., (%rsp)
-      // FF .. .. ..                 PUSH ..  ; from original CALL instruction
+      // FF .. .. .. .. ..           PUSH ..  ; from original CALL instruction
       // 48 81 3C 24 00 00 00 FF     CMPQ $0xFFFFFFFFFF000000, 0(%rsp)
-      // 72 0F                       JB   . + 15
+      // 72 10                       JB   . + 16
       // 81 2C 24 .. .. .. ..        SUBL ..., 0(%rsp)
       // C7 44 24 04 00 00 00 00     MOVL $0, 4(%rsp)
+      // C3                          RETQ
+      // 48 87 04 24                 XCHG %rax,(%rsp)
+      // 48 89 44 24 08              MOV  %rax,0x8(%rsp)
+      // 58                          POP  %rax
       // C3                          RETQ
       // .. .. .. .. ; any trailing instructions copied from original code
       // E9 .. .. .. ..              JMPQ ...
       //
-      // Total: 41 bytes + any bytes that were copied
+      // Total: 52 bytes + any bytes that were copied
 
       if (length < 5) {
         // There are a very small number of instruction sequences that we
@@ -584,7 +588,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       // assembly code.
       #if defined(__x86_64__)
       if (is_indirect_call) {
-        needed = 41 + preamble + code[codeIdx].len + postamble;
+        needed = 52 + preamble + code[codeIdx].len + postamble;
       } else {
         needed = 52 + preamble + postamble;
       }
@@ -605,7 +609,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       #if defined(__x86_64__)
       if (is_indirect_call) {
         memcpy(dest + preamble, "\xE8\x00\x00\x00\x00\x48\x83\x04\x24", 9);
-        dest[preamble + 9] = code[codeIdx].len + 31;
+        dest[preamble + 9] = code[codeIdx].len + 42;
         memcpy(dest + preamble + 10, code[codeIdx].addr, code[codeIdx].len);
 
         // Convert CALL -> PUSH
@@ -618,12 +622,13 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       memcpy(dest + preamble,
            #if defined(__x86_64__)
            is_indirect_call ?
-           "\x48\x81\x3C\x24\x00\x00\x00\xFF\x72\x0F\x81\x2C\x24\x00\x00\x00"
-           "\x00\xC7\x44\x24\x04\x00\x00\x00\x00\xC3" :
+           "\x48\x81\x3C\x24\x00\x00\x00\xFF\x72\x10\x81\x2C\x24\x00\x00\x00"
+           "\x00\xC7\x44\x24\x04\x00\x00\x00\x00\xC3\x48\x87\x04\x24\x48\x89"
+           "\x44\x24\x08\x58\xC3" :
            "\x48\x81\xEC\x80\x00\x00\x00\x50\x48\x8D\x05\x00\x00\x00\x00\x50"
            "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\x50\x48\x8D\x05\x06\x00"
            "\x00\x00\x48\x87\x44\x24\x10\xC3\x48\x81\xC4\x80\x00\x00",
-           is_indirect_call ? 26 : 47
+           is_indirect_call ? 37 : 47
            #elif defined(__i386__)
            "\x68\x00\x00\x00\x00\x68\x00\x00\x00\x00\xC3", 11
            #else
@@ -635,7 +640,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       // patching.
       memcpy(dest + preamble +
              #if defined(__x86_64__)
-             (is_indirect_call ? 26 : 47),
+             (is_indirect_call ? 37 : 47),
              #elif defined(__i386__)
              11,
              #else
@@ -646,7 +651,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
 
       // Patch up the various computed values
       #if defined(__x86_64__)
-      int post = preamble + (is_indirect_call ? 26 : 47) + postamble;
+      int post = preamble + (is_indirect_call ? 37 : 47) + postamble;
       dest[post] = '\xE9';
       *reinterpret_cast<int *>(dest + post + 1) =
           (code[second].addr + code[second].len) - (dest + post + 5);
@@ -876,8 +881,10 @@ void Library::patchSystemCalls() {
     // iff processing the VDSO library. So, make sure we call
     // patchVSystemCalls() first.
     vsys_offset_ = patchVSystemCalls();
+    #if defined(__i386__)
     patchVDSO(&extraSpace, &extraLength);
     return;
+    #endif
   }
   SectionTable::const_iterator iter;
   if ((iter = section_table_.find(".text")) == section_table_.end()) {
