@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_ioctl(int d, int req, void *arg) {
-  SysCalls sys;
-  write(sys, 2, "ioctl()\n", 8);
+  Debug::syscall(__NR_ioctl, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -16,6 +17,7 @@ int Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   request.ioctl_req.arg = arg;
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
@@ -40,7 +42,7 @@ bool Sandbox::process_ioctl(int parentProc, int sandboxFd, int threadFdPub,
                                 ioctl_req.d, ioctl_req.req, ioctl_req.arg);
       return true;
     default:
-      std::cout << "Unsupported ioctl: 0x" << std::hex << ioctl_req.req <<
+      std::cerr << "Unsupported ioctl: 0x" << std::hex << ioctl_req.req <<
           std::endl;
       SecureMem::abandonSystemCall(threadFd, rc);
       return false;

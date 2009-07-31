@@ -79,6 +79,7 @@ int main(int argc, char *argv[]) {
                : "eax", "ebx", "ecx", "edx");
   #endif
 
+  printf("uid: %d\n", getuid());
   dlopen("libncurses.so.5", RTLD_LAZY);
 
   struct timeval tv;

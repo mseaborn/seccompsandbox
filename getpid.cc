@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_getpid() {
-  SysCalls sys;
-  write(sys, 2, "getpid()\n", 8);
+  Debug::syscall(__NR_getpid, "Executing handler");
   return pid_;
 }
 

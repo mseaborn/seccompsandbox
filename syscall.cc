@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 #include "syscall_table.h"
 
@@ -205,21 +206,28 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
   unsigned long rc;
   switch (syscallNum) {
     case __NR_read:
+      Debug::syscall(syscallNum, "Allowing unrestricted system call");
       rc             = sys.read((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_write:
+      Debug::syscall(syscallNum, "Allowing unrestricted system call");
       rc             = sys.write((long)arg0, arg1, (size_t)arg2);
       break;
     case __NR_rt_sigreturn:
-      write(sys, 2, "rt_sigreturn()\n", 15);
+      Debug::syscall(syscallNum, "Allowing unrestricted system call");
       rc             = sys.rt_sigreturn((unsigned long)arg0);
       break;
     default:
-      if (syscallNum == __NR_close && arg0 == (void *)2) return 0; // TODO(markus): remove
-if (true) { // TODO(markus): disabled for debugging, only
-//      if ((unsigned)syscallNum <= maxSyscall &&
-//          syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
-        { char buf[80]; sprintf(buf, "Unrestricted syscall %d\n", syscallNum); write(sys, 2, buf, strlen(buf)); } // TODO(markus): remove
+      if (Debug::isEnabled()) {
+        // In debug mode, prevent stderr from being closed
+        if (syscallNum == __NR_close && arg0 == (void *)2)
+          return 0;
+      }
+
+      if ((unsigned)syscallNum <= maxSyscall &&
+          syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
+        Debug::syscall(syscallNum, "Allowing unrestricted system call");
+     perform_unrestricted:
         struct {
           int          sysnum;
           void*        unrestricted_req[6];
@@ -233,10 +241,11 @@ if (true) { // TODO(markus): disabled for debugging, only
           die("Failed to forward unrestricted system call");
         }
         return rc;
+      } else if (Debug::isEnabled()) {
+        Debug::syscall(syscallNum,
+                       "In production mode, this call would be disallowed");
+        goto perform_unrestricted;
       } else {
-        char buf[80] = { 0 };
-        snprintf(buf, sizeof(buf)-1, "Uncaught system call %d\n", syscallNum);
-        write(sys, 2, buf, strlen(buf));
         return (void *)-ENOSYS;
       }
   }

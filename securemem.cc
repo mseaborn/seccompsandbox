@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "mutex.h"
 #include "sandbox_impl.h"
 #include "securemem.h"
@@ -6,7 +7,9 @@ namespace playground {
 
 void SecureMem::abandonSystemCall(int fd, int err) {
   void* rc = reinterpret_cast<void *>(err);
-  if (err) write(2, "System call failed\n", 19); // TODO(markus): remove
+  if (err) {
+    Debug::message("System call failed\n");
+  }
   Sandbox::SysCalls sys;
   if (Sandbox::write(sys, fd, &rc, sizeof(rc)) != sizeof(rc)) {
     Sandbox::die("Failed to send system call");

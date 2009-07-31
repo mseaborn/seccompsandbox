@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_exit(int status) {
-  SysCalls sys;
-  write(sys, 2, "exit()\n", 7);
+  Debug::syscall(__NR_exit, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -11,6 +12,7 @@ int Sandbox::sandbox_exit(int status) {
   request.sysnum = __NR_exit;
   request.cookie = cookie();
 
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request)) {
     die("Failed to forward exit() request [sandbox]");

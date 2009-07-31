@@ -1,4 +1,4 @@
-MODS := preload library maps x86_decode securemem sandbox syscall             \
+MODS := preload library debug maps x86_decode securemem sandbox syscall       \
         syscall_table trusted_thread trusted_process                          \
         exit clone getpid gettid ioctl mmap mprotect munmap open stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')

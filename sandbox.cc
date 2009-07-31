@@ -350,7 +350,11 @@ void Sandbox::startSandbox() {
     Maps maps("/proc/self/maps");
     const char *libs[] = { "ld", "libc", "librt", "libpthread", NULL };
 
-    // Intercept system calls in libraries that are known to have them.
+    // Intercept system calls in the VDSO segment (if any). This has to happen
+    // before intercepting system calls in any of the other libraries, as
+    // the main kernel entry point might be inside of the VDSO and we need to
+    // determine its address before we can compare it to jumps from inside
+    // other libraries.
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){
       Library* library = *iter;
       if (library->isVDSO()) {
@@ -360,6 +364,8 @@ void Sandbox::startSandbox() {
         break;
       }
     }
+
+    // Intercept system calls in libraries that are known to have them.
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){
       Library* library = *iter;
       for (const char **ptr = libs; *ptr; ptr++) {

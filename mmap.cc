@@ -1,11 +1,11 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
 
 void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
                           int fd, off_t offset) {
-  SysCalls sys;
-  write(sys, 2, "mmap()\n", 7);
+  Debug::syscall(__NR_mmap, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -21,6 +21,7 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   request.mmap_req.offset = offset;
 
   void* rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {

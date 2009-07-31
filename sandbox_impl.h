@@ -114,6 +114,7 @@ class Sandbox {
                                             asm("playground$process_stat");
 
 #ifdef __cplusplus
+  friend class Debug;
   friend class Library;
   friend class Maps;
   friend class Mutex;

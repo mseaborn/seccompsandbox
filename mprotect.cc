@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
-  SysCalls sys;
-  write(sys, 2, "mprotect()\n", 11);
+  Debug::syscall(__NR_mprotect, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -16,6 +17,7 @@ int Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   request.mprotect_req.prot = prot;
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {

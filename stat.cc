@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_stat(const char *path, void *buf) {
-  SysCalls sys;
-  write(sys, 2, "stat()\n", 7);
+  Debug::syscall(__NR_stat, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
     int       sysnum;
@@ -21,6 +22,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   memcpy(request->pathname, path, len);
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward stat() request [sandbox]");
@@ -30,8 +32,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
 
 #if defined(__i386__)
 int Sandbox::sandbox_stat64(const char *path, void *buf) {
-  SysCalls sys;
-  write(sys, 2, "stat64()\n", 9);
+  Debug::syscall(__NR_stat64, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
     int       sysnum;
@@ -49,6 +50,7 @@ int Sandbox::sandbox_stat64(const char *path, void *buf) {
   memcpy(request->pathname, path, len);
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward stat64() request [sandbox]");

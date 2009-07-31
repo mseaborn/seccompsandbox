@@ -66,6 +66,9 @@ class SecureMem {
             int          processFdPub;
             int          cloneFdPub;
 
+            // Set to non-zero, if in debugging mode
+            int          allowAllSystemCalls;
+
             // The following entries make up the sandboxed thread's TLS
             long long    cookie;
             long long    threadId;

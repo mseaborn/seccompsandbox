@@ -1,13 +1,11 @@
-// TODO(markus): set TLS values
-
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
 
 int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
                            void* tls, void *wrapper_sp) {
-  SysCalls sys;
-  write(sys, 2, "clone()\n", 8);
+  Debug::syscall(__NR_clone, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -35,6 +33,7 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   #endif
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {

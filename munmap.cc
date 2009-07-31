@@ -1,9 +1,10 @@
+#include "debug.h"
 #include "sandbox_impl.h"
 
 namespace playground {
+
 int Sandbox::sandbox_munmap(void* start, size_t length) {
-  SysCalls sys;
-  write(sys, 2, "munmap()\n", 9);
+  Debug::syscall(__NR_munmap, "Executing handler");
   struct {
     int       sysnum;
     long long cookie;
@@ -15,6 +16,7 @@ int Sandbox::sandbox_munmap(void* start, size_t length) {
   request.munmap_req.length = length;
 
   long rc;
+  SysCalls sys;
   if (write(sys, processFdPub(), &request, sizeof(request)) !=
       sizeof(request) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {

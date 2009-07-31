@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <map>
 
+#include "debug.h"
 #include "sandbox_impl.h"
 #include "syscall_table.h"
 
@@ -224,6 +225,7 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
     for (int i = 0; i < kMaxThreads; i++) {
       SecureMem::Args* args    = secureArena + i;
       args->self               = args;
+      args->allowAllSystemCalls= Debug::isEnabled();
     }
 
     initializeProtectedMap(sandboxFd);

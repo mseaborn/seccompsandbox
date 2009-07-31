@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include "debug.h"
 #include "library.h"
 #include "sandbox_impl.h"
 #include "syscall.h"
@@ -1025,7 +1026,7 @@ bool Library::parseSymbols() {
     if (symtab->sh_link >= ehdr_.e_shnum ||
         !getOriginal(ehdr_.e_shoff + symtab->sh_link * ehdr_.e_shentsize,
                      &strtab)) {
-      std::cout << "Cannot find valid symbol table" << std::endl;
+      Debug::message("Cannot find valid symbol table\n");
       valid_ = false;
       return false;
     }
@@ -1037,7 +1038,7 @@ bool Library::parseSymbols() {
       Elf_Rel rel;
       if (!getOriginal(plt->sh_offset + i * sizeof(Elf_Rel), &rel) ||
           ELF_R_SYM(rel.r_info)*sizeof(Elf_Sym) >= symtab->sh_size) {
-        std::cout << "Encountered invalid plt entry" << std::endl;
+        Debug::message("Encountered invalid plt entry\n");
         valid_ = false;
         return false;
       }
@@ -1049,7 +1050,7 @@ bool Library::parseSymbols() {
       if (!getOriginal(symtab->sh_offset +
                        ELF_R_SYM(rel.r_info)*sizeof(Elf_Sym), &sym) ||
           sym.st_shndx >= ehdr_.e_shnum) {
-        std::cout << "Encountered invalid symbol for plt entry" << std::endl;
+        Debug::message("Encountered invalid symbol for plt entry\n");
         valid_ = false;
         return false;
       }
@@ -1068,7 +1069,7 @@ bool Library::parseSymbols() {
       if (!getOriginal(symtab->sh_offset + addr, &sym) ||
           (sym.st_shndx >= ehdr_.e_shnum &&
            sym.st_shndx < SHN_LORESERVE)) {
-        std::cout << "Encountered invalid symbol" << std::endl;
+        Debug::message("Encountered invalid symbol\n");
         valid_ = false;
         return false;
       }
