@@ -30,28 +30,68 @@ Debug::Debug() {
     for (const char **fn = filenames; *fn; ++fn) {
       FILE *fp = fopen(*fn, "r");
       if (fp) {
+        std::string baseName;
+        int         baseNum = -1;
         char buf[80];
         while (fgets(buf, sizeof(buf), fp)) {
+          // Check if the line starts with "#define"
           static const char* whitespace = " \t\r\n";
           char *token, *save;
           token = strtok_r(buf, whitespace, &save);
           if (token && !strcmp(token, "#define")) {
+
+            // Only parse identifiers that start with "__NR_"
             token = strtok_r(NULL, whitespace, &save);
             if (token) {
               if (strncmp(token, "__NR_", 5)) {
                 continue;
               }
               std::string syscallName(token + 5);
+
+              // Parse the value of the symbol. Try to be forgiving in what
+              // we accept, as the file format might change over time.
               token = strtok_r(NULL, "\r\n", &save);
               if (token) {
+                // Some values are defined relative to previous values, we
+                // detect these examples by finding an earlier symbol name
+                // followed by a '+' plus character.
+                bool isRelative = false;
+                char *base = strstr(token, baseName.c_str());
+                if (baseNum >= 0 && base) {
+                  base += baseName.length();
+                  while (*base == ' ' || *base == '\t') {
+                    ++base;
+                  }
+                  if (*base == '+') {
+                    isRelative = true;
+                    token = base;
+                  }
+                }
+
+                // Skip any characters that are not part of the syscall number.
                 while (*token < '0' || *token > '9') {
                   token++;
                 }
+
+                // If we now have a valid datum, enter it into our map.
                 if (*token) {
                   int sysnum = atoi(token);
+
+                  // Deal with symbols that are defined relative to earlier
+                  // ones.
+                  if (isRelative) {
+                    sysnum += baseNum;
+                  } else {
+                    baseNum  = sysnum;
+                    baseName = syscallName;
+                  }
+
+                  // Keep track of the highest syscall number that we know
+                  // about.
                   if (sysnum >= numSyscallNames_) {
                     numSyscallNames_ = sysnum + 1;
                   }
+
                   syscallNamesMap_[sysnum] = syscallName;
                 }
               }
