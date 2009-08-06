@@ -1,6 +1,10 @@
+CFLAGS = -g -O0 -Wall -Werror
+LDFLAGS = -g
+CPPFLAGS =
 MODS := preload library debug maps x86_decode securemem sandbox syscall       \
         syscall_table trusted_thread trusted_process                          \
-        exit clone getpid gettid ioctl mmap mprotect munmap open stat
+        exit clone getpid gettid ioctl madvise mmap mprotect munmap open      \
+        socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
@@ -35,33 +39,33 @@ strace: testbin32
 	multitail -mb 1GB -CS strace strace.log*
 
 testbin64: test.cc ${OBJS64}
-	${CXX} -c -Werror -Wall -g -O0 -o testbin.o64 $<
-	${CXX} -g -o testbin64 testbin.o64 ${OBJS64} -lpthread -ldl
+	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o testbin.o64 $<
+	${CXX} ${LDFLAGS} -o testbin64 testbin.o64 ${OBJS64} -lpthread -ldl
 
 testbin32: test.cc ${OBJS32}
-	${CXX} -m32 -c -Werror -Wall -g -O0 -o testbin.o32 $<
-	${CXX} -m32 -g -o testbin32 testbin.o32 ${OBJS32} -lpthread -ldl
+	${CXX} ${CFLAGS} ${CPPFLAGS} -m32 -c -o testbin.o32 $<
+	${CXX} ${LDFLAGS} -m32 -o testbin32 testbin.o32 ${OBJS32} -lpthread -ldl
 
 playground: playground.o
-	${CXX} -g -o $@ $<
+	${CXX} ${LDFLAGS} -o $@ $<
 
 .cc.o: ${HEADERS}
-	${CXX} -c -Werror -Wall -g -O0 -o $@ $<
+	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o $@ $<
 
 preload64.so: ${OBJS64}
-	${CXX} -shared -g -o $@ $+ -lpthread
+	${CXX} ${LDFLAGS} -shared -o $@ $+ -lpthread
 
 preload32.so: ${OBJS32}
-	${CXX} -m32 -shared -g -o $@ $+ -lpthread
+	${CXX} ${LDFLAGS} -m32 -shared -o $@ $+ -lpthread
 
 .cc.o64: ${HEADERS}
-	${CXX} -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CXX} ${CFLAGS} ${CPPFLAGS} -fPIC -c -o $@ $<
 
 .c.o64: ${HEADERS}
-	${CC} --std=gnu99 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CC} ${CFLAGS} ${CPPFLAGS} --std=gnu99 -fPIC -c -o $@ $<
 
 .cc.o32: ${HEADERS}
-	${CXX} -m32 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CXX} ${CFLAGS} ${CPPFLAGS} -m32 -fPIC -c -o $@ $<
 
 .c.o32: ${HEADERS}
-	${CC} -m32 --std=gnu99 -fPIC -Werror -Wall -g -O0 -c -o $@ $<
+	${CC} ${CFLAGS} ${CPPFLAGS} -m32 --std=gnu99 -fPIC -c -o $@ $<

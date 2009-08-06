@@ -14,18 +14,35 @@ namespace playground {
 class Debug {
  public:
   // If debugging is enabled, write a message to stderr.
-  static void message(const char* msg);
+  static void message(const char* msg)
+  #ifndef NDEBUG
+  asm("playground$debugMessage");
+  #else
+  { }
+  #endif
 
   // If debugging is enabled, write the name of the syscall and an optional
   // message to stderr.
-  static void syscall(int sysnum, const char* msg);
+  static void syscall(int sysnum, const char* msg, ...)
+  #ifndef NDEBUG
+  ;
+  #else
+  { }
+  #endif
 
   // Check whether debugging is enabled.
-  static bool isEnabled() { return enabled_; }
+  static bool isEnabled() {
+    #ifndef NDEBUG
+    return enabled_;
+    #else
+    return false;
+    #endif
+  }
 
  private:
+  #ifndef NDEBUG
   Debug();
-  static char* itoa(int n, char *s);
+  static char* itoa(char* s, int n);
 
   static Debug debug_;
 
@@ -33,6 +50,7 @@ class Debug {
   static int  numSyscallNames_;
   static const char **syscallNames_;
   static std::map<int, std::string> syscallNamesMap_;
+  #endif
 };
 
 } // namespace

@@ -1,3 +1,6 @@
+#ifndef NDEBUG
+
+#include <stdarg.h>
 #include "debug.h"
 
 namespace playground {
@@ -121,11 +124,22 @@ Debug::Debug() {
 void Debug::message(const char* msg) {
   if (enabled_) {
     Sandbox::SysCalls sys;
-    Sandbox::write(sys, 2, msg, strlen(msg));
+    size_t len = strlen(msg);
+    if (len && msg[len-1] != '\n') {
+      // Write operations should be atomic, so that we don't interleave
+      // messages from multiple threads. Append a newline, if it is not
+      // already there.
+      char copy[len + 1];
+      memcpy(copy, msg, len);
+      copy[len] = '\n';
+      Sandbox::write(sys, 2, copy, len + 1);
+    } else {
+      Sandbox::write(sys, 2, msg, len);
+    }
   }
 }
 
-void Debug::syscall(int sysnum, const char* msg) {
+void Debug::syscall(int sysnum, const char* msg, ...) {
   // This function gets called from the system call wrapper. Avoid calling
   // any library functions that themselves need system calls.
   if (enabled_) {
@@ -135,16 +149,39 @@ void Debug::syscall(int sysnum, const char* msg) {
     }
     char unnamed[40] = "Unnamed syscall #";
     if (!sysname) {
-      itoa(sysnum, strrchr(sysname = unnamed, '\000'));
+      itoa(strrchr(sysname = unnamed, '\000'), sysnum);
     }
-    char buf[strlen(sysname) + (msg ? strlen(msg) : 0) + 4];
-    strcat(strcat(strcat(strcpy(buf, sysname), ": "),
+    #if defined(__NR_socketcall)
+    char extra[40];
+    *extra = '\000';
+    if (sysnum == __NR_socketcall) {
+      va_list ap;
+      va_start(ap, msg);
+      unsigned call = va_arg(ap, unsigned);
+      static const char* socketcall_name[] = {
+        0, "socket", "bind", "connect", "listen", "accept", "getsockname",
+        "getpeername", "socketpair", "send", "recv", "sendto","recvfrom",
+        "shutdown", "setsockopt", "getsockopt", "sendmsg", "recvmsg",
+        "accept4"
+      };
+      if (call >= 1 && call < sizeof(socketcall_name)/sizeof(char *)) {
+        strcat(strcpy(extra, " "), socketcall_name[call]);
+      } else {
+        itoa(strcpy(extra, " #") + 2, call);
+      }
+      va_end(ap);
+    }
+    #else
+    static const char *extra = "";
+    #endif
+    char buf[strlen(sysname) + strlen(extra) + (msg ? strlen(msg) : 0) + 4];
+    strcat(strcat(strcat(strcat(strcpy(buf, sysname), extra), ": "),
                   msg ? msg : ""), "\n");
     message(buf);
   }
 }
 
-char* Debug::itoa(int n, char *s) {
+char* Debug::itoa(char* s, int n) {
   // Remember return value
   char *ret   = s;
 
@@ -173,3 +210,5 @@ char* Debug::itoa(int n, char *s) {
 }
 
 } // namespace
+
+#endif // NDEBUG

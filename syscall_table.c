@@ -6,6 +6,9 @@
 #ifndef __NR_set_robust_list
 #define __NR_set_robust_list 273
 #endif
+#ifndef __NR_accept4
+#define __NR_accept4         288
+#endif
 #elif defined(__i386__)
 #ifndef __NR_set_robust_list
 #define __NR_set_robust_list 311
@@ -25,33 +28,45 @@
 const struct SyscallTable syscallTable[] __attribute__((
     section(".rodata, \"a\", @progbits\n#"))) ={
 
-  [ __NR_brk             ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_clock_gettime   ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_close           ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_clone           ] = { (void *)&sandbox_clone,    process_clone     },
-  [ __NR_epoll_ctl       ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_epoll_wait      ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_exit            ] = { (void *)&sandbox_exit,     process_exit      },
-  [ __NR_exit_group      ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_fcntl           ] = { UNRESTRICTED_SYSCALL,      0                 },
-  #if defined(__i386__)
-  [ __NR_fcntl64         ] = { UNRESTRICTED_SYSCALL,      0                 },
+  #if defined(__x86_64__)
+  [ __NR_accept          ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_accept4         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
-  [ __NR_fstat           ] = { UNRESTRICTED_SYSCALL,      0                 },
+  [ __NR_brk             ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_clock_gettime   ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_close           ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_clone           ] = { (void*)&sandbox_clone,    process_clone       },
+  [ __NR_epoll_ctl       ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_epoll_wait      ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_exit            ] = { (void*)&sandbox_exit,     process_exit        },
+  [ __NR_exit_group      ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_fcntl           ] = { UNRESTRICTED_SYSCALL,     0                   },
   #if defined(__i386__)
-  [ __NR_fstat64         ] = { UNRESTRICTED_SYSCALL,      0                 },
+  [ __NR_fcntl64         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
-  [ __NR_futex           ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_getdents        ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_getdents64      ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_getpid          ] = { (void *)&sandbox_getpid,   0                 },
-  [ __NR_gettid          ] = { (void *)&sandbox_gettid,   0                 },
-  [ __NR_gettimeofday    ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_ioctl           ] = { (void *)&sandbox_ioctl,    process_ioctl     },
+  [ __NR_fstat           ] = { UNRESTRICTED_SYSCALL,     0                   },
   #if defined(__i386__)
-  [ __NR__llseek         ] = { UNRESTRICTED_SYSCALL,      0                 },
+  [ __NR_fstat64         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
-  [ __NR_lseek           ] = { UNRESTRICTED_SYSCALL,      0                 },
+  [ __NR_futex           ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_getdents        ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_getdents64      ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__x86_64__)
+  [ __NR_getpeername     ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
+  [ __NR_getpid          ] = { (void*)&sandbox_getpid,   0                   },
+  #if defined(__x86_64__)
+  [ __NR_getsockname     ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_setsockopt      ] = { (void*)&sandbox_setsockopt,process_setsockopt },
+  #endif
+  [ __NR_gettid          ] = { (void*)&sandbox_gettid,   0                   },
+  [ __NR_gettimeofday    ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_ioctl           ] = { (void*)&sandbox_ioctl,    process_ioctl       },
+  #if defined(__i386__)
+  [ __NR__llseek         ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
+  [ __NR_lseek           ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_madvise         ] = { (void*)&sandbox_madvise,  process_madvise     },
   #if defined(__x86_64__)
   [ __NR_mmap            ] =
   #elif defined(__i386__)
@@ -59,18 +74,33 @@ const struct SyscallTable syscallTable[] __attribute__((
   #else
   #error Unsupported target platform
   #endif
-                             { (void *)&sandbox_mmap,     process_mmap      },
-  [ __NR_mprotect        ] = { (void *)&sandbox_mprotect, process_mprotect  },
-  [ __NR_munmap          ] = { (void *)&sandbox_munmap,   process_munmap    },
-  [ __NR_open            ] = { (void *)&sandbox_open,     process_open      },
-  [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_set_robust_list ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_stat            ] = { (void *)&sandbox_stat,     process_stat      },
-  #if defined(__i386__)
-  [ __NR_stat64          ] = { (void *)&sandbox_stat64,   process_stat      },
+                             { (void*)&sandbox_mmap,     process_mmap        },
+  [ __NR_mprotect        ] = { (void*)&sandbox_mprotect, process_mprotect    },
+  [ __NR_munmap          ] = { (void*)&sandbox_munmap,   process_munmap      },
+  [ __NR_open            ] = { (void*)&sandbox_open,     process_open        },
+  [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__x86_64__)
+  [ __NR_recvfrom        ] = { (void*)&sandbox_recvfrom, process_recvfrom    },
+  [ __NR_recvmsg         ] = { (void*)&sandbox_recvmsg,  process_recvmsg     },
+  [ __NR_sendmsg         ] = { (void*)&sandbox_sendmsg,  process_sendmsg     },
+  [ __NR_sendto          ] = { (void*)&sandbox_sendto,   process_sendto      },
   #endif
-  [ __NR_time            ] = { UNRESTRICTED_SYSCALL,      0                 },
-  [ __NR_uname           ] = { UNRESTRICTED_SYSCALL,      0                 },
+  [ __NR_set_robust_list ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__x86_64__)
+  [ __NR_setsockopt      ] = { (void*)&sandbox_setsockopt,process_setsockopt },
+  [ __NR_shutdown        ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_socketpair      ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #elif defined(__i386__)
+  [ __NR_socketcall      ] = { (void*)&sandbox_socketcall,process_socketcall },
+  #else
+  #error Unsupported target platform
+  #endif
+  [ __NR_stat            ] = { (void*)&sandbox_stat,     process_stat        },
+  #if defined(__i386__)
+  [ __NR_stat64          ] = { (void*)&sandbox_stat64,   process_stat        },
+  #endif
+  [ __NR_time            ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_uname           ] = { UNRESTRICTED_SYSCALL,     0                   },
 };
 const unsigned maxSyscall __attribute__((section(".rodata"))) =
     sizeof(syscallTable)/sizeof(struct SyscallTable);

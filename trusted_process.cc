@@ -30,6 +30,7 @@ void Sandbox::trustedProcess(int parentProc, int processFdPub, int sandboxFd,
   // The very first entry in the secure memory arena has been assigned to the
   // initial thread. The remaining entries are available for allocation.
   SecureMem::Args* startAddress  = secureArena;
+  SecureMem::Args* nextThread    = startAddress;
   for (int i = 0; i < kMaxThreads-1; i++) {
     secureMemPool_.push_back(++startAddress);
   }
@@ -54,12 +55,21 @@ newThreadCreated:
     }
     die();
   }
-  newThread->mem                 = data.self;
+  if (data.self != nextThread) {
+    // The only potentially security critical information received from the
+    // newly created thread is "self". The "tid" is for informational purposes
+    // (and for use in the new thread's TLS), and "fdPub" is uncritical as all
+    // file descriptors are considered untrusted.
+    // Thus, we only use "self" for a sanity check, but don't actually trust
+    // it beyond that.
+    die("Received corrupted thread information");
+  }
+  newThread->mem                 = nextThread;
 
   // Set up TLS area and let thread know that the data is now ready
-  data.self->cookie              = cookie;
-  data.self->threadId            = data.tid;
-  data.self->threadFdPub         = data.fdPub;
+  nextThread->cookie             = cookie;
+  nextThread->threadId           = data.tid;
+  nextThread->threadFdPub        = data.fdPub;
   write(sys, newThread->fd, "", 1);
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
@@ -95,6 +105,7 @@ newThreadCreated:
                                                    currentThread->fd,
                                                    currentThread->mem) &&
         header.sysnum == __NR_clone) {
+      nextThread = currentThread->mem->newSecureMem;
       goto newThreadCreated;
     } else if (header.sysnum == __NR_exit) {
       NOINTR_SYS(sys.close(iter->second.fdPub));

@@ -136,7 +136,7 @@ void (*Sandbox::segv())(int signo) {
       // Inspect instruction at the point where the segmentation fault
       // happened. If it is RDTSC, forward the request to the trusted
       // thread.
-      "mov  $-3, %%edi\n"          // request for RDTSC
+      "mov  $-3, %%r14\n"          // request for RDTSC
       "mov  0xB0(%%rsp), %%r15\n"  // %rip at time of segmentation fault
       "cmpw $0x310F, (%%r15)\n"    // RDTSC
       "jz   0f\n"
@@ -144,9 +144,14 @@ void (*Sandbox::segv())(int signo) {
       "jnz  8f\n"
       "cmpb $0xF9, 2(%%r15)\n"
       "jnz  8f\n"
-      "mov  $-4, %%edi\n"          // request for RDTSCP
-    "0:sub  $4, %%rsp\n"
-      "push %%rdi\n"
+      "mov  $-4, %%r14\n"          // request for RDTSCP
+    "0:"
+#ifndef NDEBUG
+      "lea  100f(%%rip), %%rdi\n"
+      "call playground$debugMessage\n"
+#endif
+      "sub  $4, %%rsp\n"
+      "push %%r14\n"
       "mov  %%gs:16, %%edi\n"      // fd  = threadFdPub
       "mov  %%rsp, %%rsi\n"        // buf = %esp
       "mov  $4, %%edx\n"           // len = sizeof(int)
@@ -191,6 +196,10 @@ void (*Sandbox::segv())(int signo) {
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0xCD, (%%r15)\n"      // INT $0x0
       "jnz  9f\n"
+#ifndef NDEBUG
+      "lea  200f(%%rip), %%rdi\n"
+      "call playground$debugMessage\n"
+#endif
       "mov  0x98(%%rsp), %%rax\n"  // %rax at time of segmentation fault
       "mov  0x70(%%rsp), %%rdi\n"  // %rdi at time of segmentation fault
       "mov  0x78(%%rsp), %%rsi\n"  // %rsi at time of segmentation fault
@@ -208,8 +217,8 @@ void (*Sandbox::segv())(int signo) {
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
     "9:mov  $2, %%edi\n"           // stderr
-      "lea  100f(%%rip), %%rsi\n"  // "Segmentation fault\n"
-      "mov  $101f-100f, %%edx\n"
+      "lea  300f(%%rip), %%rsi\n"  // "Segmentation fault\n"
+      "mov  $301f-300f, %%edx\n"
       "mov  $1, %%eax\n"           // NR_write
       "syscall\n"
       "orb  $4, 0x131(%%rsp)\n"    // signal mask at time of segmentation fault
@@ -227,7 +236,15 @@ void (*Sandbox::segv())(int signo) {
       "cmpb $0xF9, 2(%%ebp)\n"
       "jnz  8f\n"
       "mov  $-4, %%ebx\n"          // request for RDTSCP
-    "0:sub  $8, %%esp\n"
+    "0:"
+#ifndef NDEBUG
+      "lea  100f, %%eax\n"
+      "push %%eax\n"
+      "call playground$debugMessage\n"
+      "sub  $4, %%esp\n"
+#else
+      "sub  $8, %%esp\n"
+#endif
       "push %%ebx\n"
       "mov  %%fs:16, %%ebx\n"      // fd  = threadFdPub
       "mov  %%esp, %%ecx\n"        // buf = %esp
@@ -273,6 +290,12 @@ void (*Sandbox::segv())(int signo) {
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0xCD, (%%ebp)\n"      // INT $0x0
       "jnz  9f\n"
+#ifndef NDEBUG
+      "lea  200f, %%eax\n"
+      "push %%eax\n"
+      "call playground$debugMessage\n"
+      "add  $0x4, %%esp\n"
+#endif
       "mov  0x34(%%esp), %%eax\n"  // %eax at time of segmentation fault
       "mov  0x28(%%esp), %%ebx\n"  // %ebx at time of segmentation fault
       "mov  0x30(%%esp), %%ecx\n"  // %ecx at time of segmentation fault
@@ -287,8 +310,8 @@ void (*Sandbox::segv())(int signo) {
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
     "9:mov  $2, %%ebx\n"           // stderr
-      "lea  100f, %%ecx\n"         // "Segmentation fault\n"
-      "mov  $101f-100f, %%edx\n"
+      "lea  300f, %%ecx\n"         // "Segmentation fault\n"
+      "mov  $301f-300f, %%edx\n"
       "mov  $4, %%eax\n"           // NR_write
       "int  $0x80\n"
       "orb  $4, 0x59(%%esp)\n"     // signal mask at time of segmentation fault
@@ -296,10 +319,14 @@ void (*Sandbox::segv())(int signo) {
 #else
 #error Unsupported target platform
 #endif
-  "100:.ascii \"Segmentation fault\\n\"\n"
-  "101:\n"
-      ".zero  8\n"
-      ".align 16\n"
+      ".pushsection \".rodata\"\n"
+#ifndef NDEBUG
+  "100:.asciz \"RDTSC(P): Executing handler\\n\"\n"
+  "200:.asciz \"INT $0x0: Executing handler\\n\"\n"
+#endif
+  "300:.ascii \"Segmentation fault\\n\"\n"
+  "301:\n"
+      ".popsection\n"
   "999:pop  %0\n"
       : "=g"(fnc)
   );

@@ -1,8 +1,20 @@
-- find commonly called missing system calls and add them
+- add support for ipc().
+
+- improve performance by optimizing common sequences of system calls.
+  For example, gettimeofday() can probably safely be made to evaluate lazily.
+
+- figure out why Chrome's renderers keep calling __lseek(). Try to remove
+  that system call.
+
+- build Chrome in 64bit mode and check whether that changes the list of
+  system calls that we need to support.
 
 - for better efficiency, try to find instances of RDTSC in glibc and rewrite
   them. That would avoid the signal handling, when it is not strictly
   necessary.
+
+- try to find places where we call any of the unrestricted system calls and
+  avoid instrumenting the code.
 
 - audit error code handling in trusted_thread.cc. Most notably, add error
   handling, if mprotect() fails.

@@ -8,6 +8,8 @@
 #include <linux/futex.h>
 #include <linux/prctl.h>
 #include <linux/unistd.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -74,44 +76,90 @@ class Sandbox {
 #endif
 
   // Entry points for sandboxed code that is attempting to make system calls
-  STATIC int sandbox_exit(int status)       asm("playground$sandbox_exit");
-  STATIC int sandbox_getpid()               asm("playground$sandbox_getpid");
-  STATIC int sandbox_gettid()               asm("playground$sandbox_gettid");
+  STATIC int sandbox_exit(int status)     asm("playground$sandbox_exit");
+  STATIC int sandbox_getpid()             asm("playground$sandbox_getpid");
+  #if defined(__x86_64__)
+  STATIC int sandbox_getsockopt(int, int, int, void*, socklen_t*)
+                                          asm("playground$sandbox_getsockopt");
+  #endif
+  STATIC int sandbox_gettid()             asm("playground$sandbox_gettid");
   STATIC int sandbox_ioctl(int d, int req, void* arg)
-                                            asm("playground$sandbox_ioctl");
+                                          asm("playground$sandbox_ioctl");
+  STATIC int sandbox_madvise(void*, size_t, int)
+                                          asm("playground$sandbox_madvise");
   STATIC void *sandbox_mmap(void* start, size_t length, int prot, int flags,
                             int fd, off_t offset)
-                                            asm("playground$sandbox_mmap");
+                                          asm("playground$sandbox_mmap");
   STATIC int sandbox_mprotect(const void*, size_t, int)
-                                            asm("playground$sandbox_mprotect");
+                                          asm("playground$sandbox_mprotect");
   STATIC int sandbox_munmap(void* start, size_t length)
-                                            asm("playground$sandbox_munmap");
+                                          asm("playground$sandbox_munmap");
   STATIC int sandbox_open(const char*, int, mode_t)
-                                            asm("playground$sandbox_open");
+                                          asm("playground$sandbox_open");
+  #if defined(__x86_64__)
+  STATIC ssize_t sandbox_recvfrom(int, void*, size_t, int, void*, socklen_t*)
+                                          asm("playground$sandbox_recvfrom");
+  STATIC ssize_t sandbox_recvmsg(int, struct msghdr*, int)
+                                          asm("playground$sandbox_recvmsg");
+  STATIC size_t sandbox_sendmsg(int, const struct msghdr*, int)
+                                          asm("playground$sandbox_sendmsg");
+  STATIC ssize_t sandbox_sendto(int, const void*, size_t, int, const void*,
+                                socklen_t)asm("playground$sandbox_sendto");
+  STATIC int sandbox_setsockopt(int, int, int, const void*, socklen_t)
+                                          asm("playground$sandbox_setsockopt");
+  #elif defined(__i386__)
+  STATIC int sandbox_socketcall(int call, void* args)
+                                          asm("playground$sandbox_socketcall");
+  #else
+  #error Unsupported target platform
+  #endif
   STATIC int sandbox_stat(const char* path, void* buf)
-                                            asm("playground$sandbox_stat");
+                                          asm("playground$sandbox_stat");
   #if defined(__i386__)
   STATIC int sandbox_stat64(const char *path, void* b)
-                                            asm("playground$sandbox_stat64");
+                                          asm("playground$sandbox_stat64");
   #endif
 
   // Functions for system calls that need to be handled in the trusted process
   STATIC bool process_clone(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_clone");
+                                          asm("playground$process_clone");
   STATIC bool process_exit(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_exit");
+                                          asm("playground$process_exit");
+  #if defined(__x86_64__)
+  STATIC bool process_getsockopt(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_getsockopt");
+  #endif
   STATIC bool process_ioctl(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_ioctl");
+                                          asm("playground$process_ioctl");
+  STATIC bool process_madvise(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_madvise");
   STATIC bool process_mmap(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_mmap");
+                                          asm("playground$process_mmap");
   STATIC bool process_mprotect(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_mprotect");
+                                          asm("playground$process_mprotect");
   STATIC bool process_munmap(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_munmap");
+                                          asm("playground$process_munmap");
   STATIC bool process_open(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_open");
+                                          asm("playground$process_open");
+  #if defined(__x86_64__)
+  STATIC bool process_recvfrom(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_recvfrom");
+  STATIC bool process_recvmsg(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_recvmsg");
+  STATIC bool process_sendmsg(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_sendmsg");
+  STATIC bool process_sendto(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_sendto");
+  STATIC bool process_setsockopt(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_setsockopt");
+  #elif defined(__i386__)
+  STATIC bool process_socketcall(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_socketcall");
+  #else
+  #error Unsupported target platform
+  #endif
   STATIC bool process_stat(int, int, int, int, SecureMemArgs*)
-                                            asm("playground$process_stat");
+                                          asm("playground$process_stat");
 
 #ifdef __cplusplus
   friend class Debug;
@@ -241,6 +289,12 @@ class Sandbox {
     void *arg;
   } __attribute__((packed));
 
+  struct MAdvise {
+    const void*  start;
+    size_t       len;
+    int          advice;
+  } __attribute__((packed));
+
   struct MMap {
     void*  start;
     size_t length;
@@ -266,6 +320,153 @@ class Sandbox {
     int    flags;
     mode_t mode;
   } __attribute__((packed));
+
+  struct Socket {
+    int                  domain;
+    int                  type;
+    int                  protocol;
+  } __attribute__((packed));
+
+  struct Bind {
+    int                  sockfd;
+    void*                addr;
+    socklen_t            addrlen;
+  } __attribute__((packed));
+
+  struct Connect {
+    int                  sockfd;
+    void*                addr;
+    socklen_t            addrlen;
+  } __attribute__((packed));
+
+  struct Listen {
+    int                  sockfd;
+    int                  backlog;
+  } __attribute__((packed));
+
+  struct Accept {
+    int                  sockfd;
+    void*                addr;
+    socklen_t*           addrlen;
+  } __attribute__((packed));
+
+  struct GetSockName {
+    int                  sockfd;
+    void*                name;
+    socklen_t*           namelen;
+  } __attribute__((packed));
+
+  struct GetPeerName {
+    int                  sockfd;
+    void*                name;
+    socklen_t*           namelen;
+  } __attribute__((packed));
+
+  struct SocketPair {
+    int                  domain;
+    int                  type;
+    int                  protocol;
+    int*                 pair;
+  } __attribute__((packed));
+
+  struct Send {
+    int                  sockfd;
+    const void*          buf;
+    size_t               len;
+    int                  flags;
+  } __attribute__((packed));
+
+  struct Recv {
+    int                  sockfd;
+    void*                buf;
+    size_t               len;
+    int                  flags;
+  } __attribute__((packed));
+
+  struct SendTo {
+    int                  sockfd;
+    const void*          buf;
+    size_t               len;
+    int                  flags;
+    const void*          to;
+    socklen_t            tolen;
+  } __attribute__((packed));
+
+  struct RecvFrom {
+    int                  sockfd;
+    void*                buf;
+    size_t               len;
+    int                  flags;
+    void*                from;
+    socklen_t            *fromlen;
+  } __attribute__((packed));
+
+  struct ShutDown {
+    int                  sockfd;
+    int                  how;
+  } __attribute__((packed));
+
+  struct SetSockOpt {
+    int                  sockfd;
+    int                  level;
+    int                  optname;
+    const void*          optval;
+    socklen_t            optlen;
+  } __attribute__((packed));
+
+  struct GetSockOpt {
+    int                  sockfd;
+    int                  level;
+    int                  optname;
+    void*                optval;
+    socklen_t*           optlen;
+  } __attribute__((packed));
+
+  struct SendMsg {
+    int                  sockfd;
+    const struct msghdr* msg;
+    int                  flags;
+  } __attribute__((packed));
+
+  struct RecvMsg {
+    int                  sockfd;
+    struct msghdr*       msg;
+    int                  flags;
+  } __attribute__((packed));
+
+  struct Accept4 {
+    int                  sockfd;
+    void*                addr;
+    socklen_t*           addrlen;
+    int                  flags;
+  } __attribute__((packed));
+
+  #if defined(__i386__)
+  struct Socketcall {
+    int    call;
+    void*  arg_ptr;
+    union {
+      Socket      socket;
+      Bind        bind;
+      Connect     connect;
+      Listen      listen;
+      Accept      accept;
+      GetSockName getsockname;
+      GetPeerName getpeername;
+      SocketPair  socketpair;
+      Send        send;
+      Recv        recv;
+      SendTo      sendto;
+      RecvFrom    recvfrom;
+      ShutDown    shutdown;
+      SetSockOpt  setsockopt;
+      GetSockOpt  getsockopt;
+      SendMsg     sendmsg;
+      RecvMsg     recvmsg;
+      Accept4     accept4;
+    } args;
+  } __attribute__((packed));
+  #endif
 
   struct Stat {
     int    sysnum;
@@ -323,6 +524,11 @@ class Sandbox {
   static int   pid_;
   static int   processFdPub_;
   static int   cloneFdPub_;
+
+  #ifdef __i386__
+  struct SocketCallArgInfo;
+  static const struct SocketCallArgInfo socketCallArgInfo[];
+  #endif
 
   // The syscall_mutex_ can only be directly accessed by the trusted process.
   // It can be accessed by the trusted thread after fork()ing and calling

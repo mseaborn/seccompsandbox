@@ -462,7 +462,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Use sendmsg() to send to the trusted process the file handles for
       // communicating with the new trusted thread. We also send the address
-      // of the secure memory area and the thread id.
+      // of the secure memory area (for sanity checks) and the thread id.
       "mov  0xCC(%%rbp), %%edi\n"  // transport = Sandbox::cloneFdPub()
       "cmp  %%rbx, 8(%%rbp)\n"
       "jne  24b\n"                 // exit process
@@ -550,10 +550,10 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "pop  %%rbp\n"
       "ret\n"
 
+      ".pushsection \".rodata\"\n"
   "100:.ascii \"Sandbox violation detected, program aborted\\n\"\n"
   "101:\n"
-      ".zero  8\n"
-      ".align 16\n"
+      ".popsection\n"
 
   "999:pop  %%rbp\n"
       "pop  %%rbx\n"
@@ -1044,7 +1044,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Use sendmsg() to send to the trusted process the file handles for
       // communicating with the new trusted thread. We also send the address
-      // of the secure memory area and the thread id.
+      // of the secure memory area (for sanity checks) and the thread id.
       "push %%esi\n"               // threadFdPub
       "movd %%mm4, %%eax\n"        // threadId
       "push %%eax\n"
@@ -1134,10 +1134,10 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "pop  %%ebp\n"
       "ret\n"
 
+      ".pushsection \".rodata\"\n"
   "100:.ascii \"Sandbox violation detected, program aborted\\n\"\n"
   "101:\n"
-      ".zero  8\n"
-      ".align 16\n"
+      ".popsection\n"
 
   "999:pop  %%ebp\n"
       "pop  %%ebx\n"

@@ -11,8 +11,11 @@
 #include <unistd.h>
 #include <signal.h>
 
-#define THREADS 1000
-#define ITER    100
+// #define THREADS 1000
+// #define ITER    100
+
+#define THREADS 2
+#define ITER    2
 
 static long long tsc() {
   long long rc;
@@ -78,6 +81,9 @@ int main(int argc, char *argv[]) {
                :
                : "eax", "ebx", "ecx", "edx");
   #endif
+
+  int pair[2];
+  socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
 
   printf("uid: %d\n", getuid());
   dlopen("libncurses.so.5", RTLD_LAZY);

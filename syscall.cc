@@ -226,7 +226,7 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
 
       if ((unsigned)syscallNum <= maxSyscall &&
           syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
-        Debug::syscall(syscallNum, "Allowing unrestricted system call");
+        Debug::syscall(syscallNum, "Allowing unrestricted system call", 0);
      perform_unrestricted:
         struct {
           int          sysnum;
@@ -243,7 +243,7 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
         return rc;
       } else if (Debug::isEnabled()) {
         Debug::syscall(syscallNum,
-                       "In production mode, this call would be disallowed");
+                       "In production mode, this call would be disallowed", 0);
         goto perform_unrestricted;
       } else {
         return (void *)-ENOSYS;
