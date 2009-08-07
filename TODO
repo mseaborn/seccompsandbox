@@ -1,5 +1,3 @@
-- add support for ipc().
-
 - improve performance by optimizing common sequences of system calls.
   For example, gettimeofday() can probably safely be made to evaluate lazily.
 

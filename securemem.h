@@ -69,6 +69,10 @@ class SecureMem {
             // Set to non-zero, if in debugging mode
             int          allowAllSystemCalls;
 
+            // The most recent SysV SHM identifier returned by
+            // shmget(IPC_PRIVATE)
+            int          shmId;
+
             // The following entries make up the sandboxed thread's TLS
             long long    cookie;
             long long    threadId;

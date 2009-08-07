@@ -1,6 +1,5 @@
 #ifndef NDEBUG
 
-#include <stdarg.h>
 #include "debug.h"
 
 namespace playground {
@@ -139,7 +138,7 @@ void Debug::message(const char* msg) {
   }
 }
 
-void Debug::syscall(int sysnum, const char* msg, ...) {
+void Debug::syscall(int sysnum, const char* msg, int call) {
   // This function gets called from the system call wrapper. Avoid calling
   // any library functions that themselves need system calls.
   if (enabled_) {
@@ -151,26 +150,38 @@ void Debug::syscall(int sysnum, const char* msg, ...) {
     if (!sysname) {
       itoa(strrchr(sysname = unnamed, '\000'), sysnum);
     }
-    #if defined(__NR_socketcall)
+    #if defined(__NR_socketcall) || defined(__NR_ipc)
     char extra[40];
     *extra = '\000';
+    #if defined(__NR_socketcall)
     if (sysnum == __NR_socketcall) {
-      va_list ap;
-      va_start(ap, msg);
-      unsigned call = va_arg(ap, unsigned);
       static const char* socketcall_name[] = {
         0, "socket", "bind", "connect", "listen", "accept", "getsockname",
         "getpeername", "socketpair", "send", "recv", "sendto","recvfrom",
         "shutdown", "setsockopt", "getsockopt", "sendmsg", "recvmsg",
         "accept4"
       };
-      if (call >= 1 && call < sizeof(socketcall_name)/sizeof(char *)) {
+      if (call >= 1 && call < (int)(sizeof(socketcall_name)/sizeof(char *))) {
         strcat(strcpy(extra, " "), socketcall_name[call]);
       } else {
         itoa(strcpy(extra, " #") + 2, call);
       }
-      va_end(ap);
     }
+    #endif
+    #if defined(__NR_ipc)
+    if (sysnum == __NR_ipc) {
+      static const char* ipc_name[] = {
+        0, "semop", "semget", "semctl", "semtimedop", 0, 0, 0, 0, 0, 0,
+        "msgsnd", "msgrcv", "msgget", "msgctl", 0, 0, 0, 0, 0, 0,
+        "shmat", "shmdt", "shmget", "shmctl" };
+      if (call >= 1 && call < (int)(sizeof(ipc_name)/sizeof(char *)) &&
+          ipc_name[call]) {
+        strcat(strcpy(extra, " "), ipc_name[call]);
+      } else {
+        itoa(strcpy(extra, " #") + 2, call);
+      }
+    }
+    #endif
     #else
     static const char *extra = "";
     #endif

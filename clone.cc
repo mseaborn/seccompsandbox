@@ -95,6 +95,7 @@ bool Sandbox::process_clone(int parentProc, int sandboxFd, int threadFdPub,
       #error Unsupported target platform
       #endif
       newMem->sequence      = 0;
+      newMem->shmId         = -1;
       mem->newSecureMem     = newMem;
       mem->processFdPub     = processFdPub_;
       mem->cloneFdPub       = cloneFdPub_;

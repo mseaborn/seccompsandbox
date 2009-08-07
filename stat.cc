@@ -30,7 +30,7 @@ int Sandbox::sandbox_stat(const char *path, void *buf) {
   return static_cast<int>(rc);
 }
 
-#if defined(__i386__)
+#if defined(__NR_stat64)
 int Sandbox::sandbox_stat64(const char *path, void *buf) {
   Debug::syscall(__NR_stat64, "Executing handler");
   size_t len                    = strlen(path);

@@ -78,13 +78,17 @@ class Sandbox {
   // Entry points for sandboxed code that is attempting to make system calls
   STATIC int sandbox_exit(int status)     asm("playground$sandbox_exit");
   STATIC int sandbox_getpid()             asm("playground$sandbox_getpid");
-  #if defined(__x86_64__)
+  #if defined(__NR_getsockopt)
   STATIC int sandbox_getsockopt(int, int, int, void*, socklen_t*)
                                           asm("playground$sandbox_getsockopt");
   #endif
   STATIC int sandbox_gettid()             asm("playground$sandbox_gettid");
   STATIC int sandbox_ioctl(int d, int req, void* arg)
                                           asm("playground$sandbox_ioctl");
+  #if defined(__NR_ipc)
+  STATIC int sandbox_ipc(unsigned, int, int, int, void*, long)
+                                          asm("playground$sandbox_ipc");
+  #endif
   STATIC int sandbox_madvise(void*, size_t, int)
                                           asm("playground$sandbox_madvise");
   STATIC void *sandbox_mmap(void* start, size_t length, int prot, int flags,
@@ -96,7 +100,7 @@ class Sandbox {
                                           asm("playground$sandbox_munmap");
   STATIC int sandbox_open(const char*, int, mode_t)
                                           asm("playground$sandbox_open");
-  #if defined(__x86_64__)
+  #if defined(__NR_recvfrom)
   STATIC ssize_t sandbox_recvfrom(int, void*, size_t, int, void*, socklen_t*)
                                           asm("playground$sandbox_recvfrom");
   STATIC ssize_t sandbox_recvmsg(int, struct msghdr*, int)
@@ -105,17 +109,25 @@ class Sandbox {
                                           asm("playground$sandbox_sendmsg");
   STATIC ssize_t sandbox_sendto(int, const void*, size_t, int, const void*,
                                 socklen_t)asm("playground$sandbox_sendto");
+  #if defined(__NR_shmat)
+  STATIC void* sandbox_shmat(int, const void*, int)
+                                          asm("playground$sandbox_shmat");
+  STATIC int sandbox_shmctl(int, int, void*)
+                                          asm("playground$sandbox_shmctl");
+  STATIC int sandbox_shmdt(const void*)   asm("playground$sandbox_shmdt");
+  STATIC int sandbox_shmget(int, size_t, int)
+                                          asm("playground$sandbox_shmget");
+  #endif
   STATIC int sandbox_setsockopt(int, int, int, const void*, socklen_t)
                                           asm("playground$sandbox_setsockopt");
-  #elif defined(__i386__)
+  #endif
+  #if defined(__NR_socketcall)
   STATIC int sandbox_socketcall(int call, void* args)
                                           asm("playground$sandbox_socketcall");
-  #else
-  #error Unsupported target platform
   #endif
   STATIC int sandbox_stat(const char* path, void* buf)
                                           asm("playground$sandbox_stat");
-  #if defined(__i386__)
+  #if defined(__NR_stat64)
   STATIC int sandbox_stat64(const char *path, void* b)
                                           asm("playground$sandbox_stat64");
   #endif
@@ -125,12 +137,16 @@ class Sandbox {
                                           asm("playground$process_clone");
   STATIC bool process_exit(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_exit");
-  #if defined(__x86_64__)
+  #if defined(__NR_getsockopt)
   STATIC bool process_getsockopt(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_getsockopt");
   #endif
   STATIC bool process_ioctl(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_ioctl");
+  #if defined(__NR_ipc)
+  STATIC bool process_ipc(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_ipc");
+  #endif
   STATIC bool process_madvise(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_madvise");
   STATIC bool process_mmap(int, int, int, int, SecureMemArgs*)
@@ -141,7 +157,7 @@ class Sandbox {
                                           asm("playground$process_munmap");
   STATIC bool process_open(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_open");
-  #if defined(__x86_64__)
+  #if defined(__NR_recvfrom)
   STATIC bool process_recvfrom(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_recvfrom");
   STATIC bool process_recvmsg(int, int, int, int, SecureMemArgs*)
@@ -152,11 +168,20 @@ class Sandbox {
                                           asm("playground$process_sendto");
   STATIC bool process_setsockopt(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_setsockopt");
-  #elif defined(__i386__)
+  #endif
+  #if defined(__NR_shmat)
+  STATIC bool process_shmat(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_shmat");
+  STATIC bool process_shmctl(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_shmctl");
+  STATIC bool process_shmdt(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_shmdt");
+  STATIC bool process_shmget(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_shmget");
+  #endif
+  #if defined(__NR_socketcall)
   STATIC bool process_socketcall(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_socketcall");
-  #else
-  #error Unsupported target platform
   #endif
   STATIC bool process_stat(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_stat");
@@ -243,6 +268,25 @@ class Sandbox {
                     size_t* len);
 
   // Data structures used to forward system calls to the trusted process.
+  struct Accept {
+    int        sockfd;
+    void*      addr;
+    socklen_t* addrlen;
+  } __attribute__((packed));
+
+  struct Accept4 {
+    int        sockfd;
+    void*      addr;
+    socklen_t* addrlen;
+    int        flags;
+  } __attribute__((packed));
+
+  struct Bind {
+    int       sockfd;
+    void*     addr;
+    socklen_t addrlen;
+  } __attribute__((packed));
+
   struct Clone {
     int       flags;
     void*     stack;
@@ -283,10 +327,52 @@ class Sandbox {
     void*     ret;
   } __attribute__((packed));
 
+  struct Connect {
+    int       sockfd;
+    void*     addr;
+    socklen_t addrlen;
+  } __attribute__((packed));
+
+  struct GetSockName {
+    int        sockfd;
+    void*      name;
+    socklen_t* namelen;
+  } __attribute__((packed));
+
+  struct GetPeerName {
+    int        sockfd;
+    void*      name;
+    socklen_t* namelen;
+  } __attribute__((packed));
+
+  struct GetSockOpt {
+    int        sockfd;
+    int        level;
+    int        optname;
+    void*      optval;
+    socklen_t* optlen;
+  } __attribute__((packed));
+
   struct IOCtl {
     int  d;
     int  req;
     void *arg;
+  } __attribute__((packed));
+
+  #if defined(__NR_ipc)
+  struct IPC {
+    unsigned call;
+    int      first;
+    int      second;
+    int      third;
+    void*    ptr;
+    long     fifth;
+  } __attribute__((packed));
+  #endif
+
+  struct Listen {
+    int sockfd;
+    int backlog;
   } __attribute__((packed));
 
   struct MAdvise {
@@ -321,111 +407,20 @@ class Sandbox {
     mode_t mode;
   } __attribute__((packed));
 
-  struct Socket {
-    int                  domain;
-    int                  type;
-    int                  protocol;
-  } __attribute__((packed));
-
-  struct Bind {
-    int                  sockfd;
-    void*                addr;
-    socklen_t            addrlen;
-  } __attribute__((packed));
-
-  struct Connect {
-    int                  sockfd;
-    void*                addr;
-    socklen_t            addrlen;
-  } __attribute__((packed));
-
-  struct Listen {
-    int                  sockfd;
-    int                  backlog;
-  } __attribute__((packed));
-
-  struct Accept {
-    int                  sockfd;
-    void*                addr;
-    socklen_t*           addrlen;
-  } __attribute__((packed));
-
-  struct GetSockName {
-    int                  sockfd;
-    void*                name;
-    socklen_t*           namelen;
-  } __attribute__((packed));
-
-  struct GetPeerName {
-    int                  sockfd;
-    void*                name;
-    socklen_t*           namelen;
-  } __attribute__((packed));
-
-  struct SocketPair {
-    int                  domain;
-    int                  type;
-    int                  protocol;
-    int*                 pair;
-  } __attribute__((packed));
-
-  struct Send {
-    int                  sockfd;
-    const void*          buf;
-    size_t               len;
-    int                  flags;
-  } __attribute__((packed));
-
   struct Recv {
-    int                  sockfd;
-    void*                buf;
-    size_t               len;
-    int                  flags;
-  } __attribute__((packed));
-
-  struct SendTo {
-    int                  sockfd;
-    const void*          buf;
-    size_t               len;
-    int                  flags;
-    const void*          to;
-    socklen_t            tolen;
+    int    sockfd;
+    void*  buf;
+    size_t len;
+    int    flags;
   } __attribute__((packed));
 
   struct RecvFrom {
-    int                  sockfd;
-    void*                buf;
-    size_t               len;
-    int                  flags;
-    void*                from;
-    socklen_t            *fromlen;
-  } __attribute__((packed));
-
-  struct ShutDown {
-    int                  sockfd;
-    int                  how;
-  } __attribute__((packed));
-
-  struct SetSockOpt {
-    int                  sockfd;
-    int                  level;
-    int                  optname;
-    const void*          optval;
-    socklen_t            optlen;
-  } __attribute__((packed));
-
-  struct GetSockOpt {
-    int                  sockfd;
-    int                  level;
-    int                  optname;
-    void*                optval;
-    socklen_t*           optlen;
-  } __attribute__((packed));
-
-  struct SendMsg {
-    int                  sockfd;
-    const struct msghdr* msg;
-    int                  flags;
+    int       sockfd;
+    void*     buf;
+    size_t    len;
+    int       flags;
+    void*     from;
+    socklen_t *fromlen;
   } __attribute__((packed));
 
   struct RecvMsg {
@@ -434,15 +429,80 @@ class Sandbox {
     int                  flags;
   } __attribute__((packed));
 
-  struct Accept4 {
+  struct Send {
+    int         sockfd;
+    const void* buf;
+    size_t      len;
+    int         flags;
+  } __attribute__((packed));
+
+  struct SendMsg {
     int                  sockfd;
-    void*                addr;
-    socklen_t*           addrlen;
+    const struct msghdr* msg;
     int                  flags;
   } __attribute__((packed));
 
-  #if defined(__i386__)
-  struct Socketcall {
+  struct SendTo {
+    int         sockfd;
+    const void* buf;
+    size_t      len;
+    int         flags;
+    const void* to;
+    socklen_t   tolen;
+  } __attribute__((packed));
+
+  struct SetSockOpt {
+    int         sockfd;
+    int         level;
+    int         optname;
+    const void* optval;
+    socklen_t   optlen;
+  } __attribute__((packed));
+
+  #if defined(__NR_shmat)
+  struct ShmAt {
+    int         shmid;
+    const void* shmaddr;
+    int         shmflg;
+ } __attribute__((packed));
+
+  struct ShmCtl {
+    int  shmid;
+    int  cmd;
+    void *buf;
+  } __attribute__((packed));
+
+  struct ShmDt {
+    const void *shmaddr;
+  } __attribute__((packed));
+
+  struct ShmGet {
+    int    key;
+    size_t size;
+    int    shmflg;
+  } __attribute__((packed));
+  #endif
+
+  struct ShutDown {
+    int sockfd;
+    int how;
+  } __attribute__((packed));
+
+  struct Socket {
+    int domain;
+    int type;
+    int protocol;
+  } __attribute__((packed));
+
+  struct SocketPair {
+    int  domain;
+    int  type;
+    int  protocol;
+    int* pair;
+  } __attribute__((packed));
+
+  #if defined(__NR_socketcall)
+  struct SocketCall {
     int    call;
     void*  arg_ptr;
     union {

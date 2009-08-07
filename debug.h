@@ -23,7 +23,7 @@ class Debug {
 
   // If debugging is enabled, write the name of the syscall and an optional
   // message to stderr.
-  static void syscall(int sysnum, const char* msg, ...)
+  static void syscall(int sysnum, const char* msg, int call = -1)
   #ifndef NDEBUG
   ;
   #else

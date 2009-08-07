@@ -3,7 +3,7 @@
 
 namespace playground {
 
-#if defined(__x86_64__)
+#if defined(__NR_socket)
 
 ssize_t Sandbox::sandbox_recvfrom(int sockfd, void* buf, size_t len, int flags,
                                   void* from, socklen_t* fromlen) {
@@ -449,7 +449,8 @@ bool Sandbox::process_getsockopt(int parentProc, int sandboxFd,
   return false;
 }
 
-#elif defined(__i386__)
+#endif
+#if defined(__NR_socketcall)
 
 enum {
   SYS_SOCKET      =  1,
@@ -478,7 +479,7 @@ struct Sandbox::SocketCallArgInfo {
   off_t  lengthOff;
 };
 const struct Sandbox::SocketCallArgInfo Sandbox::socketCallArgInfo[] = {
-  #define STRUCT(s)   reinterpret_cast<Socketcall *>(0)->args.s
+  #define STRUCT(s)   reinterpret_cast<SocketCall *>(0)->args.s
   #define SIZE(s)     sizeof(STRUCT(s))
   #define OFF(s, f)   offsetof(typeof STRUCT(s), f)
   { 0                                                                  },
@@ -561,7 +562,7 @@ int Sandbox::sandbox_socketcall(int call, void* args) {
   struct Request {
     int        sysnum;
     long long  cookie;
-    Socketcall socketcall_req;
+    SocketCall socketcall_req;
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + numExtraData];
   request = reinterpret_cast<struct Request *>(data);
@@ -658,7 +659,7 @@ bool Sandbox::process_socketcall(int parentProc, int sandboxFd,
                                  int threadFdPub, int threadFd,
                                  SecureMem::Args* mem) {
   // Read request
-  Socketcall socketcall_req;
+  SocketCall socketcall_req;
   SysCalls sys;
   if (read(sys, sandboxFd, &socketcall_req, sizeof(socketcall_req)) !=
       sizeof(socketcall_req)) {
@@ -904,8 +905,6 @@ bool Sandbox::process_socketcall(int parentProc, int sandboxFd,
   }
 }
 
-#else
-#error Unsupported target platform
 #endif
 
 } // namespace
