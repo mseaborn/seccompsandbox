@@ -81,23 +81,29 @@ size_t Sandbox::sandbox_sendmsg(int sockfd, const struct msghdr* msg,
                           flags, msg->msg_name, msg->msg_namelen);
   }
 
-  struct {
+  struct Request {
     int           sysnum;
     long long     cookie;
     SendMsg       sendmsg_req;
     struct msghdr msg;
-  } __attribute__((packed)) request;
-  request.sysnum             = __NR_sendmsg;
-  request.cookie             = cookie();
-  request.sendmsg_req.sockfd = sockfd;
-  request.sendmsg_req.msg    = msg;
-  request.sendmsg_req.flags  = flags;
-  request.msg                = *msg;
+  } __attribute__((packed));
+  char data[sizeof(struct Request) + msg->msg_namelen + msg->msg_controllen];
+  struct Request *request     = reinterpret_cast<struct Request *>(data);
+  request->sysnum             = __NR_sendmsg;
+  request->cookie             = cookie();
+  request->sendmsg_req.sockfd = sockfd;
+  request->sendmsg_req.msg    = msg;
+  request->sendmsg_req.flags  = flags;
+  request->msg                = *msg;
+  memcpy(reinterpret_cast<char *>(
+    memcpy(request + 1, msg->msg_name, msg->msg_namelen)) +
+    msg->msg_namelen,
+      msg->msg_control, msg->msg_controllen);
 
   long rc;
   SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
+  if (write(sys, processFdPub(), &data, sizeof(data)) !=
+      (ssize_t)sizeof(data) ||
       read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
     die("Failed to forward sendmsg() request [sandbox]");
   }
@@ -261,22 +267,57 @@ bool Sandbox::process_sendmsg(int parentProc, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for sendmsg() [process]");
   }
 
+  if (data.msg.msg_namelen    < 0 || data.msg.msg_namelen    > 4096 ||
+      data.msg.msg_controllen < 0 || data.msg.msg_controllen > 4096) {
+    die("Unexpected size for socketcall() payload [process]");
+  }
+  char extra[data.msg.msg_namelen + data.msg.msg_controllen];
+  if (read(sys, sandboxFd, &extra, sizeof(extra)) != (ssize_t)sizeof(extra)) {
+    die("Failed to read parameters for sendmsg() [process]");
+  }
+  if (sizeof(struct msghdr) + sizeof(extra) > sizeof(mem->pathname)) {
+    goto deny;
+  }
+
+  if (data.msg.msg_namelen ||
+      (data.sendmsg_req.flags &
+       ~(MSG_CONFIRM|MSG_DONTWAIT|MSG_EOR|MSG_MORE|MSG_NOSIGNAL|MSG_OOB))) {
+ deny:
+    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    return false;
+  }
+
   // The trusted process receives file handles when a new untrusted thread
   // gets created. We have security checks in place that prevent any
   // critical information from being tampered with during thread creation.
-  // But if we disallow passing of file handles, this adds an extra hurdle
-  // for an attacker. So, unless the sandboxed code needs the ability to
-  // pass file handles, we should disallow doing so.
-  if (data.msg.msg_name || data.msg.msg_control ||
-      (data.sendmsg_req.flags &
-       ~(MSG_CONFIRM|MSG_DONTWAIT|MSG_EOR|MSG_MORE|MSG_NOSIGNAL|MSG_OOB))) {
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
-    return false;
+  // But if we disallowed passing of file handles, this would add an extra
+  // hurdle for an attacker.
+  // Unfortunately, for now, this is not possible as Chrome's
+  // base::SendRecvMsg() needs the ability to pass file handles.
+  if (data.msg.msg_controllen) {
+    data.msg.msg_control = extra + data.msg.msg_namelen;
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&data.msg);
+    do {
+      if (cmsg->cmsg_level != SOL_SOCKET ||
+          cmsg->cmsg_type != SCM_RIGHTS) {
+        goto deny;
+      }
+    } while ((cmsg = CMSG_NXTHDR(&data.msg, cmsg)) != NULL);
   }
 
   // This must be a locked system call, because we have to ensure that the
   // untrusted code does not tamper with the msghdr after we have examined it.
   SecureMem::lockSystemCall(parentProc, mem);
+  if (sizeof(extra) > 0) {
+    if (data.msg.msg_namelen > 0) {
+      data.msg.msg_name = mem->pathname + sizeof(struct msghdr);
+    }
+    if (data.msg.msg_controllen > 0) {
+      data.msg.msg_control = mem->pathname + sizeof(struct msghdr) +
+                             data.msg.msg_namelen;
+    }
+    memcpy(mem->pathname + sizeof(struct msghdr), extra, sizeof(extra));
+  }
   memcpy(mem->pathname, &data.msg, sizeof(struct msghdr));
   SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem,
                             __NR_sendmsg, data.sendmsg_req.sockfd,
@@ -536,25 +577,24 @@ int Sandbox::sandbox_socketcall(int call, void* args) {
     SendMsg *sendmsg_args = reinterpret_cast<SendMsg *>(args);
     if (sendmsg_args->msg->msg_iovlen == 1 &&
         !sendmsg_args->msg->msg_control) {
-      // This sendmsg() call will be simplified to a sendto() call
+      // Further down in the code, this sendmsg() call will be simplified to
+      // a sendto() call. Make sure we already compute the correct value for
+      // numExtraData, as it is needed when we allocate "data[]" on the stack.
       numExtraData  = sendmsg_args->msg->msg_namelen;
       extraDataAddr = sendmsg_args->msg->msg_name;
     } else {
-      numExtraData  = sizeof(*sendmsg_args->msg);
-      extraDataAddr = sendmsg_args->msg;
+      // sendmsg() needs to include some of the extra data so that we can
+      // inspect it in process_socketcall()
+      numExtraData  = sizeof(*sendmsg_args->msg) +
+                      sendmsg_args->msg->msg_namelen +
+                      sendmsg_args->msg->msg_controllen;
+      extraDataAddr = NULL;
     }
   }
   if (call == SYS_RECVMSG) {
     RecvMsg *recvmsg_args = reinterpret_cast<RecvMsg *>(args);
-    if (recvmsg_args->msg->msg_iovlen == 1 &&
-        !recvmsg_args->msg->msg_control) {
-      // This recvmsg() call will be simplified to a recvfrom() call
-      numExtraData  = 0;
-      extraDataAddr = NULL;
-    } else {
-      numExtraData  = sizeof(*recvmsg_args->msg);
-      extraDataAddr = recvmsg_args->msg;
-    }
+    numExtraData  = sizeof(*recvmsg_args->msg);
+    extraDataAddr = recvmsg_args->msg;
   }
 
   // Set up storage for the request header and copy the data from "args"
@@ -641,7 +681,18 @@ int Sandbox::sandbox_socketcall(int call, void* args) {
   if (padding > 0) {
     memset((char *)(&request->socketcall_req.args + 1) - padding, 0, padding);
   }
-  if (extraDataAddr) {
+  if (call == SYS_SENDMSG) {
+    // for sendmsg() we include the (optional) destination address, and the
+    // (optional) control data in the payload.
+    SendMsg *sendmsg_args = reinterpret_cast<SendMsg *>(args);
+    memcpy(reinterpret_cast<char *>(
+      memcpy(reinterpret_cast<char *>(
+        memcpy(request + 1, sendmsg_args->msg, sizeof(*sendmsg_args->msg))) +
+          sizeof(*sendmsg_args->msg),
+          sendmsg_args->msg->msg_name, sendmsg_args->msg->msg_namelen)) +
+            sendmsg_args->msg->msg_namelen,
+            sendmsg_args->msg->msg_control, sendmsg_args->msg->msg_controllen);
+  } else if (extraDataAddr) {
     memcpy(request + 1, extraDataAddr, numExtraData);
   }
 
@@ -696,6 +747,24 @@ bool Sandbox::process_socketcall(int parentProc, int sandboxFd,
   char extra[numExtraData];
   if (numExtraData) {
     if (read(sys, sandboxFd, extra, numExtraData) != (ssize_t)numExtraData) {
+      die("Failed to read socketcall() payload [process]");
+    }
+  }
+
+  // sendmsg() has another level of indirection and can carry even more payload
+  ssize_t numSendmsgExtra = 0;
+  if (socketcall_req.call == SYS_SENDMSG) {
+    struct msghdr* msg = reinterpret_cast<struct msghdr*>(extra);
+    if (msg->msg_namelen    < 0 || msg->msg_namelen    > 4096 ||
+        msg->msg_controllen < 0 || msg->msg_controllen > 4096) {
+      die("Unexpected size for socketcall() payload [process]");
+    }
+    numSendmsgExtra = msg->msg_namelen + msg->msg_controllen;
+  }
+  char sendmsgExtra[numSendmsgExtra];
+  if (numSendmsgExtra) {
+    if (read(sys, sandboxFd, sendmsgExtra, numSendmsgExtra) !=
+        numSendmsgExtra) {
       die("Failed to read socketcall() payload [process]");
     }
   }
@@ -867,24 +936,58 @@ bool Sandbox::process_socketcall(int parentProc, int sandboxFd,
       }
       goto deny;
     case SYS_SENDMSG: {
-      // The trusted process receives file handles when a new untrusted thread
-      // gets created. We have security checks in place that prevent any
-      // critical information from being tampered with during thread creation.
-      // But if we disallow passing of file handles, this adds an extra hurdle
-      // for an attacker. So, unless the sandboxed code needs the ability to
-      // pass file handles, we should disallow doing so.
       struct msghdr* msg = reinterpret_cast<struct msghdr*>(extra);
-      if (msg->msg_name || msg->msg_control ||
+
+      if (sizeof(socketcall_req.args) + sizeof(*msg) + numSendmsgExtra >
+          sizeof(mem->pathname)) {
+        goto deny;
+      }
+
+      if (msg->msg_namelen ||
           (socketcall_req.args.sendmsg.flags &
            ~(MSG_CONFIRM|MSG_DONTWAIT|MSG_EOR|MSG_MORE|MSG_NOSIGNAL|MSG_OOB))){
         goto deny;
       }
+
+      // The trusted process receives file handles when a new untrusted thread
+      // gets created. We have security checks in place that prevent any
+      // critical information from being tampered with during thread creation.
+      // But if we disallowed passing of file handles, this would add an extra
+      // hurdle for an attacker.
+      // Unfortunately, for now, this is not possible as Chrome's
+      // base::SendRecvMsg() needs the ability to pass file handles.
+      if (msg->msg_controllen) {
+        msg->msg_control = sendmsgExtra + msg->msg_namelen;
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
+        do {
+          if (cmsg->cmsg_level != SOL_SOCKET ||
+              cmsg->cmsg_type != SCM_RIGHTS) {
+            goto deny;
+          }
+        } while ((cmsg = CMSG_NXTHDR(msg, cmsg)) != NULL);
+      }
+
+      // This must be a locked system call, because we have to ensure that
+      // the untrusted code does not tamper with the msghdr after we have
+      // examined it.
       SecureMem::lockSystemCall(parentProc, mem);
       socketcall_req.args.sendmsg.msg =
           reinterpret_cast<struct msghdr*>(mem->pathname +
                                            sizeof(socketcall_req.args) -
                                            (char*)mem + (char*)mem->self);
       memcpy(mem->pathname, &socketcall_req.args, sizeof(socketcall_req.args));
+      if (numSendmsgExtra) {
+        if (msg->msg_namelen > 0) {
+          msg->msg_name = const_cast<struct msghdr*>(
+              socketcall_req.args.sendmsg.msg) + 1;
+        }
+        if (msg->msg_controllen > 0) {
+          msg->msg_control = (char *)(
+              socketcall_req.args.sendmsg.msg + 1) + msg->msg_namelen;
+        }
+        memcpy(mem->pathname + sizeof(socketcall_req.args) + sizeof(*msg),
+               sendmsgExtra, numSendmsgExtra);
+      }
       memcpy(mem->pathname + sizeof(socketcall_req.args), msg, sizeof(*msg));
       SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem,
                                 __NR_socketcall, socketcall_req.call,

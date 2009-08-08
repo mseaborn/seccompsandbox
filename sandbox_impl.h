@@ -48,7 +48,7 @@ class Sandbox {
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
   // enters Seccomp mode.
-  static void startSandbox() asm("startSandbox");
+  static void startSandbox() asm("startSeccompSandbox");
 
  private:
 // syscall_table.c has to be implemented in C, as C++ does not support
@@ -76,6 +76,8 @@ class Sandbox {
 #endif
 
   // Entry points for sandboxed code that is attempting to make system calls
+  STATIC int sandbox_access(const char*, int)
+                                          asm("playground$sandbox_access");
   STATIC int sandbox_exit(int status)     asm("playground$sandbox_exit");
   STATIC int sandbox_getpid()             asm("playground$sandbox_getpid");
   #if defined(__NR_getsockopt)
@@ -133,6 +135,8 @@ class Sandbox {
   #endif
 
   // Functions for system calls that need to be handled in the trusted process
+  STATIC bool process_access(int, int, int, int, SecureMemArgs*)
+                                          asm("playground$process_access");
   STATIC bool process_clone(int, int, int, int, SecureMemArgs*)
                                           asm("playground$process_clone");
   STATIC bool process_exit(int, int, int, int, SecureMemArgs*)
@@ -279,6 +283,11 @@ class Sandbox {
     void*      addr;
     socklen_t* addrlen;
     int        flags;
+  } __attribute__((packed));
+
+  struct Access {
+    size_t path_length;
+    int    mode;
   } __attribute__((packed));
 
   struct Bind {

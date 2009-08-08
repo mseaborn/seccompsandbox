@@ -56,6 +56,20 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
     }
     return false;
   }
+
+  if ((open_req.flags & O_ACCMODE) != O_RDONLY) {
+    // After locking the mutex, we can no longer abandon the system call. So,
+    // perform checks before clobbering the securely shared memory.
+    char tmp[open_req.path_length];
+    if (read(sys, sandboxFd, tmp, open_req.path_length) !=
+        (ssize_t)open_req.path_length) {
+      goto read_parm_failed;
+    }
+    Debug::message(("Denying access to \"" + std::string(tmp) + "\"").c_str());
+    SecureMem::abandonSystemCall(threadFd, -EACCES);
+    return false;
+  }
+
   SecureMem::lockSystemCall(parentProc, mem);
   if (read(sys, sandboxFd, mem->pathname, open_req.path_length) !=
       (ssize_t)open_req.path_length) {
@@ -63,7 +77,10 @@ bool Sandbox::process_open(int parentProc, int sandboxFd, int threadFdPub,
   }
   mem->pathname[open_req.path_length] = '\000';
 
-  // TODO(markus): Implement sandboxing policy
+  // TODO(markus): Implement sandboxing policy. For now, we allow read
+  // access to everything. That's probably not correct.
+  Debug::message(("Allowing access to \"" + std::string(mem->pathname) +
+                  "\"").c_str());
 
   // Tell trusted thread to open the file.
   SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem, __NR_open,

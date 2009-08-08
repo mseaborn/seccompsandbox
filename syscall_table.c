@@ -32,10 +32,12 @@ const struct SyscallTable syscallTable[] __attribute__((
   [ __NR_accept          ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_accept4         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
+  [ __NR_access          ] = { (void*)&sandbox_access,   process_access      },
   [ __NR_brk             ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_clock_gettime   ] = { UNRESTRICTED_SYSCALL,     0                   },
-  [ __NR_close           ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_clone           ] = { (void*)&sandbox_clone,    process_clone       },
+  [ __NR_close           ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_epoll_create    ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_epoll_ctl       ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_epoll_wait      ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_exit            ] = { (void*)&sandbox_exit,     process_exit        },
@@ -79,6 +81,7 @@ const struct SyscallTable syscallTable[] __attribute__((
   [ __NR_mprotect        ] = { (void*)&sandbox_mprotect, process_mprotect    },
   [ __NR_munmap          ] = { (void*)&sandbox_munmap,   process_munmap      },
   [ __NR_open            ] = { (void*)&sandbox_open,     process_open        },
+  [ __NR_pipe            ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,     0                   },
   #if defined(__NR_recvfrom)
   [ __NR_recvfrom        ] = { (void*)&sandbox_recvfrom, process_recvfrom    },

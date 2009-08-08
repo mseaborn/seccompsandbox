@@ -93,6 +93,8 @@ bool Sandbox::process_stat(int parentProc, int sandboxFd, int threadFdPub,
   mem->pathname[stat_req.path_length] = '\000';
 
   // TODO(markus): Implement sandboxing policy
+  Debug::message(("Allowing access to \"" + std::string(mem->pathname) +
+                  "\"").c_str());
 
   // Tell trusted thread to stat the file.
   SecureMem::sendSystemCall(threadFdPub, true, parentProc, mem,

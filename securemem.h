@@ -111,7 +111,9 @@ class SecureMem {
 
   // Acquires the syscall_mutex_ prior to making changes to the parameters in
   // the secure memory page. Used by calls such as exit(), clone(), open(),
-  // and stat().
+  // socketcall(), and stat().
+  // After locking the mutex, it is no longer valid to abandon the system
+  // call!
   static void lockSystemCall(int parentProc, Args* mem);
 
   // Sends a system call to the trusted thread. If "locked" is true, the
