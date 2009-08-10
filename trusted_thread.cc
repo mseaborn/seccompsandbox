@@ -221,8 +221,10 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Check in syscallTable whether this system call is unrestricted
    "11:mov  %%rax, %%r9\n"
+      #ifndef NDEBUG
       "cmpw $0, %%fs:0xD0\n"       // debug mode
       "jnz  12f\n"
+      #endif
       "cmp  playground$maxSyscall(%%rip), %%eax\n"
       "ja   25f\n"                 // exit process
       "shl  $4, %%rax\n"
@@ -828,8 +830,10 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Check in syscallTable whether this system call is unrestricted
    "11:mov  %%eax, %%ebp\n"
+      #ifndef NDEBUG
       "cmpw $0, 0x50-0x1000(%%ecx)\n"
       "jnz  12f\n"                 // debug mode
+      #endif
       "cmp  playground$maxSyscall, %%eax\n"
       "ja   25f\n"                 // exit process
       "shl  $3, %%eax\n"

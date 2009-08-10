@@ -236,7 +236,9 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
     for (int i = 0; i < kMaxThreads; i++) {
       SecureMem::Args* args    = secureArena + i;
       args->self               = args;
+      #ifndef NDEBUG
       args->allowAllSystemCalls= Debug::isEnabled();
+      #endif
     }
 
     initializeProtectedMap(sandboxFd);
