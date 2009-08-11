@@ -50,7 +50,7 @@ static void *fnc(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
-  startSeccompSandbox();
+  StartSeccompSandbox();
   write(2, "In secure mode, now!\n", 21);
 
   printf("TSC: %llx\n", tsc());

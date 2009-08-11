@@ -48,7 +48,7 @@ class Sandbox {
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
   // enters Seccomp mode.
-  static void startSandbox() asm("startSeccompSandbox");
+  static void startSandbox() asm("StartSeccompSandbox");
 
  private:
 // syscall_table.c has to be implemented in C, as C++ does not support
