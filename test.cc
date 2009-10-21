@@ -50,6 +50,7 @@ static void *fnc(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
+//{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
   StartSeccompSandbox();
   write(2, "In secure mode, now!\n", 21);
 

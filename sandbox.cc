@@ -384,7 +384,7 @@ void Sandbox::startSandbox() {
     // other libraries.
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){
       Library* library = *iter;
-      if (library->isVDSO()) {
+      if (library->isVDSO() && library->parseElf()) {
         library->makeWritable(true);
         library->patchSystemCalls();
         library->makeWritable(false);
@@ -396,14 +396,16 @@ void Sandbox::startSandbox() {
     for (Maps::const_iterator iter = maps.begin(); iter != maps.end(); ++iter){
       Library* library = *iter;
       for (const char **ptr = libs; *ptr; ptr++) {
-        char *name = strstr(iter.name().c_str(), *ptr);
+        const char *name = strstr(iter.name().c_str(), *ptr);
         if (name) {
           char ch = name[strlen(*ptr)];
           if (ch < 'A' || (ch > 'Z' && ch < 'a') || ch > 'z') {
-            library->makeWritable(true);
-            library->patchSystemCalls();
-            library->makeWritable(false);
-            break;
+            if (library->parseElf()) {
+              library->makeWritable(true);
+              library->patchSystemCalls();
+              library->makeWritable(false);
+              break;
+            }
           }
         }
       }
