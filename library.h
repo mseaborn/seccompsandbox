@@ -36,21 +36,15 @@ class Library {
       asr_offset_(0),
       vsys_offset_(0),
       maps_(0),
-      filename_(""),
       image_(0),
       image_size_(0) {
   }
 
   ~Library();
 
-  void setLibraryInfo(Maps* maps, const std::string& filename,
-                      unsigned major, unsigned minor, unsigned long inode) {
+  void setLibraryInfo(Maps* maps) {
     if (!maps_) {
-      maps_     = maps;
-      filename_ = filename;
-      major_    = major;
-      minor_    = minor;
-      inode_    = inode;
+      maps_ = maps;
     }
   }
 
@@ -166,10 +160,6 @@ class Library {
   SectionTable    section_table_;
   SymbolTable     symbols_;
   PltTable        plt_entries_;
-  std::string     filename_;
-  unsigned        major_;
-  unsigned        minor_;
-  unsigned long   inode_;
   char*           image_;
   size_t          image_size_;
   static char*    __kernel_vsyscall;

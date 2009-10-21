@@ -79,8 +79,15 @@ char* Library::__kernel_rt_sigreturn;
 
 Library::~Library() {
   if (image_size_) {
+    // We no longer need access to a full mapping of the underlying library
+    // file. Move the temporarily extended mapping back to where we originally
+    // found. Make sure to preserve any changes that we might have made since.
     Sandbox::SysCalls sys;
-    sys.munmap(image_, image_size_);
+    sys.mprotect(image_, 4096, PROT_READ | PROT_WRITE);
+    memcpy(image_, memory_ranges_.rbegin()->second.start, 4096);
+    sys.mprotect(image_, 4096, PROT_READ | PROT_EXEC);
+    sys.mremap(image_, image_size_, 4096, MREMAP_MAYMOVE | MREMAP_FIXED,
+               memory_ranges_.rbegin()->second.start);
   }
 }
 
@@ -194,52 +201,75 @@ char *Library::getOriginal(Elf_Addr offset, char *buf, size_t len) {
     memset(buf, 0, len);
     return NULL;
   }
-  if (!image_ && !isVDSO_ && filename_.length()) {
-    Sandbox::SysCalls sys;
-    int fd = sys.open(filename_.c_str(), O_RDONLY, 0);
-    Sandbox::SysCalls::kernel_stat sb;
-    if (fd >= 0 &&
-        !sys.fstat(fd, &sb)) {
-      if (major(sb.st_dev) != major_ ||
-          minor(sb.st_dev) != minor_ ||
-          sb.st_ino        != inode_) {
-        Sandbox::die("Cannot access library files for patching");
-      }
-      image_size_ = (sb.st_size + 4095) & ~4095;
-      image_      = reinterpret_cast<char *>(
-                      sys.MMAP(0, image_size_, PROT_READ, MAP_PRIVATE, fd, 0));
-      if (image_ == MAP_FAILED) {
-        image_      = 0;
-        image_size_ = 0;
-      }
-    }
-    if (fd >= 0) {
-      NOINTR_SYS(sys.close(fd));
+  Sandbox::SysCalls sys;
+  if (!image_ && !isVDSO_ && !memory_ranges_.empty() &&
+      memory_ranges_.rbegin()->first == 0) {
+    // Extend the mapping of the very first page of the underlying library
+    // file. This way, we can read the original file contents of the entire
+    // library.
+    // We have to be careful, because doing so temporarily removes the first
+    // 4096 bytes of the library from memory. And we don't want to accidentally
+    // unmap code that we are executing. So, only use functions that can be
+    // inlined.
+    void* start = memory_ranges_.rbegin()->second.start;
+    image_size_ = memory_ranges_.begin()->first +
+      (reinterpret_cast<char *>(memory_ranges_.begin()->second.stop) -
+       reinterpret_cast<char *>(memory_ranges_.begin()->second.start));
+    image_ = reinterpret_cast<char *>(sys.mremap(start, 4096, image_size_,
+                                                 MREMAP_MAYMOVE));
+    if (image_ == MAP_FAILED) {
+      image_ = NULL;
+    } else {
+      sys.MMAP(start, 4096, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+      for (int i = 4096 / sizeof(long); --i;
+           reinterpret_cast<long *>(start)[i] =
+             reinterpret_cast<long *>(image_)[i]);
     }
   }
 
   if (image_) {
-    if (offset + len <= image_size_) {
+    if (offset + len > image_size_) {
+      // It is quite likely that we initially did not map the entire file as
+      // we did not know how large it is. So, if necessary, try to extend the
+      // mapping.
+      size_t new_size = (offset + len + 4095) & ~4095;
+      char* tmp =
+        reinterpret_cast<char *>(sys.mremap(image_, image_size_, new_size,
+                                            MREMAP_MAYMOVE));
+      if (tmp != MAP_FAILED) {
+        image_      = tmp;
+        image_size_ = new_size;
+      }
+    }
+    if (buf && offset + len <= image_size_) {
       return reinterpret_cast<char *>(memcpy(buf, image_ + offset, len));
     }
     return NULL;
   }
-  return get(offset, buf, len);
+  return buf ? get(offset, buf, len) : NULL;
 }
 
 std::string Library::getOriginal(Elf_Addr offset) {
   if (!valid_) {
     return "";
   }
-  if (!image_ && !isVDSO_ && filename_.length()) {
-    getOriginal(0, 0, 0);
+  // Make sure we actually have a mapping that we can access. If the string
+  // is located at the end of the image, we might not yet have extended the
+  // mapping sufficiently.
+  if (!image_ || image_size_ <= offset) {
+    getOriginal(offset, NULL, 1);
   }
+
   if (image_) {
     if (offset < image_size_) {
       char* start = image_ + offset;
       char* stop  = start;
       while (stop < image_ + image_size_ && *stop) {
         ++stop;
+        if (stop >= image_ + image_size_) {
+          getOriginal(stop - image_, NULL, 1);
+        }
       }
       return std::string(start, stop - start);
     }

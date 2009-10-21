@@ -45,11 +45,8 @@ Maps::Maps(const std::string& maps_file) :
         unsigned long offset = strtoul(ptr, &ptr, 16);
         while (*ptr == ' ' || *ptr == '\t') ++ptr;
         char *id_ptr = ptr;
-        unsigned major = static_cast<unsigned>(strtoul(ptr, &ptr, 16));
-        while (*ptr == ':') ++ptr;
-        unsigned minor = static_cast<unsigned>(strtoul(ptr, &ptr, 16));
         while (*ptr && *ptr != ' ' && *ptr != '\t') ++ptr;
-        unsigned long inode = strtoul(ptr, &ptr, 10);
+        while (*ptr == ' ' || *ptr == '\t') ++ptr;
         while (*ptr && *ptr != ' ' && *ptr != '\t') ++ptr;
         std::string id(id_ptr, ptr - id_ptr);
         while (*ptr == ' ' || *ptr == '\t') ++ptr;
@@ -81,7 +78,7 @@ Maps::Maps(const std::string& maps_file) :
           goto skip_entry;
         }
         Library* lib = &libs_[id + ' ' + library];
-        lib->setLibraryInfo(this, library, major, minor, inode);
+        lib->setLibraryInfo(this);
         lib->addMemoryRange(reinterpret_cast<void *>(start),
                             reinterpret_cast<void *>(stop),
                             Elf_Addr(offset),
