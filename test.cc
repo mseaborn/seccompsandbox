@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 
   #if defined(__x86_64__)
   asm volatile("mov $2, %%edi\n"
-               "lea 100f, %%rsi\n"
+               "lea 100f(%%rip), %%rsi\n"
                "mov $101f-100f, %%edx\n"
                "mov $1, %%eax\n"
                "int $0\n"
@@ -99,9 +99,9 @@ int main(int argc, char *argv[]) {
   fopen("/usr/share/doc", "r");
   fopen("/usr/share/doc", "r");
   isatty(0);
+  pthread_t threads[THREADS];
   for (int i = 0; i < THREADS; ++i) {
-    pthread_t t;
-    pthread_create(&t, NULL, fnc, NULL);
+    pthread_create(&threads[i], NULL, fnc, NULL);
   }
   for (int i = 0; i < 10; i++) {
     mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -119,6 +119,11 @@ int main(int argc, char *argv[]) {
     readdir(dirp);
     closedir(dirp);
   }
+  for (int i = 0; i < THREADS; ++i) {
+    pthread_join(threads[i], NULL);
+  }
+  pthread_create(&threads[0], NULL, fnc, NULL);
+  pthread_join(threads[0], NULL);
 
   puts("Done");
   exit(0);
