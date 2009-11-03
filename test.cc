@@ -51,6 +51,12 @@ static void *fnc(void *arg) {
 
 int main(int argc, char *argv[]) {
 //{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
+  if (SupportsSeccompSandbox()) {
+    puts("Sandbox is supported. Enabling it now...");
+  } else {
+    puts("There is insufficient support for the seccomp sandbox. Exiting...");
+    return 1;
+  }
   StartSeccompSandbox();
   write(2, "In secure mode, now!\n", 21);
 
