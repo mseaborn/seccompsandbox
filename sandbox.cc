@@ -369,13 +369,21 @@ int Sandbox::supportsSeccompSandbox() {
     case -1:
       status_ = STATUS_UNSUPPORTED;
       return 0;
-    case 0:
+    case 0: {
+      int devnull = sys.open("/dev/null", O_RDWR, 0);
+      if (devnull >= 0) {
+        dup2(devnull, 0);
+        dup2(devnull, 1);
+        dup2(devnull, 2);
+      }
       startSandbox();
       write(sys, fds[1], "", 1);
       _exit(0);
       sys.exit_group(0);
       sys._exit(0);
+    }
     default:
+      NOINTR_SYS(sys.close(fds[1]));
       char ch;
       if (read(sys, fds[0], &ch, 1) != 1) {
         status_ = STATUS_UNSUPPORTED;
@@ -385,7 +393,6 @@ int Sandbox::supportsSeccompSandbox() {
       int rc;
       NOINTR_SYS(sys.waitpid(pid, &rc, 0));
       NOINTR_SYS(sys.close(fds[0]));
-      NOINTR_SYS(sys.close(fds[1]));
       return status_ != STATUS_UNSUPPORTED;
   }
 }
