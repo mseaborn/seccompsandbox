@@ -1,3 +1,5 @@
+#include "linux_syscall_support.h"
+
 #include "sandbox_impl.h"
 #include <dirent.h>
 #include <dlfcn.h>
@@ -51,13 +53,14 @@ static void *fnc(void *arg) {
 
 int main(int argc, char *argv[]) {
 //{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
-  if (SupportsSeccompSandbox()) {
+  if (SupportsSeccompSandbox(-1)) {
     puts("Sandbox is supported. Enabling it now...");
   } else {
     puts("There is insufficient support for the seccomp sandbox. Exiting...");
     return 1;
   }
-  StartSeccompSandbox();
+  StartSeccompSandbox(-1);
+
   write(2, "In secure mode, now!\n", 21);
 
   printf("TSC: %llx\n", tsc());

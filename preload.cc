@@ -5,7 +5,7 @@
 namespace playground {
 
 extern "C" void preload() {
-  StartSeccompSandbox();
+  StartSeccompSandbox(-1);
   write(2, "In secure mode, now!\n", 21);
   asm volatile("int3");
 

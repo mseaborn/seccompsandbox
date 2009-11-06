@@ -49,12 +49,15 @@ class Sandbox {
   // This could be because the kernel does not support Seccomp mode, or it
   // could be because we fail to successfully rewrite all system call entry
   // points.
-  static int supportsSeccompSandbox() asm("SupportsSeccompSandbox");
+  static int supportsSeccompSandbox(int proc_self_maps)
+                                               asm("SupportsSeccompSandbox");
 
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
   // enters Seccomp mode.
-  static void startSandbox() asm("StartSeccompSandbox");
+  // N.B. This method closes the file handle to /proc/self/maps once it
+  //      starts the sandbox.
+  static void startSandbox(int proc_self_maps) asm("StartSeccompSandbox");
 
  private:
 // syscall_table.c has to be implemented in C, as C++ does not support
@@ -589,15 +592,16 @@ class Sandbox {
   // memory mappings that existed when the sandbox was first enabled. Going
   // forward, all these mappings are off-limits for operations such as
   // mmap(), munmap(), and mprotect().
-  static void  initializeProtectedMap(int fd);
+  static int   initializeProtectedMap(int fd);
 
   // Helper functions that allows the trusted process to get access to
   // "/proc/self/maps" in the sandbox.
-  static void  snapshotMemoryMappings(int processFd);
+  static void  snapshotMemoryMappings(int processFd, int proc_self_maps);
 
   // Main loop for the trusted process.
-  static void  trustedProcess(int parentProc, int processFdPub, int sandboxFd,
-                              int cloneFd, SecureMem::Args* secureArena)
+  static void  trustedProcess(int parentMapsFd, int processFdPub,
+                              int sandboxFd, int cloneFd,
+                              SecureMem::Args* secureArena)
                                                      __attribute__((noreturn));
 
   // Fork()s of the trusted process.
