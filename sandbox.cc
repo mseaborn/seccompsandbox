@@ -5,6 +5,7 @@
 namespace playground {
 
 // Global variables
+int                           Sandbox::proc_self_maps_ = -1;
 enum Sandbox::SandboxStatus   Sandbox::status_ = STATUS_UNKNOWN;
 int                           Sandbox::pid_;
 int                           Sandbox::processFdPub_;
@@ -353,7 +354,7 @@ void Sandbox::snapshotMemoryMappings(int processFd, int proc_self_maps) {
   }
 }
 
-int Sandbox::supportsSeccompSandbox(int proc_self_maps) {
+int Sandbox::supportsSeccompSandbox(int proc_fd) {
   if (status_ != STATUS_UNKNOWN) {
     return status_ != STATUS_UNSUPPORTED;
   }
@@ -375,10 +376,23 @@ int Sandbox::supportsSeccompSandbox(int proc_self_maps) {
         dup2(devnull, 1);
         dup2(devnull, 2);
       }
-      startSandbox(proc_self_maps);
+      if (proc_fd >= 0) {
+        setProcSelfMaps(sys.openat(proc_fd, "self/maps", O_RDONLY, 0));
+      }
+      startSandbox();
       write(sys, fds[1], "", 1);
-      _exit(0);
-      sys.exit_group(0);
+
+      // Try to tell the trusted thread to shut down the entire process in an
+      // orderly fashion
+      defaultSystemCallHandler(__NR_exit_group, 0, 0, 0, 0, 0, 0);
+
+      // If that did not work (e.g. because the kernel does not know about the
+      // exit_group() system call), make a direct _exit() system call instead.
+      // This system call is unrestricted in seccomp mode, so it will always
+      // succeed. Normally, we don't like it, because unlike exit_group() it
+      // does not terminate any other thread. But since we know that
+      // exit_group() exists in all kernels which support kernel-level threads,
+      // this is OK we only get here for old kernels where _exit() is OK.
       sys._exit(0);
     }
     default:
@@ -396,7 +410,11 @@ int Sandbox::supportsSeccompSandbox(int proc_self_maps) {
   }
 }
 
-void Sandbox::startSandbox(int proc_self_maps) {
+void Sandbox::setProcSelfMaps(int proc_self_maps) {
+  proc_self_maps_ = proc_self_maps;
+}
+
+void Sandbox::startSandbox() {
   if (status_ == STATUS_UNSUPPORTED) {
     die("The seccomp sandbox is not supported on this computer");
   } else if (status_ == STATUS_ENABLED) {
@@ -404,9 +422,9 @@ void Sandbox::startSandbox(int proc_self_maps) {
   }
 
   SysCalls sys;
-  if (proc_self_maps < 0) {
-    proc_self_maps               = sys.open("/proc/self/maps", O_RDONLY, 0);
-    if (proc_self_maps < 0) {
+  if (proc_self_maps_ < 0) {
+    proc_self_maps_              = sys.open("/proc/self/maps", O_RDONLY, 0);
+    if (proc_self_maps_ < 0) {
       die("Cannot access \"/proc/self/maps\"");
     }
   }
@@ -435,7 +453,7 @@ void Sandbox::startSandbox(int proc_self_maps) {
   // view, if this code fails to identify system calls, we are still behaving
   // correctly.
   {
-    Maps maps(proc_self_maps);
+    Maps maps(proc_self_maps_);
     const char *libs[] = { "ld", "libc", "librt", "libpthread", NULL };
 
     // Intercept system calls in the VDSO segment (if any). This has to happen
@@ -475,8 +493,9 @@ void Sandbox::startSandbox(int proc_self_maps) {
 
   // Take a snapshot of the current memory mappings. These mappings will be
   // off-limits to all future mmap(), munmap(), mremap(), and mprotect() calls.
-  snapshotMemoryMappings(processFdPub_, proc_self_maps);
-  NOINTR_SYS(sys.close(proc_self_maps));
+  snapshotMemoryMappings(processFdPub_, proc_self_maps_);
+  NOINTR_SYS(sys.close(proc_self_maps_));
+  proc_self_maps_ = -1;
 
   // Creating the trusted thread enables sandboxing
   createTrustedThread(processFdPub_, cloneFdPub_, secureMem);

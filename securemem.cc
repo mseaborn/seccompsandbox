@@ -24,8 +24,10 @@ void SecureMem::dieIfParentDied(int parentMapsFd) {
   // this situation and terminate the trusted process.
   int alive = !lseek(parentMapsFd, 0, SEEK_SET);
   if (alive) {
-    for (char buf;
-         (alive = read(parentMapsFd, &buf, 1)) < 0 && errno == EINTR; );
+    char buf;
+    do {
+      alive = read(parentMapsFd, &buf, 1);
+    } while (alive < 0 && errno == EINTR);
   }
   if (!alive) {
     Sandbox::die();

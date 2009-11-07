@@ -49,15 +49,23 @@ class Sandbox {
   // This could be because the kernel does not support Seccomp mode, or it
   // could be because we fail to successfully rewrite all system call entry
   // points.
-  static int supportsSeccompSandbox(int proc_self_maps)
-                                               asm("SupportsSeccompSandbox");
+  // "proc_fd" should be a file descriptor for "/proc", or -1 if not provided
+  // by the caller.
+  static int supportsSeccompSandbox(int proc_fd)
+                                          asm("SupportsSeccompSandbox");
+
+  // The sandbox needs to be able to access "/proc/self/maps". If this file
+  // is not accessible when "startSandbox()" gets called, the caller can
+  // provide an already opened file descriptor by calling "setProcSelfMaps()".
+  // The sandbox becomes the newer owner of this file descriptor and will
+  // eventually close it when "startSandbox()" executes.
+  static void setProcSelfMaps(int proc_self_maps)
+                                          asm("SeccompSandboxSetProcSelfMaps");
 
   // This is the main public entry point. It finds all system calls that
   // need rewriting, sets up the resources needed by the sandbox, and
   // enters Seccomp mode.
-  // N.B. This method closes the file handle to /proc/self/maps once it
-  //      starts the sandbox.
-  static void startSandbox(int proc_self_maps) asm("StartSeccompSandbox");
+  static void startSandbox()              asm("StartSeccompSandbox");
 
  private:
 // syscall_table.c has to be implemented in C, as C++ does not support
@@ -613,6 +621,7 @@ class Sandbox {
   static void  createTrustedThread(int processFdPub, int cloneFdPub,
                                    SecureMem::Args* secureMem);
 
+  static int   proc_self_maps_;
   static enum SandboxStatus {
     STATUS_UNKNOWN, STATUS_UNSUPPORTED, STATUS_AVAILABLE, STATUS_ENABLED
   }            status_;

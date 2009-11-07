@@ -59,10 +59,15 @@ int main(int argc, char *argv[]) {
     puts("There is insufficient support for the seccomp sandbox. Exiting...");
     return 1;
   }
-  StartSeccompSandbox(-1);
+  StartSeccompSandbox();
 
   write(2, "In secure mode, now!\n", 21);
 
+  struct timeval tv;
+  gettimeofday(&tv, 0);
+  gettimeofday(&tv, 0);
+  gettimeofday(&tv, 0);
+  gettimeofday(&tv, 0);
   printf("TSC: %llx\n", tsc());
   printf("TSC: %llx\n", tsc());
 
@@ -98,7 +103,6 @@ int main(int argc, char *argv[]) {
   printf("uid: %d\n", getuid());
   dlopen("libncurses.so.5", RTLD_LAZY);
 
-  struct timeval tv;
   if (gettimeofday(&tv, 0)) {
     printf("gettimeofday() failed\n");
   } else {
