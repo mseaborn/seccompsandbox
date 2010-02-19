@@ -22,7 +22,7 @@ clean:
 	-rm -f core core.* vgcore vgcore.* strace.log*
 
 demo: playground preload32.so preload64.so
-	./playground /bin/ls /home/markus
+	./playground /bin/ls $(HOME)
 
 testbin: testbin32 testbin64
 
