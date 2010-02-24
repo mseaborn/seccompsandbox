@@ -479,6 +479,9 @@ void Sandbox::startSandbox() {
       // Find the actual base name of the mapped library by skipping past any
       // SPC and forward-slashes. We don't want to accidentally find matches,
       // because the directory name included part of our well-known lib names.
+      //
+      // Typically, prior to pruning, entries would look something like this:
+      // 08:01 2289011 /lib/libc-2.7.so
       for (const char *delim = " /"; *delim; ++delim) {
         const char* skip = strrchr(mapping, *delim);
         if (skip) {
