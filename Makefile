@@ -1,8 +1,8 @@
 CFLAGS = -g -O0 -Wall -Werror
 LDFLAGS = -g
 CPPFLAGS =
-MODS := preload library debug maps x86_decode securemem sandbox syscall       \
-        syscall_table trusted_thread trusted_process                          \
+MODS := allocator preload library debug maps x86_decode securemem sandbox     \
+        syscall syscall_table trusted_thread trusted_process                  \
         access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
         munmap open socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')

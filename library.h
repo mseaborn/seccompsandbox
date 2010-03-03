@@ -30,6 +30,8 @@ namespace playground {
 class Library {
   friend class Maps;
  public:
+  typedef Maps::string string;
+
   Library() :
       valid_(false),
       isVDSO_(false),
@@ -55,9 +57,9 @@ class Library {
   }
 
   char *get(Elf_Addr offset, char *buf, size_t len);
-  std::string get(Elf_Addr offset);
+  string get(Elf_Addr offset);
   char *getOriginal(Elf_Addr offset, char *buf, size_t len);
-  std::string getOriginal(Elf_Addr offset);
+  string getOriginal(Elf_Addr offset);
 
   template<class T>T* get(Elf_Addr offset, T* t) {
     if (!valid_) {
@@ -108,10 +110,10 @@ class Library {
 
   bool parseElf();
   const Elf_Ehdr* getEhdr();
-  const Elf_Shdr* getSection(const std::string& section);
-  const int getSectionIndex(const std::string& section);
-  void **getRelocation(const std::string& symbol);
-  void *getSymbol(const std::string& symbol);
+  const Elf_Shdr* getSection(const string& section);
+  const int getSectionIndex(const string& section);
+  void **getRelocation(const string& symbol);
+  void *getSymbol(const string& symbol);
   void makeWritable(bool state) const;
   void patchSystemCalls();
   bool isVDSO() const { return isVDSO_; }
@@ -136,9 +138,9 @@ class Library {
   };
 
   typedef std::map<Elf_Addr, Range, GreaterThan> RangeMap;
-  typedef std::map<std::string, std::pair<int, Elf_Shdr> > SectionTable;
-  typedef std::map<std::string, Elf_Sym> SymbolTable;
-  typedef std::map<std::string, Elf_Addr> PltTable;
+  typedef std::map<string, std::pair<int, Elf_Shdr> > SectionTable;
+  typedef std::map<string, Elf_Sym> SymbolTable;
+  typedef std::map<string, Elf_Addr> PltTable;
 
   char* getBytes(char* dst, const char* src, ssize_t len);
   static bool isSafeInsn(unsigned short insn);

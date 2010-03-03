@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include "allocator.h"
 #include "debug.h"
 #include "library.h"
 #include "sandbox_impl.h"
@@ -173,7 +174,7 @@ char *Library::get(Elf_Addr offset, char *buf, size_t len) {
   return buf;
 }
 
-std::string Library::get(Elf_Addr offset) {
+Library::string Library::get(Elf_Addr offset) {
   if (!valid_) {
     return "";
   }
@@ -192,7 +193,7 @@ std::string Library::get(Elf_Addr offset) {
   while (*stop) {
     ++stop;
   }
-  std::string s = stop > start ? std::string(start, stop - start) : "";
+  string s = stop > start ? string(start, stop - start) : "";
   return s;
 }
 
@@ -250,7 +251,7 @@ char *Library::getOriginal(Elf_Addr offset, char *buf, size_t len) {
   return buf ? get(offset, buf, len) : NULL;
 }
 
-std::string Library::getOriginal(Elf_Addr offset) {
+Library::string Library::getOriginal(Elf_Addr offset) {
   if (!valid_) {
     return "";
   }
@@ -271,7 +272,7 @@ std::string Library::getOriginal(Elf_Addr offset) {
           getOriginal(stop - image_, NULL, 1);
         }
       }
-      return std::string(start, stop - start);
+      return string(start, stop - start);
     }
     return "";
   }
@@ -285,7 +286,7 @@ const Elf_Ehdr* Library::getEhdr() {
   return &ehdr_;
 }
 
-const Elf_Shdr* Library::getSection(const std::string& section) {
+const Elf_Shdr* Library::getSection(const string& section) {
   if (!valid_) {
     return NULL;
   }
@@ -296,7 +297,7 @@ const Elf_Shdr* Library::getSection(const std::string& section) {
   return &iter->second.second;
 }
 
-const int Library::getSectionIndex(const std::string& section) {
+const int Library::getSectionIndex(const string& section) {
   if (!valid_) {
     return -1;
   }
@@ -307,7 +308,7 @@ const int Library::getSectionIndex(const std::string& section) {
   return iter->second.first;
 }
 
-void **Library::getRelocation(const std::string& symbol) {
+void **Library::getRelocation(const string& symbol) {
   PltTable::const_iterator iter = plt_entries_.find(symbol);
   if (iter == plt_entries_.end()) {
     return NULL;
@@ -315,7 +316,7 @@ void **Library::getRelocation(const std::string& symbol) {
   return reinterpret_cast<void **>(asr_offset_ + iter->second);
 }
 
-void *Library::getSymbol(const std::string& symbol) {
+void *Library::getSymbol(const string& symbol) {
   SymbolTable::const_iterator iter = symbols_.find(symbol);
   if (iter == symbols_.end() || !iter->second.st_value) {
     return NULL;
@@ -380,7 +381,7 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
 void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
                                          char *end, char** extraSpace,
                                          int* extraLength) {
-  std::set<char *> branch_targets;
+  std::set<char *, std::less<char *>, SystemAllocator<char *> > branch_targets;
   for (char *ptr = start; ptr < end; ) {
     unsigned short insn = next_inst((const char **)&ptr, __WORDSIZE == 64);
     char *target;
@@ -1128,7 +1129,7 @@ bool Library::parseSymbols() {
         valid_ = false;
         return false;
       }
-      std::string name = getOriginal(strtab.sh_offset + sym.st_name);
+      string name = getOriginal(strtab.sh_offset + sym.st_name);
       if (name.empty()) {
         continue;
       }
@@ -1147,7 +1148,7 @@ bool Library::parseSymbols() {
         valid_ = false;
         return false;
       }
-      std::string name = getOriginal(strtab.sh_offset + sym.st_name);
+      string name = getOriginal(strtab.sh_offset + sym.st_name);
       if (name.empty()) {
         continue;
       }

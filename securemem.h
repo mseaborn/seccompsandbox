@@ -86,9 +86,9 @@ class SecureMem {
       char               securePage[4096];
     };
     union {
-      // This scratch space is used by the trusted thread to read parameters
-      // for unrestricted system calls.
       struct {
+        // This scratch space is used by the trusted thread to read parameters
+        // for unrestricted system calls.
         long             tmpSyscallNum;
         void*            tmpArg1;
         void*            tmpArg2;
@@ -97,6 +97,11 @@ class SecureMem {
         void*            tmpArg5;
         void*            tmpArg6;
         void*            tmpReturnValue;
+
+        // We often have long sequences of calls to gettimeofday(). This is
+        // needlessly expensive. Coalesce them into a single call.
+        long             lastSyscallNum;
+        int              gettimeofdayCounter;
       } __attribute__((packed));
       char               scratchPage[4096];
     };
