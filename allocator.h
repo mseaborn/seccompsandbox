@@ -41,7 +41,7 @@ template <class T> class SystemAllocator : SystemAllocatorHelper {
   template <class U> SystemAllocator(const SystemAllocator<U>& src) throw() { }
   ~SystemAllocator() throw() { }
 
-  size_type max_size () const throw() {
+  size_type max_size() const throw() {
     return (1 << 30) / sizeof(T);
   }
 
@@ -50,14 +50,14 @@ template <class T> class SystemAllocator : SystemAllocatorHelper {
   }
 
   void construct(pointer p, const T& value) {
-    new((void*)p)T(value);
+    new(reinterpret_cast<void *>(p))T(value);
   }
 
-  void destroy (pointer p) {
+  void destroy(pointer p) {
     p->~T();
   }
 
-  void deallocate (pointer p, size_type num) {
+  void deallocate(pointer p, size_type num) {
     sys_deallocate(p, num * sizeof(T));
   }
 };
@@ -73,6 +73,6 @@ template <class T1, class T2> bool operator!= (const SystemAllocator<T1>&,
   return false;
 }
 
-} // namespace
+}  // namespace
 
-#endif // ALLOCATOR_H__
+#endif  // ALLOCATOR_H__

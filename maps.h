@@ -2,6 +2,7 @@
 #define MAPS_H__
 
 #include <elf.h>
+#include <functional>
 #include <map>
 #include <string>
 

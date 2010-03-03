@@ -154,7 +154,7 @@ asm(
     //               clock_gettime(), whenever we talk to the trusted thread?
     //               or maybe, if we have recently seen requests to compute
     //               the time. There might be a repeated pattern of those.
-    "cmp  $78, %eax\n" // __NR_gettimeofday
+    "cmp  $78, %eax\n"             // __NR_gettimeofday
     "jnz  2f\n"
     "cmp  %eax, %fs:0x102C-0x58\n"
     "jnz  0f\n"
@@ -201,7 +201,7 @@ asm(
     // not remember calls to gettid(), as we have often seen long sequences
     // of calls to just gettimeofday() and gettid(). In that situation, we
     // would still like to coalesce the gettimeofday() calls.
-  "2:cmp $224, %eax\n" // __NR_gettid
+  "2:cmp $224, %eax\n"             // __NR_gettid
     "jz  3f\n"
     "mov  %eax, %fs:0x102C-0x58\n"
 

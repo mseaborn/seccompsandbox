@@ -55,11 +55,12 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
   if (last_alloc) {
     // Remaining space in the last chunk of memory allocated from system
     size_t remainder = last_alloc->total_len -
-        ((char *)last_alloc->tail - (char *)last_alloc);
+        (reinterpret_cast<char *>(last_alloc->tail) -
+         reinterpret_cast<char *>(last_alloc));
 
     if (remainder >= len) {
       void* ret = last_alloc->tail;
-      last_alloc->tail = (char *)last_alloc->tail + len;
+      last_alloc->tail = reinterpret_cast<char *>(last_alloc->tail) + len;
       last_alloc->used += len;
       return ret;
     }
@@ -67,8 +68,9 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
 
   SysCalls sys;
   size_t total_len = (sizeof(Header) + len + 4095) & ~4095;
-  Header* mem = (Header *)sys.MMAP(NULL, total_len, PROT_READ|PROT_WRITE,
-                                   MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+  Header* mem = reinterpret_cast<Header *>(
+      sys.MMAP(NULL, total_len, PROT_READ|PROT_WRITE,
+               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
   if (mem == MAP_FAILED) {
     return NULL;
   }
@@ -80,7 +82,7 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
   }
   mem->total_len = total_len;
   mem->used = len;
-  char* ret = (char *)mem + sizeof(Header);
+  char* ret = reinterpret_cast<char *>(mem) + sizeof(Header);
   mem->tail = ret + len;
 
   return ret;
@@ -94,7 +96,8 @@ void SystemAllocatorHelper::sys_deallocate(void* p, size_t size) {
   // first page that was allocated from the system. This page starts with
   // a header that keeps track of how many bytes are currently used. The
   // header can be found by truncating the last few bits of the address.
-  Header* header = (Header *)((uintptr_t)p & ~4095);
+  Header* header = reinterpret_cast<Header *>(
+      reinterpret_cast<uintptr_t>(p) & ~4095);
   header->used -= len;
 
   // After the last allocation has been freed, return the page(s) to the
@@ -108,4 +111,4 @@ void SystemAllocatorHelper::sys_deallocate(void* p, size_t size) {
   }
 }
 
-} // namespace
+}  // namespace
