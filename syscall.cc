@@ -1,3 +1,7 @@
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "debug.h"
 #include "sandbox_impl.h"
 #include "syscall_table.h"
@@ -150,13 +154,18 @@ asm(
 
     // We often have long sequences of calls to gettimeofday(). This is
     // needlessly expensive. Coalesce them into a single call.
+    //
+    // We keep track of state in TLS storage that we can access through
+    // the %fs segment register. See trusted_thread.cc for the exact
+    // memory layout.
+    //
     // TODO(markus): maybe, we should proactively call gettimeofday() and
     //               clock_gettime(), whenever we talk to the trusted thread?
     //               or maybe, if we have recently seen requests to compute
     //               the time. There might be a repeated pattern of those.
     "cmp  $78, %eax\n"             // __NR_gettimeofday
     "jnz  2f\n"
-    "cmp  %eax, %fs:0x102C-0x58\n"
+    "cmp  %eax, %fs:0x102C-0x54\n" // last system call
     "jnz  0f\n"
 
     // This system call and the last system call prior to this one both are
@@ -164,7 +173,7 @@ asm(
     // return the same result as in the previous call.
     // Just in case the caller is spinning on the result from gettimeofday(),
     // every so often, call the actual system call.
-    "decl %fs:0x1030-0x58\n"
+    "decl %fs:0x1030-0x54\n"       // countdown calls to gettimofday()
     "jz   0f\n"
 
     // Atomically read the 64bit word representing last-known timestamp and
@@ -181,8 +190,8 @@ asm(
 
     // This is a call to gettimeofday(), but we don't have a valid cached
     // result, yet.
-  "0:mov  %eax, %fs:0x102C-0x58\n"
-    "movl $500, %fs:0x1030-0x58\n"
+  "0:mov  %eax, %fs:0x102C-0x54\n" // remember syscall number
+    "movl $500, %fs:0x1030-0x54\n" // make system call, each 500 invocations
     "call playground$defaultSystemCallHandler\n"
 
     // Returned from gettimeofday(). Remember return value, in case the
@@ -203,7 +212,7 @@ asm(
     // would still like to coalesce the gettimeofday() calls.
   "2:cmp $224, %eax\n"             // __NR_gettid
     "jz  3f\n"
-    "mov  %eax, %fs:0x102C-0x58\n"
+    "mov  %eax, %fs:0x102C-0x54\n" // remember syscall number
 
     // Retrieve function call from system call table (c.f. syscall_table.c).
     // We have three different types of entries; zero for denied system calls,

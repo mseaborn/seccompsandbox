@@ -1,3 +1,7 @@
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 #include "sandbox_impl.h"
 #include "syscall_table.h"
 
@@ -154,9 +158,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "cmpw $0, %%fs:0xD0\n"       // debug mode
       "jz   26f\n"
       "mov  $1, %%eax\n"           // NR_write
-      "mov  $2, %%rdi\n"           // fd = stderr
+      "mov  $2, %%edi\n"           // fd = stderr
       "lea  101f(%%rip), %%rsi\n"  // "This is an expensive system call"
-      "mov  $102f-101f, %%rdi\n"   // len = strlen(msg)
+      "mov  $102f-101f, %%edx\n"   // len = strlen(msg)
       "syscall\n"
       "xor  %%rdi, %%rdi\n"
       #endif

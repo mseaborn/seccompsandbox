@@ -1,3 +1,7 @@
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // Implement a very basic memory allocator that make direct system calls
 // instead of relying on libc.
 // This allocator is not thread-safe.
@@ -15,7 +19,8 @@ class SystemAllocatorHelper {
   static void sys_deallocate(void* p, size_t size);
 };
 
-template <class T> class SystemAllocator : SystemAllocatorHelper {
+template <class T>
+class SystemAllocator : SystemAllocatorHelper {
  public:
   typedef T         value_type;
   typedef T*        pointer;
@@ -25,13 +30,15 @@ template <class T> class SystemAllocator : SystemAllocatorHelper {
   typedef size_t    size_type;
   typedef std::ptrdiff_t difference_type;
 
-  template <class U> struct rebind {
+  template <class U>
+  struct rebind {
     typedef SystemAllocator<U> other;
   };
 
   pointer address(reference value) const {
     return &value;
   }
+
   const_pointer address(const_reference value) const {
     return &value;
   }
@@ -46,6 +53,9 @@ template <class T> class SystemAllocator : SystemAllocatorHelper {
   }
 
   pointer allocate(size_type num, const void* = 0) {
+    if (num > max_size()) {
+      return NULL;
+    }
     return (pointer)sys_allocate(num * sizeof(T));
   }
 
@@ -62,13 +72,13 @@ template <class T> class SystemAllocator : SystemAllocatorHelper {
   }
 };
 
-template <class T1, class T2> bool operator== (const SystemAllocator<T1>&,
-                                               const SystemAllocator<T2>&)
+template <class T1, class T2>
+bool operator== (const SystemAllocator<T1>&, const SystemAllocator<T2>&)
     throw() {
   return true;
 }
-template <class T1, class T2> bool operator!= (const SystemAllocator<T1>&,
-                                               const SystemAllocator<T2>&)
+template <class T1, class T2>
+bool operator!= (const SystemAllocator<T1>&, const SystemAllocator<T2>&)
     throw() {
   return false;
 }

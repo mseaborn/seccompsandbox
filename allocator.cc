@@ -1,3 +1,7 @@
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // The allocator is very simplistic. It requests memory pages directly from
 // the system. Each page starts with a header describing the allocation. This
 // makes sure that we can return the memory to the system when it is
@@ -42,7 +46,16 @@ class SysCalls {
 // lead to more memory fragmentation, but for our use case that is unlikely
 // to happen.
 struct Header {
+  // The total amount of memory allocated for this chunk of memory. Typically,
+  // this would be a single page.
   size_t total_len;
+
+  // "used" keeps track of the number of bytes currently allocated in this
+  // page. Note that as elements are freed from this page, "used" is updated
+  // allowing us to track when the page is free. However, these holes in the
+  // page are never re-used, so "tail" is the only way to find out how much
+  // free space remains and when we need to request another chunk of memory
+  // from the system.
   size_t used;
   void   *tail;
 };
@@ -50,6 +63,9 @@ static Header* last_alloc;
 
 void* SystemAllocatorHelper::sys_allocate(size_t size) {
   // Number of bytes that need to be allocated
+  if (size + 3 < size) {
+    return NULL;
+  }
   size_t len = (size + 3) & ~3;
 
   if (last_alloc) {
@@ -67,6 +83,9 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
   }
 
   SysCalls sys;
+  if (sizeof(Header) + len + 4095 < len) {
+    return NULL;
+  }
   size_t total_len = (sizeof(Header) + len + 4095) & ~4095;
   Header* mem = reinterpret_cast<Header *>(
       sys.MMAP(NULL, total_len, PROT_READ|PROT_WRITE,
@@ -75,7 +94,7 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
     return NULL;
   }
 
-  // If we were only asked to allocated a single page, then we will use any
+  // If we were only asked to allocate a single page, then we will use any
   // remaining space for other small allocations.
   if (total_len - sizeof(Header) - len >= 4) {
     last_alloc = mem;
@@ -90,6 +109,9 @@ void* SystemAllocatorHelper::sys_allocate(size_t size) {
 
 void SystemAllocatorHelper::sys_deallocate(void* p, size_t size) {
   // Number of bytes in this allocation
+  if (size + 3 < size) {
+    return;
+  }
   size_t len = (size + 3) & ~3;
 
   // All allocations (small and large) have starting addresses in the
