@@ -360,7 +360,6 @@ class Sandbox {
         void* edx;
         void* ecx;
         void* ebx;
-        void* ret2;
       } regs32 __attribute__((packed));
     #else
     #error Unsupported target platform

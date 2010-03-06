@@ -375,6 +375,7 @@ int Sandbox::supportsSeccompSandbox(int proc_fd) {
         sys.dup2(devnull, 0);
         sys.dup2(devnull, 1);
         sys.dup2(devnull, 2);
+        sys.close(devnull);
       }
       if (proc_fd >= 0) {
         setProcSelfMaps(sys.openat(proc_fd, "self/maps", O_RDONLY, 0));

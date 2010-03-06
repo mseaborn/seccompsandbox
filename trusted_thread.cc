@@ -665,21 +665,20 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       //   0x1C: fifth argument; passed to syscall in %edi
       //   0x20: sixth argument; passed to syscall in %ebp
       //   0x24: stored return address for clone() system call
-      //   0x28: second stored return address for clone() system call
-      //   0x2C: stored %ebp value for clone() system call
-      //   0x30: stored %edi value for clone() system call
-      //   0x34: stored %esi value for clone() system call
-      //   0x38: stored %edx value for clone() system call
-      //   0x3C: stored %ecx value for clone() system call
-      //   0x40: stored %ebx value for clone() system call
-      //   0x44: new shared memory for clone()
-      //   0x48: processFdPub for talking to trusted process
-      //   0x4C: cloneFdPub for talking to trusted process
-      //   0x50: set to non-zero, if in debugging mode
-      //   0x54: most recent SHM id returned by shmget(IPC_PRIVATE)
-      //   0x58: cookie assigned to us by the trusted process (TLS_COOKIE)
-      //   0x60: thread id (TLS_TID)
-      //   0x68: threadFdPub (TLS_THREAD_FD)
+      //   0x28: stored %ebp value for clone() system call
+      //   0x2C: stored %edi value for clone() system call
+      //   0x30: stored %esi value for clone() system call
+      //   0x34: stored %edx value for clone() system call
+      //   0x38: stored %ecx value for clone() system call
+      //   0x3C: stored %ebx value for clone() system call
+      //   0x40: new shared memory for clone()
+      //   0x44: processFdPub for talking to trusted process
+      //   0x48: cloneFdPub for talking to trusted process
+      //   0x4C: set to non-zero, if in debugging mode
+      //   0x50: most recent SHM id returned by shmget(IPC_PRIVATE)
+      //   0x54: cookie assigned to us by the trusted process (TLS_COOKIE)
+      //   0x5C: thread id (TLS_TID)
+      //   0x64: threadFdPub (TLS_THREAD_FD)
       //   0x200-0x1000: securely passed verified file name(s)
 
       // Layout of (untrusted) scratch space:
@@ -766,13 +765,13 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $3, %%edx\n"           // prot  = PROT_READ | PROT_WRITE
       "mov  $125, %%eax\n"         // NR_mprotect
       "int  $0x80\n"
-      "mov  %%ebp, 0x54(%%ebx)\n"  // set most recently returned SysV shm id
+      "mov  %%ebp, 0x50(%%ebx)\n"  // set most recently returned SysV shm id
       "xor  %%ebx, %%ebx\n"
 
       // When debugging messages are enabled, warn about expensive system calls
       #ifndef NDEBUG
       "movd %%mm5, %%ecx\n"
-      "cmpw $0, 0x50(%%ecx)\n"     // debug mode
+      "cmpw $0, 0x4C(%%ecx)\n"     // debug mode
       "jz   26f\n"
       "mov  $4, %%eax\n"           // NR_write
       "mov  $2, %%ebx\n"           // fd = stderr
@@ -797,7 +796,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // When debugging messages are enabled, warn about expensive system calls
       #ifndef NDEBUG
-      "cmpw $0, 0x50-0x1000(%%ecx)\n"
+      "cmpw $0, 0x4C-0x1000(%%ecx)\n"
       "jz   6f\n"                  // debug mode
       "mov  %%ecx, %%ebp\n"
       "mov  $4, %%eax\n"           // NR_write
@@ -882,7 +881,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // Check in syscallTable whether this system call is unrestricted
    "12:mov  %%eax, %%ebp\n"
       #ifndef NDEBUG
-      "cmpw $0, 0x50-0x1000(%%ecx)\n"
+      "cmpw $0, 0x4C-0x1000(%%ecx)\n"
       "jnz  13f\n"                 // debug mode
       #endif
       "cmp  playground$maxSyscall, %%eax\n"
@@ -932,7 +931,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // NR_exit:
       // Exit trusted thread after cleaning up resources
    "18:mov  %%edi, %%ecx\n"
-      "mov  0x68(%%ecx), %%ebx\n"  // fd     = threadFdPub
+      "mov  0x64(%%ecx), %%ebx\n"  // fd     = threadFdPub
       "mov  $6, %%eax\n"           // NR_close
       "int  $0x80\n"
       "mov  %%ecx, %%ebx\n"        // start  = secure_mem
@@ -1042,7 +1041,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // The first page is mapped read-only for use as securely shared memory
    "27:movd %%mm6, %%ebp\n"
-      "mov  0x44(%%ebp), %%esi\n"
+      "mov  0x40(%%ebp), %%esi\n"
       "movd %%esi, %%mm5\n"        // %mm5 = secure shared memory
       "movd %%mm2, %%edi\n"
       "cmp  %%edi, 4(%%ebp)\n"
@@ -1068,7 +1067,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  $120, %%eax\n"         // NR_clone
       "mov  $0x850F00, %%ebx\n"    // flags = VM|FS|FILES|SIGH|THR|SYSV|UTR
       "mov  $1, %%ecx\n"           // stack = 1
-      "movd 0x48(%%ebp), %%mm1\n"  // %mm1  = processFdPub
+      "movd 0x44(%%ebp), %%mm1\n"  // %mm1  = processFdPub
       "cmp  %%edi, 4(%%ebp)\n"
       "jne  25b\n"                 // exit process
       "int  $0x80\n"
@@ -1081,7 +1080,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "push %%eax\n"
       "mov  $0xFFFFF, %%eax\n"     // limit
       "push %%eax\n"
-      "add  $0x58, %%esi\n"
+      "add  $0x54, %%esi\n"
       "push %%esi\n"               // base_addr = &secure_mem.TLS
       "mov  %%fs, %%eax\n"
       "shr  $3, %%eax\n"
@@ -1124,8 +1123,6 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "push %%eax\n"
       "mov  0x3C(%%ebp), %%eax\n"
       "push %%eax\n"
-      "mov  0x40(%%ebp), %%eax\n"
-      "push %%eax\n"
       "cmp  %%edi, 4(%%ebp)\n"
       "jne  25b\n"                 // exit process
 
@@ -1155,7 +1152,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%mm0, %%eax\n"        // fd1       = threadFd
       "push %%eax\n"
       "push %%esi\n"               // fd0       = threadFdPub
-      "mov  0x4C(%%ebp), %%eax\n"  // transport = Sandbox::cloneFdPub()
+      "mov  0x48(%%ebp), %%eax\n"  // transport = Sandbox::cloneFdPub()
       "cmp  %%edi, 4(%%ebp)\n"
       "jne  25b\n"                 // exit process
       "push %%eax\n"

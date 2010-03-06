@@ -52,8 +52,18 @@ class Library {
 
   void addMemoryRange(void* start, void* stop, Elf_Addr offset,
                       int prot, int isVDSO) {
-    memory_ranges_.insert(std::make_pair(offset, Range(start, stop, prot)));
     isVDSO_ = isVDSO;
+    RangeMap::const_iterator iter = memory_ranges_.find(offset);
+    if (iter != memory_ranges_.end()) {
+      // It is possible to have overlapping mappings. This is particularly
+      // likely to happen with very small programs or libraries. If it does
+      // happen, we really only care about the text segment. Look for a
+      // mapping that is mapped executable.
+      if (prot & PROT_EXEC == 0) {
+        return;
+      }
+    }
+    memory_ranges_.insert(std::make_pair(offset, Range(start, stop, prot)));
   }
 
   char *get(Elf_Addr offset, char *buf, size_t len);
@@ -112,8 +122,6 @@ class Library {
   const Elf_Ehdr* getEhdr();
   const Elf_Shdr* getSection(const string& section);
   const int getSectionIndex(const string& section);
-  void **getRelocation(const string& symbol);
-  void *getSymbol(const string& symbol);
   void makeWritable(bool state) const;
   void patchSystemCalls();
   bool isVDSO() const { return isVDSO_; }

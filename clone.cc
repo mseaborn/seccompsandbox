@@ -84,7 +84,6 @@ bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
       mem->r14              = clone_req.regs64.r14;
       mem->r15              = clone_req.regs64.r15;
       #elif defined(__i386__)
-      mem->ret2             = clone_req.regs32.ret2;
       mem->ebp              = clone_req.regs32.ebp;
       mem->edi              = clone_req.regs32.edi;
       mem->esi              = clone_req.regs32.esi;
