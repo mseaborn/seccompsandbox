@@ -63,7 +63,7 @@ class Library {
       // likely to happen with very small programs or libraries. If it does
       // happen, we really only care about the text segment. Look for a
       // mapping that is mapped executable.
-      if (prot & PROT_EXEC == 0) {
+      if ((prot & PROT_EXEC) == 0) {
         return;
       }
     }
