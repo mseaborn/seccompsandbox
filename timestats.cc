@@ -21,15 +21,19 @@
 //    There is a measurable performance penalty to doing so. Production numbers
 //    are strictly better than the numbers reported by this tool.
 #include <set>
+#include <vector>
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
-#include <vector>
 
-#define WINDOW     500  /* ms */
-#define PEAK   (2*1000) /* ms */
+static const int kAvgWindowSizeMs  =    500;
+static const int kPeakWindowSizeMs = 2*1000;
 
+// Class containing information on a single system call. Most notably, it
+// contains the time when the system call happened, and the time that it
+// took to complete.
 class Datum {
   friend class Data;
  public:
@@ -52,6 +56,10 @@ class Datum {
   double      timestamp_;
 };
 
+// Class containing data on the most recent system calls. It maintains
+// sliding averages for total CPU time used, and it also maintains a peak
+// CPU usage. The peak usage is usually updated slower than the average
+// usage, as that makes it easier to inspect visually.
 class Data {
  public:
   Data() { }
@@ -63,11 +71,15 @@ class Data {
 
     // Prune entries outside of the window
     std::vector<Datum>::iterator iter;
-    for (iter = average_.begin(); *average_.rbegin() - *iter > WINDOW; ++iter){
+    for (iter = average_.begin();
+         *average_.rbegin() - *iter > kAvgWindowSizeMs;
+         ++iter) {
     }
     average_.erase(average_.begin(), iter);
 
-    for (iter = peak_.begin(); *peak_.rbegin() - *iter > PEAK; ++iter){
+    for (iter = peak_.begin();
+         *peak_.rbegin() - *iter > kPeakWindowSizeMs;
+         ++iter){
     }
     peak_.erase(peak_.begin(), iter);
 
@@ -82,7 +94,7 @@ class Data {
     double max = 0;
     std::vector<Datum>::iterator tail = peak_.begin();
     for (iter = tail; iter != peak_.end(); ++iter) {
-      while (*iter - *tail > WINDOW) {
+      while (*iter - *tail > kAvgWindowSizeMs) {
         peak -= tail->ms_;
         ++tail;
       }
@@ -94,8 +106,8 @@ class Data {
 
     // Print the average CPU usage in the last window
     char buf[80];
-    total *= 100.0/WINDOW;
-    max   *= 100.0/WINDOW;
+    total *= 100.0/kAvgWindowSizeMs;
+    max   *= 100.0/kAvgWindowSizeMs;
     sprintf(buf, "%6.2f%% (peak=%6.2f%%) ", total, max);
 
     // Animate the actual usage, displaying both average and peak values
@@ -141,7 +153,7 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    // Parse the string and extra the elapsed time
+    // Parse the string and extract the elapsed time
     const char elapsed[] = "Elapsed time: ";
     char* ms_string = strstr(buf, elapsed);
     char* endptr;
@@ -150,6 +162,9 @@ int main(int argc, char *argv[]) {
 
     // If this string doesn't match, then it must be some other type of
     // message. Just ignore it.
+    // It is quite likely that we will regularly encounter debug messages
+    // that either should be parsed by a completely different tool, or
+    // messages that were intended for humans to read.
     if (!ms_string ||
         ((ms = strtod(ms_string + sizeof(elapsed) - 1, &endptr)),
          endptr == ms_string) ||
