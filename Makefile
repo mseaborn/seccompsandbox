@@ -1,4 +1,5 @@
-CFLAGS = -g -O0 -Wall -Werror
+CFLAGS = -g -O0 -Wall -Werror -Wextra -Wno-missing-field-initializers         \
+         -Wno-unused-parameter
 LDFLAGS = -g
 CPPFLAGS =
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
@@ -11,7 +12,7 @@ HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
 
 .SUFFIXES: .o64 .o32
 
-all: testbin demo
+all: testbin timestats demo
 
 clean:
 	-rm -f playground playground.o
@@ -37,6 +38,9 @@ strace: testbin32
 	strace -ff -o strace.log ./$< &
 	@/bin/bash -c 'sleep 0.25; sed -e "/In secure mode/q;d" <(tail -f $$(ls strace.log*|head -n 1))'
 	multitail -mb 1GB -CS strace strace.log*
+
+timestats: timestats.o
+	${CXX} ${LDFLAGS} -o $@ $<
 
 testbin64: test.cc ${OBJS64}
 	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o testbin.o64 $<

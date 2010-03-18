@@ -34,6 +34,7 @@ static long long tsc() {
   return rc;
 }
 
+#ifdef THREADS
 static void *empty(void *arg) {
   return mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 }
@@ -54,6 +55,7 @@ static void *fnc(void *arg) {
   }
   return 0;
 }
+#endif
 
 int main(int argc, char *argv[]) {
 //{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
@@ -116,10 +118,12 @@ int main(int argc, char *argv[]) {
   fopen("/usr/share/doc", "r");
   fopen("/usr/share/doc", "r");
   isatty(0);
+#ifdef THREADS
   pthread_t threads[THREADS];
   for (int i = 0; i < THREADS; ++i) {
     pthread_create(&threads[i], NULL, fnc, NULL);
   }
+#endif
   for (int i = 0; i < 10; i++) {
     mmap(0, 4096, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   }
@@ -136,11 +140,13 @@ int main(int argc, char *argv[]) {
     readdir(dirp);
     closedir(dirp);
   }
+#ifdef THREADS
   for (int i = 0; i < THREADS; ++i) {
     pthread_join(threads[i], NULL);
   }
   pthread_create(&threads[0], NULL, fnc, NULL);
   pthread_join(threads[0], NULL);
+#endif
 
   puts("Done");
   exit(0);
