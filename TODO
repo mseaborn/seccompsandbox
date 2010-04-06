@@ -1,12 +1,6 @@
 - improve performance by optimizing common sequences of system calls.
   For example, gettimeofday() can probably safely be made to evaluate lazily.
 
-- figure out why Chrome's renderers keep calling __lseek(). Try to remove
-  that system call.
-
-- build Chrome in 64bit mode and check whether that changes the list of
-  system calls that we need to support.
-
 - for better efficiency, try to find instances of RDTSC in glibc and rewrite
   them. That would avoid the signal handling, when it is not strictly
   necessary.

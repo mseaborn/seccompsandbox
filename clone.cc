@@ -24,6 +24,12 @@ int Sandbox::sandbox_clone(int flags, void* stack, int* pid, int* ctid,
   request.clone_req.ctid       = ctid;
   request.clone_req.tls        = tls;
 
+  // TODO(markus): Passing stack == 0 currently does not do the same thing
+  // that the kernel would do without the sandbox. This is just going to
+  // cause a crash. We should detect this case, and replace the stack pointer
+  // with the correct value, instead.
+  // See trusted_thread.cc for more information.
+
   // Pass along the address on the stack where syscallWrapper() stored the
   // original CPU registers. These registers will be restored in the newly
   // created thread prior to returning from the wrapped system call.
@@ -64,7 +70,7 @@ bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
     SecureMem::abandonSystemCall(threadFd, -EPERM);
     return false;
   } else {
-    SecureMem::Args* newMem = getSecureMem();
+    SecureMem::Args* newMem = getNewSecureMem();
     if (!newMem) {
       SecureMem::abandonSystemCall(threadFd, -ENOMEM);
       return false;

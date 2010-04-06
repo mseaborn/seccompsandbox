@@ -5,7 +5,7 @@ CPPFLAGS =
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         syscall syscall_table trusted_thread trusted_process                  \
         access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
-        munmap open socketcall stat
+        munmap open sigprocmask socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
@@ -20,6 +20,7 @@ clean:
 	-rm -f preload32.so *.o32
 	-rm -f testbin64 testbin.o64
 	-rm -f testbin32 testbin.o32
+	-rm -f timestats timestats.o
 	-rm -f core core.* vgcore vgcore.* strace.log*
 
 demo: playground preload32.so preload64.so

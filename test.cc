@@ -59,17 +59,40 @@ static void *fnc(void *arg) {
 
 int main(int argc, char *argv[]) {
 //{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
+  struct timeval tv, tv0;
+  gettimeofday(&tv0, 0);
   if (SupportsSeccompSandbox(-1)) {
     puts("Sandbox is supported. Enabling it now...");
   } else {
     puts("There is insufficient support for the seccomp sandbox. Exiting...");
     return 1;
   }
-  StartSeccompSandbox();
+  gettimeofday(&tv, 0);
+  printf("It takes %fms to start the sandbox\n",
+         tv.tv_sec  * 1000.0 + tv.tv_usec  / 1000.0 -
+         tv0.tv_sec * 1000.0 - tv0.tv_usec / 1000.0);
 
+  sigset_t orig_sigmask = { { 0 } };
+  sigemptyset(&orig_sigmask);
+  sigprocmask(-1, NULL, &orig_sigmask);
+
+  StartSeccompSandbox();
   write(2, "In secure mode, now!\n", 21);
 
-  struct timeval tv;
+  sigset_t sigmask = { { 0 } }, old_sigmask = { { 0 } };
+  sigemptyset(&sigmask);
+  sigemptyset(&old_sigmask);
+  sigaddset(&sigmask, SIGALRM);
+  sigprocmask(SIG_SETMASK, &sigmask, &old_sigmask);
+  printf("Original signal mask: 0x%llX, old mask: 0x%llX, new mask: 0x%llX, ",
+         *(unsigned long long *)&orig_sigmask,
+         *(unsigned long long *)&old_sigmask,
+         *(unsigned long long *)&sigmask);
+  sigprocmask(SIG_SETMASK, &old_sigmask, &old_sigmask);
+  printf("cur mask: 0x%llX, restored mask: 0x%llX\n",
+         *(unsigned long long *)&old_sigmask,
+         *(unsigned long long *)&orig_sigmask);
+
   gettimeofday(&tv, 0);
   gettimeofday(&tv, 0);
   gettimeofday(&tv, 0);

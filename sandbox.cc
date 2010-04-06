@@ -112,25 +112,23 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, size_t*len) {
 }
 
 void Sandbox::setupSignalHandlers() {
+  // Set SIGCHLD to SIG_DFL so that waitpid() can work
   SysCalls sys;
   struct SysCalls::kernel_sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.sa_handler_ = SIG_DFL;
   sys.sigaction(SIGCHLD, &sa, NULL);
 
-  // Set up SEGV handler for dealing with RDTSC instructions
+  // Set up SEGV handler for dealing with RDTSC instructions, system calls
+  // that have been rewritten to use INT0, and for sigpending() emulation.
   sa.sa_handler_ = segv();
   sys.sigaction(SIGSEGV, &sa, NULL);
 
-  // Block all asynchronous signals, except for SIGCHLD which needs to be
-  // set to SIG_DFL for waitpid() to work.
+  // Unblock SIGSEGV and SIGCHLD
   SysCalls::kernel_sigset_t mask;
-  memset(&mask, 0xFF, sizeof(mask));
-  mask.sig[0]   &= ~((1 << (SIGSEGV - 1)) | (1 << (SIGINT  - 1)) |
-                     (1 << (SIGTERM - 1)) | (1 << (SIGQUIT - 1)) |
-                     (1 << (SIGHUP  - 1)) | (1 << (SIGABRT - 1)) |
-                     (1 << (SIGCHLD - 1)));
-  sys.sigprocmask(SIG_SETMASK, &mask, 0);
+  memset(&mask, 0x00, sizeof(mask));
+  mask.sig[0] |= (1 << (SIGSEGV - 1)) | (1 << (SIGCHLD - 1));
+  sys.sigprocmask(SIG_UNBLOCK, &mask, 0);
 }
 
 void (*Sandbox::segv())(int signo) {
@@ -199,8 +197,8 @@ void (*Sandbox::segv())(int signo) {
       // of playground::Library being unable to find a way to safely
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
-    "8:cmpw $0xCD, (%%r15)\n"      // INT $0x0
-      "jnz  9f\n"
+    "8:cmpw $0x00CD, (%%r15)\n"    // INT $0x0
+      "jnz  13f\n"
 #ifndef NDEBUG
       "lea  200f(%%rip), %%rdi\n"
       "call playground$debugMessage\n"
@@ -212,7 +210,37 @@ void (*Sandbox::segv())(int signo) {
       "mov  0x40(%%rsp), %%r10\n"  // %r10 at time of segmentation fault
       "mov  0x30(%%rsp), %%r8\n"   // %r8  at time of segmentation fault
       "mov  0x38(%%rsp), %%r9\n"   // %r9  at time of segmentation fault
-      "lea  7b(%%rip), %%rcx\n"
+
+      // Handle rt_sigprocmask()
+      "cmp  $14, %%rax\n"          // NR_rt_sigprocmask
+      "jnz  12f\n"
+      "mov  $-22, %%rax\n"         // -EINVAL
+      "cmp  $8, %%r10\n"           // 64 signals
+      "jl   7b\n"
+      "mov  0x130(%%rsp), %%r10\n" // signal mask at time of segmentation fault
+      "test %%rsi, %%rsi\n"
+      "jz   11f\n"
+      "mov  0(%%rsi), %%rsi\n"
+      "cmp  $0, %%rdi\n"           // SIG_BLOCK
+      "jnz  9f\n"
+      "or   %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
+      "jmp  11f\n"
+    "9:cmp  $1, %%rdi\n"           // SIG_UNBLOCK
+      "jnz  10f\n"
+      "xor  $-1, %%rsi\n"
+      "and  %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
+      "jmp  11f\n"
+   "10:cmp  $2, %%rdi\n"           // SIG_SETMASK
+      "jnz  7b\n"
+      "mov  %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
+   "11:xor  %%rax, %%rax\n"
+      "test %%rdx, %%rdx\n"
+      "jz   7b\n"
+      "mov  %%r10, 0(%%rdx)\n"     // old_set
+      "jmp  7b\n"
+
+      // Forward system call to syscallWrapper()
+   "12:lea  7b(%%rip), %%rcx\n"
       "push %%rcx\n"
       "push 0xB8(%%rsp)\n"         // %rip at time of segmentation fault
       "lea  playground$syscallWrapper(%%rip), %%rcx\n"
@@ -221,7 +249,7 @@ void (*Sandbox::segv())(int signo) {
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-    "9:mov  $2, %%edi\n"           // stderr
+   "13:mov  $2, %%edi\n"           // stderr
       "lea  300f(%%rip), %%rsi\n"  // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $1, %%eax\n"           // NR_write
@@ -293,8 +321,8 @@ void (*Sandbox::segv())(int signo) {
       // of playground::Library being unable to find a way to safely
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
-    "8:cmpw $0xCD, (%%ebp)\n"      // INT $0x0
-      "jnz  9f\n"
+    "8:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
+      "jnz  15f\n"
 #ifndef NDEBUG
       "lea  200f, %%eax\n"
       "push %%eax\n"
@@ -308,13 +336,54 @@ void (*Sandbox::segv())(int signo) {
       "mov  0x1C(%%esp), %%esi\n"  // %esi at time of segmentation fault
       "mov  0x18(%%esp), %%edi\n"  // %edi at time of segmentation fault
       "mov  0x20(%%esp), %%ebp\n"  // %ebp at time of segmentation fault
-      "call playground$syscallWrapper\n"
+
+      // Handle sigprocmask() and rt_sigprocmask()
+      "cmp  $175, %%eax\n"         // NR_rt_sigprocmask
+      "jnz  9f\n"
+      "mov  $-22, %%eax\n"         // -EINVAL
+      "cmp  $8, %%esi\n"
+      "jl   7b\n"
+      "jmp  10f\n"
+    "9:cmp  $126, %%eax\n"         // NR_sigprocmask
+      "jnz  14f\n"
+      "mov  $-22, %%eax\n"
+   "10:mov  0x58(%%esp), %%edi\n"  // signal mask at time of segmentation fault
+      "mov  0x5C(%%esp), %%ebp\n"
+      "test %%ecx, %%ecx\n"
+      "jz   13f\n"
+      "mov  0(%%ecx), %%esi\n"
+      "mov  4(%%ecx), %%ecx\n"
+      "cmp  $0, %%ebx\n"           // SIG_BLOCK
+      "jnz  11f\n"
+      "or   %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
+      "or   %%ecx, 0x5C(%%esp)\n"
+      "jmp  13f\n"
+   "11:cmp  $1, %%ebx\n"           // SIG_UNBLOCK
+      "jnz  12f\n"
+      "xor  $-1, %%esi\n"
+      "xor  $-1, %%ecx\n"
+      "and  %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
+      "and  %%ecx, 0x5C(%%esp)\n"
+      "jmp  13f\n"
+   "12:cmp  $2, %%ebx\n"           // SIG_SETMASK
+      "jnz  7b\n"
+      "mov  %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
+      "mov  %%ecx, 0x5C(%%esp)\n"
+   "13:xor  %%eax, %%eax\n"
+      "test %%edx, %%edx\n"
+      "jz   7b\n"
+      "mov  %%edi, 0(%%edx)\n"     // old_set
+      "mov  %%ebp, 4(%%edx)\n"
+      "jmp  7b\n"
+
+      // Forward system call to syscallWrapper()
+   "14:call playground$syscallWrapper\n"
       "jmp  7b\n"
 
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-    "9:mov  $2, %%ebx\n"           // stderr
+   "15:mov  $2, %%ebx\n"           // stderr
       "lea  300f, %%ecx\n"         // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $4, %%eax\n"           // NR_write
@@ -343,6 +412,24 @@ void (*Sandbox::segv())(int signo) {
 #endif
   );
   return fnc;
+}
+
+SecureMem::Args* Sandbox::getSecureMem() {
+  // Check trusted_thread.cc for the magic offset that gets us from the TLS
+  // to the beginning of the secure memory area.
+  SecureMem::Args* ret;
+#if defined(__x86_64__)
+  asm volatile(
+    "movq %%gs:-0xE0, %0\n"
+    : "=q"(ret));
+#elif defined(__i386__)
+  asm volatile(
+    "movl %%fs:-0x58, %0\n"
+    : "=r"(ret));
+#else
+#error Unsupported target platform
+#endif
+  return ret;
 }
 
 void Sandbox::snapshotMemoryMappings(int processFd, int proc_self_maps) {
