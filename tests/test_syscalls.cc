@@ -33,6 +33,26 @@ TEST(test_thread) {
   assert(x == 123);
 }
 
+int clone_func(void *x) {
+  printf("In thread func, which shouldn't happen\n");
+  return 1;
+}
+
+TEST(test_clone_disallowed_flags) {
+  StartSeccompSandbox();
+  int stack_size = 4096;
+  char *stack = (char *) malloc(stack_size);
+  assert(stack != NULL);
+  /* We omit the flags CLONE_SETTLS, CLONE_PARENT_SETTID and
+     CLONE_CHILD_CLEARTID, which is disallowed by the sandbox. */
+  int flags = CLONE_VM | CLONE_FS | CLONE_FILES |
+    CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM;
+  int rc = clone(clone_func, (void *) (stack + stack_size), flags, NULL,
+                 NULL, NULL, NULL);
+  assert(rc == -1);
+  assert(errno == EPERM);
+}
+
 long long read_tsc() {
   long long rc;
   asm volatile(
@@ -160,6 +180,36 @@ TEST(test_socket) {
   assert(fd == -1);
   // TODO: Make it consistent between i386 and x86-64.
   assert(errno == EINVAL || errno == ENOSYS);
+}
+
+TEST(test_open) {
+  StartSeccompSandbox();
+  int fd = open("/dev/null", O_RDONLY);
+  assert(fd >= 0);
+  int rc = close(fd);
+  assert(rc == 0);
+  fd = open("/dev/null", O_WRONLY);
+  assert(fd == -1);
+  assert(errno == EACCES);
+}
+
+TEST(test_access) {
+  StartSeccompSandbox();
+  int rc = access("/dev/null", R_OK);
+  assert(rc == 0);
+  rc = access("path-that-does-not-exist", R_OK);
+  assert(rc == -1);
+  assert(errno == ENOENT);
+}
+
+TEST(test_stat) {
+  StartSeccompSandbox();
+  struct stat st;
+  int rc = stat("/dev/null", &st);
+  assert(rc == 0);
+  rc = stat("path-that-does-not-exist", &st);
+  assert(rc == -1);
+  assert(errno == ENOENT);
 }
 
 
