@@ -1,5 +1,5 @@
 CFLAGS = -g -O0 -Wall -Werror -Wextra -Wno-missing-field-initializers         \
-         -Wno-unused-parameter
+         -Wno-unused-parameter -I.
 LDFLAGS = -g
 CPPFLAGS =
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
@@ -22,6 +22,21 @@ clean:
 	-rm -f testbin32 testbin.o32
 	-rm -f timestats timestats.o
 	-rm -f core core.* vgcore vgcore.* strace.log*
+
+test: run_tests_64 run_tests_32
+	./run_tests_64
+	./run_tests_32
+
+# TODO: Track header file dependencies properly
+tests/test_syscalls.o64 tests/test_syscalls.o32: tests/test-list.h
+
+tests/test-list.h: tests/list_tests.py tests/test_syscalls.cc
+	python tests/list_tests.py tests/test_syscalls.cc > $@
+
+run_tests_64: $(OBJS64) tests/test_syscalls.o64 tests/test-list.h
+	g++ -m64 tests/test_syscalls.o64 $(OBJS64) -lpthread -lutil -o $@
+run_tests_32: $(OBJS32) tests/test_syscalls.o32 tests/test-list.h
+	g++ -m32 tests/test_syscalls.o32 $(OBJS32) -lpthread -lutil -o $@
 
 demo: playground preload32.so preload64.so
 	./playground /bin/ls $(HOME)
