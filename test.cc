@@ -23,6 +23,7 @@
 #define THREADS 2
 #define ITER    2
 
+
 static long long tsc() {
   long long rc;
   asm volatile(

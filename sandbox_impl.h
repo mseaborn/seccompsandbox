@@ -84,7 +84,7 @@ class Sandbox {
   // Clone() is special as it has a wrapper in syscall_table.c. The wrapper
   // adds one extra argument (the pointer to the saved registers) and then
   // calls playground$sandbox__clone().
-  static long sandbox_clone(int flags, void* stack, int* pid, int* ctid,
+  static long sandbox_clone(int flags, char* stack, int* pid, int* ctid,
                             void* tls, void* wrapper_sp)
     asm("playground$sandbox__clone")
   #if defined(__x86_64__)
@@ -96,7 +96,7 @@ class Sandbox {
 #define bool int
 #define SecureMemArgs void
   // This is the wrapper entry point that is found in the syscall_table.
-  long sandbox_clone(int flags, void* stack, int* pid, int* ctid, void* tls)
+  long sandbox_clone(int flags, char* stack, int* pid, int* ctid, void* tls)
                                          asm("playground$sandbox_clone");
 #endif
 
@@ -344,7 +344,7 @@ class Sandbox {
 
   struct Clone {
     int       flags;
-    void*     stack;
+    char*     stack;
     int*      pid;
     int*      ctid;
     void*     tls;

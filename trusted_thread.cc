@@ -14,11 +14,6 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
   args.newSecureMem                     = secureMem;
   args.processFdPub                     = processFdPub;
   args.cloneFdPub                       = cloneFdPub;
-  SysCalls sys;
-  SysCalls::kernel_sigset_t mask;
-  memset(&mask, 0xFF, sizeof(mask));
-  sys.sigprocmask(SIG_SETMASK, &mask,
-      reinterpret_cast<SysCalls::kernel_sigset_t *>(&args.signalMask));
 #if defined(__x86_64__)
   asm volatile(
       "push %%rbx\n"
@@ -26,8 +21,44 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "mov  %0, %%rbp\n"           // %rbp = args
       "xor  %%rbx, %%rbx\n"        // initial sequence number
       "lea  999f(%%rip), %%r15\n"  // continue in same thread
-      "mov  %%rsp, %%r9\n"         // invalidate the stack while executing
-      "xor  %%rsp, %%rsp\n"        //   untrusted code
+
+      // Signal handlers are process-wide. This means that for security
+      // reasons, we cannot allow that the trusted thread ever executes any
+      // signal handlers.
+      // We prevent the execution of signal handlers by setting a signal
+      // mask that blocks all signals. In addition, we make sure that the
+      // stack pointer is invalid.
+      // We cannot reset the signal mask until after we have enabled
+      // Seccomp mode. Our sigprocmask() wrapper would normally do this by
+      // raising a signal, modifying the signal mask in the kernel-generated
+      // signal frame, and then calling sigreturn(). This presents a bit of
+      // a Catch-22, as all signals are masked and we can therefore not
+      // raise any signal that would allow us to generate the signal stack
+      // frame.
+      // Instead, we have to create the signal stack frame prior to entering
+      // Seccomp mode. This incidentally also helps us to restore the
+      // signal mask to the same value that it had prior to entering the
+      // sandbox.
+      // The signal wrapper for clone() is the second entry point into this
+      // code (by means of sending an IPC to its trusted thread). It goes
+      // through the same steps of creating a signal stack frame on the
+      // newly created thread's stacks prior to cloning. See clone.cc for
+      // details.
+      "mov  $56+0xF000, %%eax\n"   // __NR_clone + 0xF000
+      "sub  $8, %%rsp\n"
+      "mov  %%rsp, %%rdx\n"        // push a signal stack frame (see clone.cc)
+      "mov  %%rsp, 0(%%rsp)\n"
+      "int  $0\n"
+      "mov  0(%%rsp), %%r9\n"
+      "add  $8, 0xA0(%%r9)\n"      // pop stack upon call to sigreturn()
+      "mov  $2, %%rdi\n"           // how     = SIG_SETMASK
+      "movq $-1, 0(%%rsp)\n"
+      "mov  %%rsp, %%rsi\n"        // set     = full mask
+      "xor  %%rdx, %%rdx\n"        // old_set = NULL
+      "mov  $8, %%r10\n"           // mask all 64 signals
+      "mov  $14, %%eax\n"          // NR_rt_sigprocmask
+      "syscall\n"
+      "xor  %%rsp, %%rsp\n"        // invalidate the stack in all trusted code
       "jmp  20f\n"                 // create trusted thread
 
       // TODO(markus): Coalesce the read() operations by reading into a bigger
@@ -500,7 +531,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // cannot unroll the stack, as we just set up a new stack for this
       // thread. We have to explicitly restore CPU registers to the values
       // that they had when the program originally called clone().
-      "sub  $0x80+0x78, %%r8\n"    // redzone compensation
+      "sub  $0x78, %%r8\n"
       "mov  0x50(%%rbp), %%rax\n"
       "mov  %%rax, 0x70(%%r8)\n"
       "mov  0x58(%%rbp), %%rax\n"
@@ -634,14 +665,6 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "test %%rax, %%rax\n"
       "jnz  26b\n"                 // exit process (no error message)
 
-      // Reset signal mask
-      "mov  $2, %%rdi\n"           // how     = SIG_SETMASK
-      "lea  0x1054(%%r12), %%rsi\n"// set     = parent's signal mask
-      "xor  %%rdx, %%rdx\n"        // old_set = NULL
-      "mov  $8, %%r10\n"           // 64 signals
-      "mov  $14, %%rax\n"          // NR_rt_sigprocmask
-      "syscall\n"
-
       // Release privileges by entering seccomp mode.
       "mov  $157, %%eax\n"         // NR_prctl
       "mov  $22, %%edi\n"          // PR_SET_SECCOMP
@@ -677,8 +700,9 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
 
       // Returning to createTrustedThread()
       "jz   34f\n"
-      "jmp  *%%r15\n"
-
+      "mov  %%r15, %%rax\n"
+      "jmp  35f\n"
+ 
       // Returning to the place where clone() had been called
    "34:pop  %%r15\n"
       "pop  %%r14\n"
@@ -694,7 +718,28 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "pop  %%rcx\n"
       "pop  %%rbx\n"
       "pop  %%rbp\n"
-      "ret\n"
+
+      // Restore signal mask by calling rt_sig_return(). The syscall wrapper
+      // for sandbox_clone() already created a valid signal stack frame for us.
+      "mov  %%r8, 0x30(%%rsp)\n"
+      "mov  %%r9, 0x38(%%rsp)\n"
+      "mov  %%r10, 0x40(%%rsp)\n"
+      "mov  %%r11, 0x48(%%rsp)\n"
+      "mov  %%r12, 0x50(%%rsp)\n"
+      "mov  %%r13, 0x58(%%rsp)\n"
+      "mov  %%r14, 0x60(%%rsp)\n"
+      "mov  %%r15, 0x68(%%rsp)\n"
+      "mov  %%rdi, 0x70(%%rsp)\n"
+      "mov  %%rsi, 0x78(%%rsp)\n"
+      "mov  %%rbp, 0x80(%%rsp)\n"
+      "mov  %%rbx, 0x88(%%rsp)\n"
+      "mov  %%rdx, 0x90(%%rsp)\n"
+      "mov  %%rax, 0x98(%%rsp)\n"
+      "mov  %%rcx, 0xA0(%%rsp)\n"
+      "pop %%rax\n"
+   "35:mov  %%rax, 0xA8(%%rsp)\n"  // compute new %rip
+      "mov  $15, %%eax\n"          // NR_rt_sigreturn
+      "syscall\n"
 
       ".pushsection \".rodata\"\n"
   "100:.ascii \"Sandbox violation detected, program aborted\\n\"\n"
@@ -719,6 +764,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
   u.limit_in_pages  = 1;
   u.seg_not_present = 0;
   u.useable         = 1;
+  SysCalls sys;
   if (sys.set_thread_area(&u) < 0) {
     die("Cannot set up thread local storage");
   }
@@ -733,8 +779,47 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "movd %%ebx, %%mm3\n"
       "xor  %%edi, %%edi\n"        // initial sequence number
       "movd %%edi, %%mm2\n"
-      "mov  %%esp, %%ebp\n"        // invalidate the stack while executing
-      "xor  %%esp, %%esp\n"        //   untrusted code
+
+      // Signal handlers are process-wide. This means that for security
+      // reasons, we cannot allow that the trusted thread ever executes any
+      // signal handlers.
+      // We prevent the execution of signal handlers by setting a signal
+      // mask that blocks all signals. In addition, we make sure that the
+      // stack pointer is invalid.
+      // We cannot reset the signal mask until after we have enabled
+      // Seccomp mode. Our sigprocmask() wrapper would normally do this by
+      // raising a signal, modifying the signal mask in the kernel-generated
+      // signal frame, and then calling sigreturn(). This presents a bit of
+      // a Catch-22, as all signals are masked and we can therefore not
+      // raise any signal that would allow us to generate the signal stack
+      // frame.
+      // Instead, we have to create the signal stack frame prior to entering
+      // Seccomp mode. This incidentally also helps us to restore the
+      // signal mask to the same value that it had prior to entering the
+      // sandbox.
+      // The signal wrapper for clone() is the second entry point into this
+      // code (by means of sending an IPC to its trusted thread). It goes
+      // through the same steps of creating a signal stack frame on the
+      // newly created thread's stacks prior to cloning. See clone.cc for
+      // details.
+      "mov  $120+0xF000, %%eax\n"  // __NR_clone + 0xF000
+      "sub  $8, %%esp\n"
+      "mov  %%esp, %%edx\n"        // push a signal stack frame (see clone.cc)
+      "mov  %%esp, 0(%%esp)\n"
+      "int  $0\n"
+      "mov  0(%%esp), %%ebp\n"
+      "add  $8, 0x1C(%%ebp)\n"     // pop stack upon call to sigreturn()
+      "mov  $2, %%ebx\n"           // how     = SIG_SETMASK
+      "movl $-1, 0(%%esp)\n"
+      "movl $-1, 4(%%esp)\n"
+      "mov  %%esp, %%ecx\n"        // set     = full mask
+      "xor  %%edx, %%edx\n"        // old_set = NULL
+      "mov  $8, %%esi\n"           // mask all 64 signals
+      "mov  $175, %%eax\n"         // NR_rt_sigprocmask
+      "int  $0x80\n"
+      "mov  $126, %%eax\n"         // NR_sigprocmask
+      "int  $0x80\n"
+      "xor  %%esp, %%esp\n"        // invalidate the stack in all trusted code
       "jmp  20f\n"                 // create trusted thread
 
       // TODO(markus): Coalesce the read() operations by reading into a bigger
@@ -1362,20 +1447,6 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "test %%eax, %%eax\n"
       "jnz  26b\n"                 // exit process (no error message)
 
-      // Reset signal mask
-      "mov  $2, %%ebx\n"           // how     = SIG_SETMASK
-      "movd %%mm5, %%ecx\n"
-      "add  $0x1038, %%ecx\n"      // set     = parent's signal mask
-      "xor  %%edx, %%edx\n"        // old_set = NULL
-      "mov  %%esi, %%edi\n"
-      "mov  $8, %%esi\n"           // 64 signals
-      "mov  $175, %%eax\n"         // NR_rt_sigprocmask
-      "int  $0x80\n"
-      "cmp  $-38, %%eax\n"         // -ENOSYS
-      "jnz  33f\n"
-      "mov  $126, %%eax\n"         // NR_sigprocmask
-      "int  $0x80\n"
-
       // Release privileges by entering seccomp mode.
    "33:mov  $172, %%eax\n"         // NR_prctl
       "mov  $22, %%ebx\n"          // PR_SET_SECCOMP
@@ -1396,7 +1467,7 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "push %%eax\n"
       "mov  $1, %%edx\n"           // len       = 1
       "mov  %%esp, %%ecx\n"        // buf       = %esp
-      "mov  %%edi, %%ebx\n"        // fd        = threadFdPub
+      "mov  %%esi, %%ebx\n"        // fd        = threadFdPub
    "34:mov  $3, %%eax\n"           // NR_read
       "int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
@@ -1416,7 +1487,8 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // Returning to createTrustedThread()
       "test %%ebx, %%ebx\n"
       "jz   35f\n"
-      "jmp  *%%ebx\n"
+      "mov  %%ebx, %%eax\n"
+      "jmp  36f\n"
 
       // Returning to the place where clone() had been called
    "35:pop  %%ebx\n"
@@ -1425,7 +1497,20 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       "pop  %%esi\n"
       "pop  %%edi\n"
       "pop  %%ebp\n"
-      "ret\n"
+
+      // Restore signal mask by calling sig_return(). The syscall wrapper for
+      // sandbox_clone() already created a valid signal stack frame for us.
+      "mov  %%edi, 0x14(%%esp)\n"
+      "mov  %%esi, 0x18(%%esp)\n"
+      "mov  %%ebp, 0x1C(%%esp)\n"
+      "mov  %%ebx, 0x24(%%esp)\n"
+      "mov  %%edx, 0x28(%%esp)\n"
+      "mov  %%ecx, 0x2C(%%esp)\n"
+      "mov  %%eax, 0x30(%%esp)\n"
+      "pop  %%eax\n"
+   "36:mov  %%eax, 0x38(%%esp)\n"   // compute new %eip
+      "mov  $119, %%eax\n"          // NR_sigreturn
+      "int  $0x80\n"
 
       ".pushsection \".rodata\"\n"
   "100:.ascii \"Sandbox violation detected, program aborted\\n\"\n"

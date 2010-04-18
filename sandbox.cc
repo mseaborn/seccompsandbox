@@ -156,7 +156,7 @@ void (*Sandbox::segv())(int signo) {
       "sub  $4, %%rsp\n"
       "push %%r14\n"
       "mov  %%gs:16, %%edi\n"      // fd  = threadFdPub
-      "mov  %%rsp, %%rsi\n"        // buf = %esp
+      "mov  %%rsp, %%rsi\n"        // buf = %rsp
       "mov  $4, %%edx\n"           // len = sizeof(int)
     "1:mov  $1, %%eax\n"           // NR_write
       "syscall\n"
@@ -198,7 +198,7 @@ void (*Sandbox::segv())(int signo) {
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0x00CD, (%%r15)\n"    // INT $0x0
-      "jnz  13f\n"
+      "jnz  14f\n"
 #ifndef NDEBUG
       "lea  200f(%%rip), %%rdi\n"
       "call playground$debugMessage\n"
@@ -239,8 +239,24 @@ void (*Sandbox::segv())(int signo) {
       "mov  %%r10, 0(%%rdx)\n"     // old_set
       "jmp  7b\n"
 
+
+      // Copy signal frame onto new stack. See clone.cc for details
+   "12:cmp  $56+0xF000, %%rax\n"   // NR_clone + 0xF000
+      "jnz  13f\n"
+      "mov  0xA8(%%rsp), %%rcx\n"  // %rsp at time of segmentation fault
+      "sub  %%rsp, %%rcx\n"        // %rcx = size of stack frame
+      "sub  $8, %%rcx\n"           // skip return address
+      "mov  %%rcx, %%rax\n"        // return size of signal stack frame
+      "mov  0(%%rdx), %%rdi\n"     // stack for newly clone()'d thread
+      "sub  %%rcx, %%rdi\n"        // copy onto new stack
+      "mov  %%rdi, 0(%%rdx)\n"     // allocate space on new stack
+      "lea  8(%%rsp), %%rsi\n"     // copy from current stack
+      "cld\n"
+      "rep  movsb\n"
+      "jmp  7b\n"
+
       // Forward system call to syscallWrapper()
-   "12:lea  7b(%%rip), %%rcx\n"
+   "13:lea  7b(%%rip), %%rcx\n"
       "push %%rcx\n"
       "push 0xB8(%%rsp)\n"         // %rip at time of segmentation fault
       "lea  playground$syscallWrapper(%%rip), %%rcx\n"
@@ -249,7 +265,7 @@ void (*Sandbox::segv())(int signo) {
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-   "13:mov  $2, %%edi\n"           // stderr
+   "14:mov  $2, %%edi\n"           // stderr
       "lea  300f(%%rip), %%rsi\n"  // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $1, %%eax\n"           // NR_write
@@ -322,7 +338,7 @@ void (*Sandbox::segv())(int signo) {
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
-      "jnz  15f\n"
+      "jnz  16f\n"
 #ifndef NDEBUG
       "lea  200f, %%eax\n"
       "push %%eax\n"
@@ -376,14 +392,29 @@ void (*Sandbox::segv())(int signo) {
       "mov  %%ebp, 4(%%edx)\n"
       "jmp  7b\n"
 
+      // Copy signal frame onto new stack. See clone.cc for details
+   "14:cmp  $120+0xF000, %%eax\n"  // NR_clone + 0xF000
+      "jnz  15f\n"
+      "mov  0x24(%%esp), %%ecx\n"  // %esp at time of segmentation fault
+      "sub  %%esp, %%ecx\n"        // %ecx = size of stack frame
+      "sub  $8, %%ecx\n"           // skip return address and dummy
+      "mov  %%ecx, %%eax\n"        // return size of signal stack frame
+      "mov  0(%%edx), %%edi\n"     // stack for newly clone()'d thread
+      "sub  %%ecx, %%edi\n"        // copy onto new stack
+      "mov  %%edi, 0(%%edx)\n"     // allocate space on new stack
+      "lea  8(%%esp), %%esi\n"     // copy from current stack
+      "cld\n"
+      "rep  movsb\n"
+      "jmp  7b\n"
+
       // Forward system call to syscallWrapper()
-   "14:call playground$syscallWrapper\n"
+   "15:call playground$syscallWrapper\n"
       "jmp  7b\n"
 
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-   "15:mov  $2, %%ebx\n"           // stderr
+   "16:mov  $2, %%ebx\n"           // stderr
       "lea  300f, %%ecx\n"         // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $4, %%eax\n"           // NR_write
