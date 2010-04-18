@@ -531,37 +531,41 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // cannot unroll the stack, as we just set up a new stack for this
       // thread. We have to explicitly restore CPU registers to the values
       // that they had when the program originally called clone().
-      "sub  $0x78, %%r8\n"
+      // We patch the register values in the signal stack frame so that we
+      // can ask sigreturn() to restore all registers for us.
+      "sub  $0x8, %%r8\n"
       "mov  0x50(%%rbp), %%rax\n"
-      "mov  %%rax, 0x70(%%r8)\n"
+      "mov  %%rax, 0x00(%%r8)\n"   // return address
+      "xor  %%rax, %%rax\n"
+      "mov  %%rax, 0x98(%%r8)\n"   // %rax = 0
       "mov  0x58(%%rbp), %%rax\n"
-      "mov  %%rax, 0x68(%%r8)\n"
+      "mov  %%rax, 0x80(%%r8)\n"   // %rbp
       "mov  0x60(%%rbp), %%rax\n"
-      "mov  %%rax, 0x60(%%r8)\n"
+      "mov  %%rax, 0x88(%%r8)\n"   // %rbx
       "mov  0x68(%%rbp), %%rax\n"
-      "mov  %%rax, 0x58(%%r8)\n"
+      "mov  %%rax, 0xA0(%%r8)\n"   // %rcx
       "mov  0x70(%%rbp), %%rax\n"
-      "mov  %%rax, 0x50(%%r8)\n"
+      "mov  %%rax, 0x90(%%r8)\n"   // %rdx
       "mov  0x78(%%rbp), %%rax\n"
-      "mov  %%rax, 0x48(%%r8)\n"
+      "mov  %%rax, 0x78(%%r8)\n"   // %rsi
       "mov  0x80(%%rbp), %%rax\n"
-      "mov  %%rax, 0x40(%%r8)\n"
+      "mov  %%rax, 0x70(%%r8)\n"   // %rdi
       "mov  0x88(%%rbp), %%rax\n"
-      "mov  %%rax, 0x38(%%r8)\n"
+      "mov  %%rax, 0x30(%%r8)\n"   // %r8
       "mov  0x90(%%rbp), %%rax\n"
-      "mov  %%rax, 0x30(%%r8)\n"
+      "mov  %%rax, 0x38(%%r8)\n"   // %r9
       "mov  0x98(%%rbp), %%rax\n"
-      "mov  %%rax, 0x28(%%r8)\n"
+      "mov  %%rax, 0x40(%%r8)\n"   // %r10
       "mov  0xA0(%%rbp), %%rax\n"
-      "mov  %%rax, 0x20(%%r8)\n"
+      "mov  %%rax, 0x48(%%r8)\n"   // %r11
       "mov  0xA8(%%rbp), %%rax\n"
-      "mov  %%rax, 0x18(%%r8)\n"
+      "mov  %%rax, 0x50(%%r8)\n"   // %r12
       "mov  0xB0(%%rbp), %%rax\n"
-      "mov  %%rax, 0x10(%%r8)\n"
+      "mov  %%rax, 0x58(%%r8)\n"   // %r13
       "mov  0xB8(%%rbp), %%rax\n"
-      "mov  %%rax, 0x08(%%r8)\n"
+      "mov  %%rax, 0x60(%%r8)\n"   // %r14
       "mov  0xC0(%%rbp), %%rax\n"
-      "mov  %%rax, 0x00(%%r8)\n"
+      "mov  %%rax, 0x68(%%r8)\n"   // %r15
       "cmp  %%rbx, 8(%%rbp)\n"
       "jne  25b\n"                 // exit process
 
@@ -697,47 +701,14 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // Return to caller. We are in the new thread, now.
       "xor  %%rax, %%rax\n"
       "test %%r15, %%r15\n"
-
-      // Returning to createTrustedThread()
-      "jz   34f\n"
-      "mov  %%r15, %%rax\n"
-      "jmp  35f\n"
+      "jnz  34f\n"                 // Returning to createTrustedThread()
  
-      // Returning to the place where clone() had been called
-   "34:pop  %%r15\n"
-      "pop  %%r14\n"
-      "pop  %%r13\n"
-      "pop  %%r12\n"
-      "pop  %%r11\n"
-      "pop  %%r10\n"
-      "pop  %%r9\n"
-      "pop  %%r8\n"
-      "pop  %%rdi\n"
-      "pop  %%rsi\n"
-      "pop  %%rdx\n"
-      "pop  %%rcx\n"
-      "pop  %%rbx\n"
-      "pop  %%rbp\n"
-
-      // Restore signal mask by calling rt_sig_return(). The syscall wrapper
-      // for sandbox_clone() already created a valid signal stack frame for us.
-      "mov  %%r8, 0x30(%%rsp)\n"
-      "mov  %%r9, 0x38(%%rsp)\n"
-      "mov  %%r10, 0x40(%%rsp)\n"
-      "mov  %%r11, 0x48(%%rsp)\n"
-      "mov  %%r12, 0x50(%%rsp)\n"
-      "mov  %%r13, 0x58(%%rsp)\n"
-      "mov  %%r14, 0x60(%%rsp)\n"
-      "mov  %%r15, 0x68(%%rsp)\n"
-      "mov  %%rdi, 0x70(%%rsp)\n"
-      "mov  %%rsi, 0x78(%%rsp)\n"
-      "mov  %%rbp, 0x80(%%rsp)\n"
-      "mov  %%rbx, 0x88(%%rsp)\n"
-      "mov  %%rdx, 0x90(%%rsp)\n"
-      "mov  %%rax, 0x98(%%rsp)\n"
-      "mov  %%rcx, 0xA0(%%rsp)\n"
-      "pop %%rax\n"
-   "35:mov  %%rax, 0xA8(%%rsp)\n"  // compute new %rip
+      // Returning to the place where clone() had been called. We rely on
+      // using rt_sigreturn() for restoring our registers. The caller already
+      // created a signal stack frame, and we patched the register values
+      // with the ones that were in effect prior to calling sandbox_clone().
+      "pop %%r15\n"
+   "34:mov  %%r15, 0xA8(%%rsp)\n"  // compute new %rip
       "mov  $15, %%eax\n"          // NR_rt_sigreturn
       "syscall\n"
 
@@ -1319,21 +1290,25 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // cannot unroll the stack, as we just set up a new stack for this
       // thread. We have to explicitly restore CPU registers to the values
       // that they had when the program originally called clone().
+      // We patch the register values in the signal stack frame so that we
+      // can ask sigreturn() to restore all registers for us.
+      "sub  $0x4, %%ebp\n"
       "mov  0x28(%%edi), %%eax\n"
-      "mov  %%eax, -0x04(%%ebp)\n"
+      "mov  %%eax, 0x00(%%ebp)\n"  // return address
+      "xor  %%eax, %%eax\n"
+      "mov  %%eax, 0x30(%%ebp)\n"  // %eax = 0
       "mov  0x2C(%%edi), %%eax\n"
-      "mov  %%eax, -0x08(%%ebp)\n"
+      "mov  %%eax, 0x1C(%%ebp)\n"  // %ebp
       "mov  0x30(%%edi), %%eax\n"
-      "mov  %%eax, -0x0C(%%ebp)\n"
+      "mov  %%eax, 0x14(%%ebp)\n"  // %edi
       "mov  0x34(%%edi), %%eax\n"
-      "mov  %%eax, -0x10(%%ebp)\n"
+      "mov  %%eax, 0x18(%%ebp)\n"  // %esi
       "mov  0x38(%%edi), %%eax\n"
-      "mov  %%eax, -0x14(%%ebp)\n"
+      "mov  %%eax, 0x28(%%ebp)\n"  // %edx
       "mov  0x3C(%%edi), %%eax\n"
-      "mov  %%eax, -0x18(%%ebp)\n"
+      "mov  %%eax, 0x2C(%%ebp)\n"  // %ecx
       "mov  0x40(%%edi), %%eax\n"
-      "mov  %%eax, -0x1C(%%ebp)\n"
-      "sub  $0x1C, %%ebp\n"
+      "mov  %%eax, 0x24(%%ebp)\n"  // %ebx
       "cmp  %%edx, 4(%%edi)\n"
       "jne  25b\n"                 // exit process
 
@@ -1484,32 +1459,16 @@ void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
       // operations.
       "emms\n"
 
-      // Returning to createTrustedThread()
       "test %%ebx, %%ebx\n"
-      "jz   35f\n"
-      "mov  %%ebx, %%eax\n"
-      "jmp  36f\n"
+      "jnz  35f\n"                 // Returning to createTrustedThread()
 
-      // Returning to the place where clone() had been called
-   "35:pop  %%ebx\n"
-      "pop  %%ecx\n"
-      "pop  %%edx\n"
-      "pop  %%esi\n"
-      "pop  %%edi\n"
-      "pop  %%ebp\n"
-
-      // Restore signal mask by calling sig_return(). The syscall wrapper for
-      // sandbox_clone() already created a valid signal stack frame for us.
-      "mov  %%edi, 0x14(%%esp)\n"
-      "mov  %%esi, 0x18(%%esp)\n"
-      "mov  %%ebp, 0x1C(%%esp)\n"
-      "mov  %%ebx, 0x24(%%esp)\n"
-      "mov  %%edx, 0x28(%%esp)\n"
-      "mov  %%ecx, 0x2C(%%esp)\n"
-      "mov  %%eax, 0x30(%%esp)\n"
-      "pop  %%eax\n"
-   "36:mov  %%eax, 0x38(%%esp)\n"   // compute new %eip
-      "mov  $119, %%eax\n"          // NR_sigreturn
+      // Returning to the place where clone() had been called. We rely on
+      // using sigreturn() for restoring our registers. The caller already
+      // created a signal stack frame, and we patched the register values
+      // with the ones that were in effect prior to calling sandbox_clone().
+      "pop  %%ebx\n"
+   "35:mov  %%ebx, 0x38(%%esp)\n"  // compute new %eip
+      "mov  $119, %%eax\n"         // NR_sigreturn
       "int  $0x80\n"
 
       ".pushsection \".rodata\"\n"
