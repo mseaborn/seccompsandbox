@@ -215,26 +215,26 @@ void (*Sandbox::segv())(int signo) {
       "cmp  $14, %%rax\n"          // NR_rt_sigprocmask
       "jnz  12f\n"
       "mov  $-22, %%rax\n"         // -EINVAL
-      "cmp  $8, %%r10\n"           // 64 signals
+      "cmp  $8, %%r10\n"           // %r10 = sigsetsize (8 bytes = 64 signals)
       "jl   7b\n"
       "mov  0x130(%%rsp), %%r10\n" // signal mask at time of segmentation fault
-      "test %%rsi, %%rsi\n"
+      "test %%rsi, %%rsi\n"        // only set mask, if set is non-NULL
       "jz   11f\n"
       "mov  0(%%rsi), %%rsi\n"
-      "cmp  $0, %%rdi\n"           // SIG_BLOCK
+      "cmp  $0, %%rdi\n"           // %rdi = how (SIG_BLOCK)
       "jnz  9f\n"
       "or   %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
       "jmp  11f\n"
-    "9:cmp  $1, %%rdi\n"           // SIG_UNBLOCK
+    "9:cmp  $1, %%rdi\n"           // %rdi = how (SIG_UNBLOCK)
       "jnz  10f\n"
       "xor  $-1, %%rsi\n"
       "and  %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
       "jmp  11f\n"
-   "10:cmp  $2, %%rdi\n"           // SIG_SETMASK
+   "10:cmp  $2, %%rdi\n"           // %rdi = how (SIG_SETMASK)
       "jnz  7b\n"
       "mov  %%rsi, 0x130(%%rsp)\n" // signal mask at time of segmentation fault
    "11:xor  %%rax, %%rax\n"
-      "test %%rdx, %%rdx\n"
+      "test %%rdx, %%rdx\n"        // only return old mask, if set is non-NULL
       "jz   7b\n"
       "mov  %%r10, 0(%%rdx)\n"     // old_set
       "jmp  7b\n"
@@ -357,7 +357,7 @@ void (*Sandbox::segv())(int signo) {
       "cmp  $175, %%eax\n"         // NR_rt_sigprocmask
       "jnz  9f\n"
       "mov  $-22, %%eax\n"         // -EINVAL
-      "cmp  $8, %%esi\n"
+      "cmp  $8, %%esi\n"           // %esi = sigsetsize (8 bytes = 64 signals)
       "jl   7b\n"
       "jmp  10f\n"
     "9:cmp  $126, %%eax\n"         // NR_sigprocmask
@@ -365,28 +365,28 @@ void (*Sandbox::segv())(int signo) {
       "mov  $-22, %%eax\n"
    "10:mov  0x58(%%esp), %%edi\n"  // signal mask at time of segmentation fault
       "mov  0x5C(%%esp), %%ebp\n"
-      "test %%ecx, %%ecx\n"
+      "test %%ecx, %%ecx\n"        // only set mask, if set is non-NULL
       "jz   13f\n"
       "mov  0(%%ecx), %%esi\n"
       "mov  4(%%ecx), %%ecx\n"
-      "cmp  $0, %%ebx\n"           // SIG_BLOCK
+      "cmp  $0, %%ebx\n"           // %ebx = how (SIG_BLOCK)
       "jnz  11f\n"
       "or   %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
       "or   %%ecx, 0x5C(%%esp)\n"
       "jmp  13f\n"
-   "11:cmp  $1, %%ebx\n"           // SIG_UNBLOCK
+   "11:cmp  $1, %%ebx\n"           // %ebx = how (SIG_UNBLOCK)
       "jnz  12f\n"
       "xor  $-1, %%esi\n"
       "xor  $-1, %%ecx\n"
       "and  %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
       "and  %%ecx, 0x5C(%%esp)\n"
       "jmp  13f\n"
-   "12:cmp  $2, %%ebx\n"           // SIG_SETMASK
+   "12:cmp  $2, %%ebx\n"           // %ebx = how (SIG_SETMASK)
       "jnz  7b\n"
       "mov  %%esi, 0x58(%%esp)\n"  // signal mask at time of segmentation fault
       "mov  %%ecx, 0x5C(%%esp)\n"
    "13:xor  %%eax, %%eax\n"
-      "test %%edx, %%edx\n"
+      "test %%edx, %%edx\n"        // only return old mask, if set is non-NULL
       "jz   7b\n"
       "mov  %%edi, 0(%%edx)\n"     // old_set
       "mov  %%ebp, 4(%%edx)\n"

@@ -28,7 +28,7 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
   // that the kernel would do without the sandbox. This is just going to
   // cause a crash. We should detect this case, and replace the stack pointer
   // with the correct value, instead.
-  // This is complicated by the fact, that we will temporarily be executing
+  // This is complicated by the fact that we will temporarily be executing
   // both threads from the same stack. Some synchronization will be necessary.
   // Fortunately, this complication also explains why hardly anybody ever
   // does this.
@@ -61,7 +61,7 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
     // frame, as the exact binary format has been extended several times over
     // the course of the kernel's development. Fortunately, the kernel
     // developers treat the initial part of the stack frame as a stable part
-    // of the ABI. So, we can rely on fixed well-defined offsets for accessing
+    // of the ABI. So, we can rely on fixed, well-defined offsets for accessing
     // register values and for accessing the signal mask.
     #if defined(__x86_64__) || defined(__i386__)
     #if defined(__x86_64__)
