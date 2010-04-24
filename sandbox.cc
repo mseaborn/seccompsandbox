@@ -198,7 +198,7 @@ void (*Sandbox::segv())(int signo) {
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0x00CD, (%%r15)\n"    // INT $0x0
-      "jnz  14f\n"
+      "jnz  16f\n"
 #ifndef NDEBUG
       "lea  200f(%%rip), %%rdi\n"
       "call playground$debugMessage\n"
@@ -239,10 +239,18 @@ void (*Sandbox::segv())(int signo) {
       "mov  %%r10, 0(%%rdx)\n"     // old_set
       "jmp  7b\n"
 
+      // Handle rt_sigreturn()
+   "12:cmp  $15, %%rax\n"          // NR_rt_sigreturn
+      "jnz  14f\n"
+      "mov  0xA8(%%rsp), %%rsp\n"  // %rsp at time of segmentation fault
+   "13:syscall\n"                  // rt_sigreturn() is unrestricted
+      "mov  $1, %%edi\n"           // rt_sigreturn() should never return
+      "mov  $231, %%eax\n"         // NR_exit_group
+      "jmp  13b\n"
 
       // Copy signal frame onto new stack. See clone.cc for details
-   "12:cmp  $56+0xF000, %%rax\n"   // NR_clone + 0xF000
-      "jnz  13f\n"
+   "14:cmp  $56+0xF000, %%rax\n"   // NR_clone + 0xF000
+      "jnz  15f\n"
       "mov  0xA8(%%rsp), %%rcx\n"  // %rsp at time of segmentation fault
       "sub  %%rsp, %%rcx\n"        // %rcx = size of stack frame
       "sub  $8, %%rcx\n"           // skip return address
@@ -256,7 +264,7 @@ void (*Sandbox::segv())(int signo) {
       "jmp  7b\n"
 
       // Forward system call to syscallWrapper()
-   "13:lea  7b(%%rip), %%rcx\n"
+   "15:lea  7b(%%rip), %%rcx\n"
       "push %%rcx\n"
       "push 0xB8(%%rsp)\n"         // %rip at time of segmentation fault
       "lea  playground$syscallWrapper(%%rip), %%rcx\n"
@@ -265,7 +273,7 @@ void (*Sandbox::segv())(int signo) {
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-   "14:mov  $2, %%edi\n"           // stderr
+   "16:mov  $2, %%edi\n"           // stderr
       "lea  300f(%%rip), %%rsi\n"  // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $1, %%eax\n"           // NR_write
@@ -338,7 +346,7 @@ void (*Sandbox::segv())(int signo) {
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke syscallWrapper().
     "8:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
-      "jnz  16f\n"
+      "jnz  21f\n"
 #ifndef NDEBUG
       "lea  200f, %%eax\n"
       "push %%eax\n"
@@ -361,7 +369,7 @@ void (*Sandbox::segv())(int signo) {
       "jl   7b\n"
       "jmp  10f\n"
     "9:cmp  $126, %%eax\n"         // NR_sigprocmask
-      "jnz  14f\n"
+      "jnz  16f\n"
       "mov  $-22, %%eax\n"
    "10:mov  0x58(%%esp), %%edi\n"  // signal mask at time of segmentation fault
       "mov  0x5C(%%esp), %%ebp\n"
@@ -392,9 +400,41 @@ void (*Sandbox::segv())(int signo) {
       "mov  %%ebp, 4(%%edx)\n"
       "jmp  7b\n"
 
+      // Handle sigreturn() and rt_sigreturn()
+      // See syscall.cc for a discussion on how we can emulate rt_sigreturn()
+      // by calling sigreturn() with a suitably adjusted stack.
+   "16:cmp  $119, %%eax\n"         // NR_sigreturn
+      "jnz  19f\n"
+      "mov  0x24(%%esp), %%esp\n"  // %esp at time of segmentation fault
+   "17:int  $0x80\n"               // sigreturn() is unrestricted
+   "18:mov  $1, %%ebx\n"           // rt_sigreturn() should never return
+      "mov  $252, %%eax\n"         // NR_exit_group
+      "jmp  17b\n"
+   "19:cmp  $173, %%eax\n"         // NR_rt_sigreturn
+      "jnz  19f\n"
+      "mov  0x24(%%esp), %%esp\n"  // %esp at time of segmentation fault
+      "sub  $0x1CC, %%esp\n"       // a legacy signal stack is much larger
+      "mov  0x1CC(%%esp), %%eax\n" // push signal number
+      "push %%eax\n"
+      "lea  0x270(%%esp), %%esi\n" // copy siginfo register values
+      "lea  0x4(%%esp), %%edi\n"   //     into new location
+      "mov  $0x17, %%ecx\n"
+      "cld\n"
+      "rep movsl\n"
+      "lea  20f, %%esi\n"
+      "push %%esi\n"               // push restorer function
+      "lea  0x2D4(%%esp), %%edi\n" // patch up retcode magic numbers
+      "movb $2, %%cl\n"
+      "rep movsl\n"
+      "ret\n"                      // return to restorer function
+   "20:pop  %%eax\n"               // remove dummy argument (signo)
+      "mov  $119, %%eax\n"         // NR_sigaction
+      "int  $0x80\n"
+      "jmp  18b\n"
+
       // Copy signal frame onto new stack. See clone.cc for details
-   "14:cmp  $120+0xF000, %%eax\n"  // NR_clone + 0xF000
-      "jnz  15f\n"
+   "19:cmp  $120+0xF000, %%eax\n"  // NR_clone + 0xF000
+      "jnz  20f\n"
       "mov  0x24(%%esp), %%ecx\n"  // %esp at time of segmentation fault
       "sub  %%esp, %%ecx\n"        // %ecx = size of stack frame
       "sub  $8, %%ecx\n"           // skip return address and dummy
@@ -408,13 +448,13 @@ void (*Sandbox::segv())(int signo) {
       "jmp  7b\n"
 
       // Forward system call to syscallWrapper()
-   "15:call playground$syscallWrapper\n"
+   "20:call playground$syscallWrapper\n"
       "jmp  7b\n"
 
       // This was a genuine segmentation fault. Trigger the kernel's default
       // signal disposition. The only way we can do this from seccomp mode
       // is by blocking the signal and retriggering it.
-   "16:mov  $2, %%ebx\n"           // stderr
+   "21:mov  $2, %%ebx\n"           // stderr
       "lea  300f, %%ecx\n"         // "Segmentation fault\n"
       "mov  $301f-300f, %%edx\n"
       "mov  $4, %%eax\n"           // NR_write
