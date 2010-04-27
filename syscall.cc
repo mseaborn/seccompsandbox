@@ -169,9 +169,11 @@ asm(
     "push %eax\n"
     "lea  0x270(%esp), %esi\n"     // copy siginfo register values
     "lea  0x4(%esp), %edi\n"       //     into new location
-    "mov  $0x17, %ecx\n"
+    "mov  $0x16, %ecx\n"
     "cld\n"
     "rep movsl\n"
+    "mov  0x2C8(%esp), %ebx\n"     // copy first half of signal mask
+    "mov  %ebx, 0x54(%esp)\n"
     "lea  2f, %esi\n"
     "push %esi\n"                  // push restorer function
     "lea  0x2D4(%esp), %edi\n"     // patch up retcode magic numbers
