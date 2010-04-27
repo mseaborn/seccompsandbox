@@ -51,7 +51,7 @@ asm(
     "jnz  1f\n"
     "add  $0x90, %rsp\n"           // pop return addresses and red zone
   "0:syscall\n"                    // rt_sigreturn() is unrestricted
-    "mov  $1, %edi\n"              // rt_sigreturn() should never return
+    "mov  $66, %edi\n"             // rt_sigreturn() should never return
     "mov  $231, %eax\n"            // NR_exit_group
     "jmp  0b\n"
 
@@ -144,7 +144,7 @@ asm(
     "jnz  1f\n"
     "add  $0x4, %esp\n"            // pop return address
   "0:int  $0x80\n"                 // sigreturn() is unrestricted
-    "mov  $1, %ebx\n"              // sigreturn() should never return
+    "mov  $66, %ebx\n"             // sigreturn() should never return
     "mov  %ebx, %eax\n"            // NR_exit
     "jmp  0b\n"
   "1:cmp  $173, %eax\n"            // NR_rt_sigreturn

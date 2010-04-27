@@ -245,7 +245,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "jnz  14f\n"
       "mov  0xA8(%%rsp), %%rsp\n"  // %rsp at time of segmentation fault
    "13:syscall\n"                  // rt_sigreturn() is unrestricted
-      "mov  $1, %%edi\n"           // rt_sigreturn() should never return
+      "mov  $66, %%edi\n"          // rt_sigreturn() should never return
       "mov  $231, %%eax\n"         // NR_exit_group
       "jmp  13b\n"
 
@@ -322,7 +322,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
     "3:mov  %%eax, 0xD0(%%esp)\n"  // %eax at time of segmentation fault
     "4:mov  0xDC(%%esp), %%ebp\n"  // %eip at time of segmentation fault
       "addl $2, 0xDC(%%esp)\n"     // %eip at time of segmentation fault
-      "cmpw $0x010F, (%%ebp)\n"    // RDTSC
+      "cmpw $0x010F, (%%ebp)\n"    // RDTSCP
       "jnz  5f\n"
       "addl $1, 0xDC(%%esp)\n"     // %eip at time of segmentation fault
     "5:sub  $0x1C8, %%esp\n"       // a legacy signal stack is much larger
@@ -330,17 +330,21 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "push %%eax\n"
       "lea  0x270(%%esp), %%esi\n" // copy siginfo register values
       "lea  0x4(%%esp), %%edi\n"   //     into new location
-      "mov  $0x16, %%ecx\n"
+      "mov  $22, %%ecx\n"
       "cld\n"
       "rep movsl\n"
-      "mov  0x2C8(%%esp), %%ebx\n" // Copy first half of signal mask
+      "mov  0x2C8(%%esp), %%ebx\n" // copy first half of signal mask
       "mov  %%ebx, 0x54(%%esp)\n"
-      "lea  6f, %%esi\n"
+      "lea  6f, %%esi\n"           // copy "magic" restorer function
       "push %%esi\n"               // push restorer function
       "lea  0x2D4(%%esp), %%edi\n" // patch up retcode magic numbers
       "movb $2, %%cl\n"
       "rep movsl\n"
       "ret\n"                      // return to restorer function
+
+      // The restorer function is sometimes used by gdb as a magic marker to
+      // recognize signal stack frames. Don't change any of the next three
+      // instructions.
     "6:pop  %%eax\n"               // remove dummy argument (signo)
       "mov  $119, %%eax\n"         // NR_sigreturn
       "int  $0x80\n"
