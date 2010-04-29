@@ -71,7 +71,9 @@ class Sandbox {
   // enters Seccomp mode.
   static void startSandbox()             asm("StartSeccompSandbox");
 
- private:
+  // TODO(mseaborn): Consider re-instating this declaration.
+  // private:
+
 // syscall_table.c has to be implemented in C, as C++ does not support
 // designated initializers for arrays. The only other alternative would be
 // to have a source code generator for this table.
@@ -670,6 +672,8 @@ class Sandbox {
   static ProtectedMap                  protectedMap_;
   static std::vector<SecureMem::Args*> secureMemPool_;
 };
+
+void CreateReferenceTrustedThread(SecureMem::Args* secureMem);
 
 } // namespace
 

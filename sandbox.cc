@@ -696,8 +696,14 @@ void Sandbox::startSandbox() {
   NOINTR_SYS(sys.close(proc_self_maps_));
   proc_self_maps_ = -1;
 
-  // Creating the trusted thread enables sandboxing
-  createTrustedThread(processFdPub_, cloneFdPub_, secureMem);
+  if (getenv("SECCOMP_SANDBOX_REFERENCE_IMPL")) {
+    // Insecure version, for development purposes.
+    CreateReferenceTrustedThread(secureMem);
+  }
+  else {
+    // Creating the trusted thread enables sandboxing
+    createTrustedThread(processFdPub_, cloneFdPub_, secureMem);
+  }
 
   // We can no longer check for sandboxing support at this point, but we also
   // know for a fact that it is available (as we just turned it on). So update
