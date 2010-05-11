@@ -296,6 +296,7 @@ int TrustedThread(void *arg) {
     int sent = sys.write(fd, &syscall_result, sizeof(syscall_result));
     assert(sent == sizeof(syscall_result));
   }
+  return 0;
 }
 
 void CreateReferenceTrustedThread(SecureMem::Args *secureMem) {
