@@ -5,7 +5,8 @@ CPPFLAGS =
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         syscall syscall_table trusted_thread trusted_process                  \
         access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
-        munmap open reference_trusted_thread sigprocmask socketcall stat
+        munmap open reference_trusted_thread sigaction sigprocmask socketcall \
+        stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
@@ -21,6 +22,9 @@ clean:
 	-rm -f testbin64 testbin.o64
 	-rm -f testbin32 testbin.o32
 	-rm -f timestats timestats.o
+	-rm -f run_tests_32 run_tests_64
+	-rm -f tests/test_syscalls.o64 tests/test_syscalls.o32
+	-rm -f tests/test-list.h
 	-rm -f core core.* vgcore vgcore.* strace.log*
 
 test: run_tests_64 run_tests_32

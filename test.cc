@@ -45,7 +45,7 @@ static void *fnc(void *arg) {
   if (gettimeofday(&tv, 0)) {
     printf("In thread:\ngettimeofday() failed\n");
   } else {
-    printf("In thread: usec: %ld\n", (long)tv.tv_usec);
+    printf("In thread: usec: %1.0f\n", 1.0*tv.tv_usec);
   }
   printf("In thread: TSC: %llx\n", tsc());
   for (int i = 0; i < ITER; i++) {
@@ -58,27 +58,57 @@ static void *fnc(void *arg) {
 }
 #endif
 
-int main(int argc, char *argv[]) {
-//{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
-  struct timeval tv, tv0;
-  gettimeofday(&tv0, 0);
-  if (SupportsSeccompSandbox(-1)) {
-    puts("Sandbox is supported. Enabling it now...");
-  } else {
-    puts("There is insufficient support for the seccomp sandbox. Exiting...");
-    return 1;
+static void triggerSEGV(void) {
+  asm volatile("int $1");
+}
+
+static void caughtSEGV(void *addr) asm("caughtSEGV") __attribute__((used));
+static void caughtSEGV(void *addr) {
+  printf("Caught SIGSEGV at %p\n", addr);
+}
+
+static void (*segvHandler(void))(int signo, siginfo_t *info, void *context) {
+  void (*hdl)(int, siginfo_t *, void *);
+  asm volatile(
+    "lea  0f, %0\n"
+    "jmp  999f\n"
+  "0:\n"
+
+#if defined(__x86_64__)
+    "mov  0xB0(%%rsp), %%rdi\n"    // Pass original %rip to signal handler
+    "addq $2, 0xB0(%%rsp)\n"       // Adjust %rip past failing instruction
+    "call caughtSEGV\n"            // Call actual signal handler
+#elif defined(__i386__)
+    "cmpw $0, 0xA(%%esp)\n"
+    "lea  0x40(%%esp), %%eax\n"    // %eip at time of exception
+    "jz   1f\n"
+    "add  $0x9C, %%eax\n"          // %eip at time of exception
+  "1:mov  0(%%eax), %%ecx\n"       // Pass original %eip to signal handler
+    "addl $2, 0(%%eax)\n"          // Adjust %eip past failing instruction
+    "push %%ecx\n"
+    "call caughtSEGV\n"            // Call actual signal handler
+    "pop  %%eax\n"
+#else
+#error Unsupported target platform
+#endif
+    "ret\n"
+
+"999:\n"
+    : "=r"(hdl));
+  return hdl;
+}
+
+static void testSignals(sigset_t *orig_sigmask) {
+  struct sigaction sa;
+  memset(&sa, 0, sizeof(sa));
+
+  int flags[4] = { 0, SA_NODEFER, SA_SIGINFO, SA_SIGINFO | SA_NODEFER };
+  for (int i = 0; i < 4; ++i) {
+    sa.sa_sigaction = segvHandler();
+    sa.sa_flags = flags[i];
+    sigaction(SIGSEGV, &sa, NULL);
+    triggerSEGV();
   }
-  gettimeofday(&tv, 0);
-  printf("It takes %fms to start the sandbox\n",
-         tv.tv_sec  * 1000.0 + tv.tv_usec  / 1000.0 -
-         tv0.tv_sec * 1000.0 - tv0.tv_usec / 1000.0);
-
-  sigset_t orig_sigmask = { { 0 } };
-  sigemptyset(&orig_sigmask);
-  sigprocmask(-1, NULL, &orig_sigmask);
-
-  StartSeccompSandbox();
-  write(2, "In secure mode, now!\n", 21);
 
   sigset_t sigmask = { { 0 } }, old_sigmask = { { 0 } };
   sigemptyset(&sigmask);
@@ -86,13 +116,37 @@ int main(int argc, char *argv[]) {
   sigaddset(&sigmask, SIGALRM);
   sigprocmask(SIG_SETMASK, &sigmask, &old_sigmask);
   printf("Original signal mask: 0x%llX, old mask: 0x%llX, new mask: 0x%llX, ",
-         *(unsigned long long *)&orig_sigmask,
+         *(unsigned long long *)orig_sigmask,
          *(unsigned long long *)&old_sigmask,
          *(unsigned long long *)&sigmask);
   sigprocmask(SIG_SETMASK, &old_sigmask, &old_sigmask);
   printf("cur mask: 0x%llX, restored mask: 0x%llX\n",
          *(unsigned long long *)&old_sigmask,
-         *(unsigned long long *)&orig_sigmask);
+         *(unsigned long long *)orig_sigmask);
+}
+
+int main(int argc, char *argv[]) {
+//{ char buf[128]; sprintf(buf, "cat /proc/%d/maps", getpid()); system(buf); }
+  if (SupportsSeccompSandbox(-1)) {
+    puts("Sandbox is supported. Enabling it now...");
+  } else {
+    puts("There is insufficient support for the seccomp sandbox. Exiting...");
+    return 1;
+  }
+
+  sigset_t orig_sigmask = { { 0 } };
+  sigemptyset(&orig_sigmask);
+  sigprocmask(-1, NULL, &orig_sigmask);
+
+  struct timeval tv, tv0;
+  gettimeofday(&tv0, 0);
+  StartSeccompSandbox();
+  write(2, "In secure mode, now!\n", 21);
+  gettimeofday(&tv, 0);
+  printf("It takes %fms to start the sandbox\n",
+         tv.tv_sec  * 1000.0 + tv.tv_usec  / 1000.0 -
+         tv0.tv_sec * 1000.0 - tv0.tv_usec / 1000.0);
+  testSignals(&orig_sigmask);
 
   gettimeofday(&tv, 0);
   gettimeofday(&tv, 0);
@@ -145,7 +199,9 @@ int main(int argc, char *argv[]) {
 #ifdef THREADS
   pthread_t threads[THREADS];
   for (int i = 0; i < THREADS; ++i) {
-    pthread_create(&threads[i], NULL, fnc, NULL);
+    if (pthread_create(&threads[i], NULL, fnc, NULL)) {
+      threads[i] = NULL;
+    }
   }
 #endif
   for (int i = 0; i < 10; i++) {
@@ -166,10 +222,13 @@ int main(int argc, char *argv[]) {
   }
 #ifdef THREADS
   for (int i = 0; i < THREADS; ++i) {
-    pthread_join(threads[i], NULL);
+    if (threads[i]) {
+      pthread_join(threads[i], NULL);
+    }
   }
-  pthread_create(&threads[0], NULL, fnc, NULL);
-  pthread_join(threads[0], NULL);
+  if (!pthread_create(&threads[0], NULL, fnc, NULL)) {
+    pthread_join(threads[0], NULL);
+  }
 #endif
 
   puts("Done");
