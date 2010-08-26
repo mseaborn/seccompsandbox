@@ -161,6 +161,20 @@ bool Sandbox::process_stat(int parentMapsFd, int sandboxFd, int threadFdPub,
      ) {
     die("Corrupted stat() request");
   }
+
+  if (!g_policy.allow_file_namespace) {
+    // After locking the mutex, we can no longer abandon the system call. So,
+    // perform checks before clobbering the securely shared memory.
+    char tmp[stat_req.path_length];
+    if (read(sys, sandboxFd, tmp, stat_req.path_length) !=
+        (ssize_t)stat_req.path_length) {
+      goto read_parm_failed;
+    }
+    Debug::message(("Denying access to \"" + std::string(tmp) + "\"").c_str());
+    SecureMem::abandonSystemCall(threadFd, -EACCES);
+    return false;
+  }
+
   SecureMem::lockSystemCall(parentMapsFd, mem);
   if (read(sys, sandboxFd, mem->pathname, stat_req.path_length) !=
       (ssize_t)stat_req.path_length) {
