@@ -33,7 +33,6 @@
         'munmap.cc',
         'mutex.h',
         'open.cc',
-        'reference_trusted_thread.cc',
         'sandbox.cc',
         'sandbox.h',
         'sandbox_impl.h',
@@ -58,6 +57,7 @@
       'target_name': 'seccomp_tests',
       'type': 'executable',
       'sources': [
+        'reference_trusted_thread.cc',
         'tests/test_syscalls.cc',
       ],
       'include_dirs': [

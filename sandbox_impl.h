@@ -664,8 +664,7 @@ class Sandbox {
 
   // Creates the trusted thread for the initial thread, then enables
   // Seccomp mode.
-  static void  createTrustedThread(int processFdPub, int cloneFdPub,
-                                   SecureMem::Args* secureMem);
+  static void  createTrustedThread(SecureMem::Args* secureMem);
 
   static int   proc_self_maps_;
   static enum SandboxStatus {
@@ -710,6 +709,9 @@ struct SandboxPolicy {
 };
 
 extern struct SandboxPolicy g_policy;
+
+typedef void (*CreateTrustedThreadFunc)(SecureMem::Args* secureMem);
+extern CreateTrustedThreadFunc g_create_trusted_thread;
 
 } // namespace
 

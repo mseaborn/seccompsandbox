@@ -17,6 +17,8 @@ int                                 Sandbox::cloneFdPub_;
 Sandbox::SysCalls::kernel_sigaction Sandbox::sa_segv_;
 Sandbox::ProtectedMap               Sandbox::protectedMap_;
 std::vector<SecureMem::Args*>       Sandbox::secureMemPool_;
+CreateTrustedThreadFunc             g_create_trusted_thread =
+  Sandbox::createTrustedThread;
 
 bool Sandbox::sendFd(int transport, int fd0, int fd1, const void* buf,
                      size_t len) {
@@ -826,14 +828,8 @@ void Sandbox::startSandbox() {
   NOINTR_SYS(sys.close(proc_self_maps_));
   proc_self_maps_ = -1;
 
-  if (getenv("SECCOMP_SANDBOX_REFERENCE_IMPL")) {
-    // Insecure version, for development purposes.
-    CreateReferenceTrustedThread(secureMem);
-  }
-  else {
-    // Creating the trusted thread enables sandboxing
-    createTrustedThread(processFdPub_, cloneFdPub_, secureMem);
-  }
+  // Creating the trusted thread enables sandboxing
+  g_create_trusted_thread(secureMem);
 
   // We can no longer check for sandboxing support at this point, but we also
   // know for a fact that it is available (as we just turned it on). So update

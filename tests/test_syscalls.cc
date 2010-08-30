@@ -730,6 +730,13 @@ static int run_test_by_name(const char *name) {
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
   setvbuf(stderr, NULL, _IONBF, 0);
+
+  if (getenv("SECCOMP_SANDBOX_REFERENCE_IMPL")) {
+    // Insecure version, for development purposes.
+    playground::g_create_trusted_thread =
+      playground::CreateReferenceTrustedThread;
+  }
+
   if (argc == 2) {
     // Run one test without forking, to aid debugging.
     return run_test_by_name(argv[1]);

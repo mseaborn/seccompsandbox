@@ -7,13 +7,12 @@
 
 namespace playground {
 
-void Sandbox::createTrustedThread(int processFdPub, int cloneFdPub,
-                                  SecureMem::Args* secureMem) {
+void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
   SecureMem::Args args                  = { { { { { 0 } } } } };
   args.self                             = &args;
   args.newSecureMem                     = secureMem;
-  args.processFdPub                     = processFdPub;
-  args.cloneFdPub                       = cloneFdPub;
+  args.processFdPub                     = processFdPub_;
+  args.cloneFdPub                       = cloneFdPub_;
 #if defined(__x86_64__)
   asm volatile(
       "push %%rbx\n"
