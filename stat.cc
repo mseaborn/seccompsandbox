@@ -12,26 +12,18 @@ long Sandbox::sandbox_stat(const char *path, void *buf) {
   Debug::syscall(&tm, __NR_stat, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Stat      stat_req;
     char      pathname[0];
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + len];
   request                       = reinterpret_cast<struct Request*>(data);
-  request->sysnum               = __NR_stat;
-  request->cookie               = cookie();
   request->stat_req.sysnum      = __NR_stat;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward stat() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_stat, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_stat);
   return rc;
 }
@@ -41,26 +33,18 @@ long Sandbox::sandbox_lstat(const char *path, void *buf) {
   Debug::syscall(&tm, __NR_lstat, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Stat      stat_req;
     char      pathname[0];
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + len];
   request                       = reinterpret_cast<struct Request*>(data);
-  request->sysnum               = __NR_lstat;
-  request->cookie               = cookie();
   request->stat_req.sysnum      = __NR_lstat;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward lstat() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_lstat, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_lstat);
   return rc;
 }
@@ -71,26 +55,18 @@ long Sandbox::sandbox_stat64(const char *path, void *buf) {
   Debug::syscall(&tm, __NR_stat64, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Stat      stat_req;
     char      pathname[0];
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + len];
   request                       = reinterpret_cast<struct Request*>(data);
-  request->sysnum               = __NR_stat64;
-  request->cookie               = cookie();
   request->stat_req.sysnum      = __NR_stat64;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward stat64() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_stat64, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_stat64);
   return rc;
 }
@@ -100,26 +76,18 @@ long Sandbox::sandbox_lstat64(const char *path, void *buf) {
   Debug::syscall(&tm, __NR_lstat64, "Executing handler");
   size_t len                    = strlen(path);
   struct Request {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Stat      stat_req;
     char      pathname[0];
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + len];
   request                       = reinterpret_cast<struct Request*>(data);
-  request->sysnum               = __NR_lstat64;
-  request->cookie               = cookie();
   request->stat_req.sysnum      = __NR_lstat64;
   request->stat_req.path_length = len;
   request->stat_req.buf         = buf;
   memcpy(request->pathname, path, len);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward lstat64() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_lstat64, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_lstat64);
   return rc;
 }

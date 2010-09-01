@@ -12,12 +12,9 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   long long tm;
   Debug::syscall(&tm, __NR_mmap, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     MMap      mmap_req;
   } __attribute__((packed)) request;
-  request.sysnum          = __NR_MMAP;
-  request.cookie          = cookie();
   request.mmap_req.start  = start;
   request.mmap_req.length = length;
   request.mmap_req.prot   = prot;
@@ -25,15 +22,9 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   request.mmap_req.fd     = fd;
   request.mmap_req.offset = offset;
 
-  void* rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward mmap() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_MMAP, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_mmap);
-  return rc;
+  return (void *) rc;
 }
 
 bool Sandbox::process_mmap(int parentMapsFd, int sandboxFd, int threadFdPub,

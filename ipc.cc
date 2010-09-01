@@ -23,23 +23,14 @@ void* Sandbox::sandbox_shmat(int shmid, const void* shmaddr, int shmflg) {
   Debug::syscall(&tm, __NR_shmat, "Executing handler");
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     ShmAt     shmat_req;
   } __attribute__((packed)) request;
-  request.sysnum             = __NR_shmat;
-  request.cookie             = cookie();
   request.shmat_req.shmid    = shmid;
   request.shmat_req.shmaddr  = shmaddr;
   request.shmat_req.shmflg   = shmflg;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward shmat() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_shmat, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_shmat);
   return reinterpret_cast<void *>(rc);
 }
@@ -49,23 +40,14 @@ long Sandbox::sandbox_shmctl(int shmid, int cmd, void* buf) {
   Debug::syscall(&tm, __NR_shmctl, "Executing handler");
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     ShmCtl    shmctl_req;
   } __attribute__((packed)) request;
-  request.sysnum           = __NR_shmctl;
-  request.cookie           = cookie();
   request.shmctl_req.shmid = shmid;
   request.shmctl_req.cmd   = cmd;
   request.shmctl_req.buf   = buf;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward shmctl() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_shmctl, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_shmctl);
   return rc;
 }
@@ -75,21 +57,12 @@ long Sandbox::sandbox_shmdt(const void* shmaddr) {
   Debug::syscall(&tm, __NR_shmdt, "Executing handler");
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     ShmDt     shmdt_req;
   } __attribute__((packed)) request;
-  request.sysnum             = __NR_shmdt;
-  request.cookie             = cookie();
   request.shmdt_req.shmaddr  = shmaddr;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward shmdt() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_shmdt, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_shmdt);
   return rc;
 }
@@ -99,23 +72,14 @@ long Sandbox::sandbox_shmget(int key, size_t size, int shmflg) {
   Debug::syscall(&tm, __NR_shmget, "Executing handler");
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     ShmGet    shmget_req;
   } __attribute__((packed)) request;
-  request.sysnum            = __NR_shmget;
-  request.cookie            = cookie();
   request.shmget_req.key    = key;
   request.shmget_req.size   = size;
   request.shmget_req.shmflg = shmflg;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward shmget() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_shmget, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_shmget);
   return rc;
 }
@@ -251,12 +215,9 @@ long Sandbox::sandbox_ipc(unsigned call, int first, int second, int third,
   long long tm;
   Debug::syscall(&tm, __NR_ipc, "Executing handler", call);
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     IPC       ipc_req;
   } __attribute__((packed)) request;
-  request.sysnum         = __NR_ipc;
-  request.cookie         = cookie();
   request.ipc_req.call   = call;
   request.ipc_req.first  = first;
   request.ipc_req.second = second;
@@ -264,13 +225,7 @@ long Sandbox::sandbox_ipc(unsigned call, int first, int second, int third,
   request.ipc_req.ptr    = ptr;
   request.ipc_req.fifth  = fifth;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward ipc() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_ipc, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_ipc, call);
   return rc;
 }

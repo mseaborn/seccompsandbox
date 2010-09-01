@@ -73,6 +73,15 @@ class Sandbox {
   // TODO(mseaborn): Consider re-instating this declaration.
   // private:
 
+  struct RequestHeader {
+    unsigned int sysnum;
+    long long cookie;
+  } __attribute__((packed));
+
+  // This forwards a system call to the trusted process.
+  static long forwardSyscall(int sysnum, struct RequestHeader* request,
+                             int size);
+
 // syscall_table.c has to be implemented in C, as C++ does not support
 // designated initializers for arrays. The only other alternative would be
 // to have a source code generator for this table.

@@ -40,12 +40,9 @@ long Sandbox::sandbox_sigaction(int signum, const void* a_, void* oa_) {
     }
   } else {
     struct {
-      int       sysnum;
-      long long cookie;
+      struct RequestHeader header;
       SigAction sigaction_req;
     } __attribute__((packed)) request;
-    request.sysnum                   = __NR_sigaction;
-    request.cookie                   = cookie();
     request.sigaction_req.sysnum     = __NR_sigaction;
     request.sigaction_req.signum     = signum;
     request.sigaction_req.action     =
@@ -54,12 +51,7 @@ long Sandbox::sandbox_sigaction(int signum, const void* a_, void* oa_) {
       reinterpret_cast<const SysCalls::kernel_sigaction *>(old_action);
     request.sigaction_req.sigsetsize = 8;
 
-    SysCalls sys;
-    if (write(sys, processFdPub(), &request, sizeof(request)) !=
-        sizeof(request) ||
-        read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-      die("Failed to forward sigaction() request [sandbox]");
-    }
+    rc = forwardSyscall(__NR_sigaction, &request.header, sizeof(request));
   }
   Debug::elapsed(tm, __NR_sigaction);
   return rc;
@@ -93,24 +85,16 @@ long Sandbox::sandbox_rt_sigaction(int signum, const void* a_, void* oa_,
     }
   } else {
     struct {
-      int       sysnum;
-      long long cookie;
+      struct RequestHeader header;
       SigAction sigaction_req;
     } __attribute__((packed)) request;
-    request.sysnum                   = __NR_rt_sigaction;
-    request.cookie                   = cookie();
     request.sigaction_req.sysnum     = __NR_rt_sigaction;
     request.sigaction_req.signum     = signum;
     request.sigaction_req.action     = action;
     request.sigaction_req.old_action = old_action;
     request.sigaction_req.sigsetsize = sigsetsize;
 
-    SysCalls sys;
-    if (write(sys, processFdPub(), &request, sizeof(request)) !=
-        sizeof(request) ||
-        read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-      die("Failed to forward rt_sigaction() request [sandbox]");
-    }
+    rc = forwardSyscall(__NR_rt_sigaction, &request.header, sizeof(request));
   }
   Debug::elapsed(tm, __NR_rt_sigaction);
   return rc;

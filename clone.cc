@@ -12,12 +12,9 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
   long long tm;
   Debug::syscall(&tm, __NR_clone, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Clone     clone_req;
   } __attribute__((packed)) request;
-  request.sysnum               = __NR_clone;
-  request.cookie               = cookie();
   request.clone_req.flags      = flags;
   request.clone_req.stack      = stack;
   request.clone_req.pid        = pid;
@@ -100,12 +97,7 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
     #error Unsupported target platform
     #endif
 
-    SysCalls sys;
-    if (write(sys, processFdPub(), &request, sizeof(request)) !=
-        sizeof(request) ||
-        read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-      die("Failed to forward clone() request [sandbox]");
-    }
+    rc = forwardSyscall(__NR_clone, &request.header, sizeof(request));
   }
   Debug::elapsed(tm, __NR_clone);
   return rc;

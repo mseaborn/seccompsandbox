@@ -30,12 +30,9 @@ ssize_t Sandbox::sandbox_recvfrom(int sockfd, void* buf, size_t len, int flags,
   }
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     RecvFrom  recvfrom_req;
   } __attribute__((packed)) request;
-  request.sysnum               = __NR_recvfrom;
-  request.cookie               = cookie();
   request.recvfrom_req.sockfd  = sockfd;
   request.recvfrom_req.buf     = buf;
   request.recvfrom_req.len     = len;
@@ -43,12 +40,7 @@ ssize_t Sandbox::sandbox_recvfrom(int sockfd, void* buf, size_t len, int flags,
   request.recvfrom_req.from    = from;
   request.recvfrom_req.fromlen = fromlen;
 
-  long rc;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward recvfrom() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_recvfrom, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_recvfrom);
   return static_cast<ssize_t>(rc);
 }
@@ -60,23 +52,14 @@ ssize_t Sandbox::sandbox_recvmsg(int sockfd, struct msghdr* msg, int flags) {
   // We cannot simplify recvmsg() to recvfrom(), recv() or read(), as we do
   // not know whether the caller needs us to set msg->msg_flags.
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     RecvMsg   recvmsg_req;
   } __attribute__((packed)) request;
-  request.sysnum             = __NR_recvmsg;
-  request.cookie             = cookie();
   request.recvmsg_req.sockfd = sockfd;
   request.recvmsg_req.msg    = msg;
   request.recvmsg_req.flags  = flags;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward recvmsg() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_recvmsg, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_recvmsg);
   return static_cast<ssize_t>(rc);
 }
@@ -93,15 +76,12 @@ size_t Sandbox::sandbox_sendmsg(int sockfd, const struct msghdr* msg,
   }
 
   struct Request {
-    int           sysnum;
-    long long     cookie;
+    struct RequestHeader header;
     SendMsg       sendmsg_req;
     struct msghdr msg;
   } __attribute__((packed));
   char data[sizeof(struct Request) + msg->msg_namelen + msg->msg_controllen];
   struct Request *request     = reinterpret_cast<struct Request *>(data);
-  request->sysnum             = __NR_sendmsg;
-  request->cookie             = cookie();
   request->sendmsg_req.sockfd = sockfd;
   request->sendmsg_req.msg    = msg;
   request->sendmsg_req.flags  = flags;
@@ -111,13 +91,7 @@ size_t Sandbox::sandbox_sendmsg(int sockfd, const struct msghdr* msg,
     msg->msg_namelen,
       msg->msg_control, msg->msg_controllen);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &data, sizeof(data)) !=
-      (ssize_t)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward sendmsg() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_sendmsg, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_sendmsg);
   return static_cast<ssize_t>(rc);
 }
@@ -143,12 +117,9 @@ ssize_t Sandbox::sandbox_sendto(int sockfd, const void* buf, size_t len,
   }
 
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     SendTo    sendto_req;
   } __attribute__((packed)) request;
-  request.sysnum            = __NR_sendto;
-  request.cookie            = cookie();
   request.sendto_req.sockfd = sockfd;
   request.sendto_req.buf    = buf;
   request.sendto_req.len    = len;
@@ -156,12 +127,7 @@ ssize_t Sandbox::sandbox_sendto(int sockfd, const void* buf, size_t len,
   request.sendto_req.to     = to;
   request.sendto_req.tolen  = tolen;
 
-  long rc;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward sendto() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_sendto, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_sendto);
   return static_cast<ssize_t>(rc);
 }
@@ -172,25 +138,16 @@ long Sandbox::sandbox_setsockopt(int sockfd, int level, int optname,
   Debug::syscall(&tm, __NR_setsockopt, "Executing handler");
 
   struct {
-    int        sysnum;
-    long long  cookie;
+    struct RequestHeader header;
     SetSockOpt setsockopt_req;
   } __attribute__((packed)) request;
-  request.sysnum                 = __NR_setsockopt;
-  request.cookie                 = cookie();
   request.setsockopt_req.sockfd  = sockfd;
   request.setsockopt_req.level   = level;
   request.setsockopt_req.optname = optname;
   request.setsockopt_req.optval  = optval;
   request.setsockopt_req.optlen  = optlen;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward setsockopt() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_setsockopt, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_setsockopt);
   return rc;
 }
@@ -201,25 +158,16 @@ long Sandbox::sandbox_getsockopt(int sockfd, int level, int optname,
   Debug::syscall(&tm, __NR_getsockopt, "Executing handler");
 
   struct {
-    int        sysnum;
-    long long  cookie;
+    struct RequestHeader header;
     GetSockOpt getsockopt_req;
   } __attribute__((packed)) request;
-  request.sysnum                 = __NR_getsockopt;
-  request.cookie                 = cookie();
   request.getsockopt_req.sockfd  = sockfd;
   request.getsockopt_req.level   = level;
   request.getsockopt_req.optname = optname;
   request.getsockopt_req.optval  = optval;
   request.getsockopt_req.optlen  = optlen;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward getsockopt() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_getsockopt, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_getsockopt);
   return rc;
 }
@@ -623,8 +571,7 @@ long Sandbox::sandbox_socketcall(int call, void* args) {
   // Set up storage for the request header and copy the data from "args"
   // into it.
   struct Request {
-    int        sysnum;
-    long long  cookie;
+    struct RequestHeader header;
     SocketCall socketcall_req;
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + numExtraData];
@@ -699,8 +646,6 @@ long Sandbox::sandbox_socketcall(int call, void* args) {
   }
 
   // Fill in the rest of the request header.
-  request->sysnum                 = __NR_socketcall;
-  request->cookie                 = cookie();
   request->socketcall_req.call    = call;
   request->socketcall_req.arg_ptr = args;
   int padding = sizeof(request->socketcall_req.args) -
@@ -724,12 +669,8 @@ long Sandbox::sandbox_socketcall(int call, void* args) {
   }
 
   // Send request to trusted process and collect response from trusted thread.
-  long rc;
   ssize_t len                     = sizeof(struct Request) + numExtraData;
-  if (write(sys, processFdPub(), data, len) != len ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward socketcall() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_socketcall, &request->header, len);
   Debug::elapsed(tm, __NR_socketcall, call);
   return rc;
 }

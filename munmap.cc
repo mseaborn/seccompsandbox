@@ -11,22 +11,13 @@ long Sandbox::sandbox_munmap(void* start, size_t length) {
   long long tm;
   Debug::syscall(&tm, __NR_munmap, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     MUnmap    munmap_req;
   } __attribute__((packed)) request;
-  request.sysnum            = __NR_munmap;
-  request.cookie            = cookie();
   request.munmap_req.start  = start;
   request.munmap_req.length = length;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward munmap() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_munmap, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_munmap);
   return rc;
 }

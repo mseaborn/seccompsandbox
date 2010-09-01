@@ -11,23 +11,14 @@ long Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   long long tm;
   Debug::syscall(&tm, __NR_ioctl, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     IOCtl     ioctl_req;
   } __attribute__((packed)) request;
-  request.sysnum        = __NR_ioctl;
-  request.cookie        = cookie();
   request.ioctl_req.d   = d;
   request.ioctl_req.req = req;
   request.ioctl_req.arg = arg;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward ioctl() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_ioctl, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_ioctl);
   return rc;
 }

@@ -11,23 +11,14 @@ long Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   long long tm;
   Debug::syscall(&tm, __NR_mprotect, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     MProtect  mprotect_req;
   } __attribute__((packed)) request;
-  request.sysnum            = __NR_mprotect;
-  request.cookie            = cookie();
   request.mprotect_req.addr = addr;
   request.mprotect_req.len  = len;
   request.mprotect_req.prot = prot;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward mprotect() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_mprotect, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_mprotect);
   return rc;
 }

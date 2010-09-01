@@ -91,11 +91,7 @@ newThreadCreated:
 
   // Dispatch system calls that have been forwarded from the trusted thread(s).
   for (;;) {
-    struct {
-      unsigned int sysnum;
-      long long    cookie;
-    } __attribute__((packed)) header;
-
+    struct RequestHeader header;
     int rc;
     if ((rc = read(sys, sandboxFd, &header, sizeof(header))) !=sizeof(header)){
       if (rc) {

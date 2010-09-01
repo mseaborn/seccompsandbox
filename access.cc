@@ -12,25 +12,17 @@ long Sandbox::sandbox_access(const char *pathname, int mode) {
   Debug::syscall(&tm, __NR_access, "Executing handler");
   size_t len                      = strlen(pathname);
   struct Request {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     Access    access_req;
     char      pathname[0];
   } __attribute__((packed)) *request;
   char data[sizeof(struct Request) + len];
   request                         = reinterpret_cast<struct Request*>(data);
-  request->sysnum                 = __NR_access;
-  request->cookie                 = cookie();
   request->access_req.path_length = len;
   request->access_req.mode        = mode;
   memcpy(request->pathname, pathname, len);
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), request, sizeof(data)) != (int)sizeof(data) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward access() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_access, &request->header, sizeof(data));
   Debug::elapsed(tm, __NR_access);
   return rc;
 }

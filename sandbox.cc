@@ -638,6 +638,21 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
   return fnc;
 }
 
+long Sandbox::forwardSyscall(int sysnum, struct RequestHeader* request,
+                             int size) {
+  SysCalls sys;
+  long rc;
+  request->sysnum = sysnum;
+  request->cookie = cookie();
+  if (write(sys, processFdPub(), request, size) != size) {
+    die("Failed to send forwarded request");
+  }
+  if (read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
+    die("Failed to receive forwarded result");
+  }
+  return rc;
+}
+
 SecureMem::Args* Sandbox::getSecureMem() {
   // Check trusted_thread.cc for the magic offset that gets us from the TLS
   // to the beginning of the secure memory area.

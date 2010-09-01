@@ -11,23 +11,14 @@ long Sandbox::sandbox_madvise(void* start, size_t length, int advice) {
   long long tm;
   Debug::syscall(&tm, __NR_madvise, "Executing handler");
   struct {
-    int       sysnum;
-    long long cookie;
+    struct RequestHeader header;
     MAdvise   madvise_req;
   } __attribute__((packed)) request;
-  request.sysnum             = __NR_madvise;
-  request.cookie             = cookie();
   request.madvise_req.start  = start;
   request.madvise_req.len    = length;
   request.madvise_req.advice = advice;
 
-  long rc;
-  SysCalls sys;
-  if (write(sys, processFdPub(), &request, sizeof(request)) !=
-      sizeof(request) ||
-      read(sys, threadFdPub(), &rc, sizeof(rc)) != sizeof(rc)) {
-    die("Failed to forward madvise() request [sandbox]");
-  }
+  long rc = forwardSyscall(__NR_madvise, &request.header, sizeof(request));
   Debug::elapsed(tm, __NR_madvise);
   return rc;
 }
