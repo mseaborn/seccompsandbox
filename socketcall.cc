@@ -236,15 +236,16 @@ bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
     die("Failed to read parameters for sendmsg() [process]");
   }
 
-  if (data.msg.msg_namelen    > 4096 ||
-      data.msg.msg_controllen > 4096) {
+  if (data.msg.msg_namelen > 4096 || data.msg.msg_controllen > 4096) {
     die("Unexpected size for socketcall() payload [process]");
   }
   char extra[data.msg.msg_namelen + data.msg.msg_controllen];
   if (read(sys, sandboxFd, &extra, sizeof(extra)) != (ssize_t)sizeof(extra)) {
     die("Failed to read parameters for sendmsg() [process]");
   }
-  if (sizeof(struct msghdr) + sizeof(extra) > sizeof(mem->pathname)) {
+  if (CMSG_ALIGN(sizeof(struct msghdr)) +
+      CMSG_ALIGN(data.msg.msg_namelen) +
+      CMSG_ALIGN(data.msg.msg_controllen) > sizeof(mem->pathname)) {
     goto deny;
   }
 
@@ -279,13 +280,15 @@ bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
   SecureMem::lockSystemCall(parentMapsFd, mem);
   if (sizeof(extra) > 0) {
     if (data.msg.msg_namelen > 0) {
-      data.msg.msg_name = mem->pathname + sizeof(struct msghdr);
+      data.msg.msg_name = mem->pathname + CMSG_ALIGN(sizeof(struct msghdr));
+      memcpy(data.msg.msg_name, extra, data.msg.msg_namelen);
     }
     if (data.msg.msg_controllen > 0) {
-      data.msg.msg_control = mem->pathname + sizeof(struct msghdr) +
-                             data.msg.msg_namelen;
+      data.msg.msg_control = mem->pathname + CMSG_ALIGN(sizeof(struct msghdr))+
+                             CMSG_ALIGN(data.msg.msg_namelen);
+      memcpy(data.msg.msg_control, extra + data.msg.msg_namelen,
+             data.msg.msg_controllen);
     }
-    memcpy(mem->pathname + sizeof(struct msghdr), extra, sizeof(extra));
   }
   memcpy(mem->pathname, &data.msg, sizeof(struct msghdr));
   SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
@@ -721,20 +724,28 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
   }
 
   // sendmsg() has another level of indirection and can carry even more payload
-  ssize_t numSendmsgExtra = 0;
+  ssize_t serializedExtraLen = 0;
+  ssize_t numSendmsgExtra    = 0;
   if (socketcall_req.call == SYS_SENDMSG) {
     struct msghdr* msg = reinterpret_cast<struct msghdr*>(extra);
-    if (msg->msg_namelen    > 4096 ||
-        msg->msg_controllen > 4096) {
+    if (msg->msg_namelen > 4096 || msg->msg_controllen > 4096) {
       die("Unexpected size for socketcall() payload [process]");
     }
-    numSendmsgExtra = msg->msg_namelen + msg->msg_controllen;
+    serializedExtraLen = msg->msg_namelen + msg->msg_controllen;
+    numSendmsgExtra    = CMSG_ALIGN(msg->msg_namelen) +
+                         CMSG_ALIGN(msg->msg_controllen);
   }
   char sendmsgExtra[numSendmsgExtra];
   if (numSendmsgExtra) {
-    if (read(sys, sandboxFd, sendmsgExtra, numSendmsgExtra) !=
-        numSendmsgExtra) {
+    if (read(sys, sandboxFd, sendmsgExtra, serializedExtraLen) !=
+        serializedExtraLen) {
       die("Failed to read socketcall() payload [process]");
+    } else {
+      // Restore proper alignment
+      struct msghdr* msg = reinterpret_cast<struct msghdr*>(extra);
+      memmove(sendmsgExtra + CMSG_ALIGN(msg->msg_namelen),
+              sendmsgExtra +            msg->msg_namelen,
+              msg->msg_controllen);
     }
   }
 
@@ -907,7 +918,9 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
     case SYS_SENDMSG: {
       struct msghdr* msg = reinterpret_cast<struct msghdr*>(extra);
 
-      if (sizeof(socketcall_req.args) + sizeof(*msg) + numSendmsgExtra >
+      if (CMSG_ALIGN(sizeof(socketcall_req.args)) +
+          CMSG_ALIGN(sizeof(*msg)) +
+          numSendmsgExtra >
           sizeof(mem->pathname)) {
         goto deny;
       }
@@ -926,7 +939,7 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       // Unfortunately, for now, this is not possible as Chrome's
       // base::SendRecvMsg() needs the ability to pass file handles.
       if (msg->msg_controllen) {
-        msg->msg_control = sendmsgExtra + msg->msg_namelen;
+        msg->msg_control = sendmsgExtra + CMSG_ALIGN(msg->msg_namelen);
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
         do {
           if (cmsg->cmsg_level != SOL_SOCKET ||
@@ -942,22 +955,26 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       SecureMem::lockSystemCall(parentMapsFd, mem);
       socketcall_req.args.sendmsg.msg =
           reinterpret_cast<struct msghdr*>(mem->pathname +
-                                           sizeof(socketcall_req.args) -
-                                           (char*)mem + (char*)mem->self);
+                                      CMSG_ALIGN(sizeof(socketcall_req.args)) -
+                                      (char*)mem + (char*)mem->self);
       memcpy(mem->pathname, &socketcall_req.args, sizeof(socketcall_req.args));
       if (numSendmsgExtra) {
         if (msg->msg_namelen > 0) {
-          msg->msg_name = const_cast<struct msghdr*>(
-              socketcall_req.args.sendmsg.msg) + 1;
+          msg->msg_name = (char *)socketcall_req.args.sendmsg.msg +
+                          CMSG_ALIGN(sizeof(*msg));
         }
         if (msg->msg_controllen > 0) {
-          msg->msg_control = (char *)(
-              socketcall_req.args.sendmsg.msg + 1) + msg->msg_namelen;
+          msg->msg_control = (char *)socketcall_req.args.sendmsg.msg +
+                             CMSG_ALIGN(sizeof(*msg)) +
+                             CMSG_ALIGN(msg->msg_namelen);
         }
-        memcpy(mem->pathname + sizeof(socketcall_req.args) + sizeof(*msg),
+        memcpy(mem->pathname +
+               CMSG_ALIGN(sizeof(socketcall_req.args)) +
+               CMSG_ALIGN(sizeof(*msg)),
                sendmsgExtra, numSendmsgExtra);
       }
-      memcpy(mem->pathname + sizeof(socketcall_req.args), msg, sizeof(*msg));
+      memcpy(mem->pathname + CMSG_ALIGN(sizeof(socketcall_req.args)),
+             msg, sizeof(*msg));
       SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
                                 __NR_socketcall, socketcall_req.call,
                                 mem->pathname - (char*)mem + (char*)mem->self);
