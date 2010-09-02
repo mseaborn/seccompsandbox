@@ -143,6 +143,8 @@ class Sandbox {
                                          asm("playground$sandbox_munmap");
   STATIC long sandbox_open(const char*, int, mode_t)
                                          asm("playground$sandbox_open");
+  STATIC long sandbox_prctl(int, unsigned long, unsigned long, unsigned long,
+                            unsigned long)asm("playground$sandbox_prctl");
   #if defined(__NR_recvfrom)
   STATIC ssize_t sandbox_recvfrom(int, void*, size_t, int, void*, socklen_t*)
                                          asm("playground$sandbox_recvfrom");
@@ -226,6 +228,8 @@ class Sandbox {
                                          asm("playground$process_munmap");
   STATIC bool process_open(int, int, int, int, SecureMemArgs*)
                                          asm("playground$process_open");
+  STATIC bool process_prctl(int, int, int, int, SecureMemArgs*)
+                                         asm("playground$process_prctl");
   #if defined(__NR_recvfrom)
   STATIC bool process_recvfrom(int, int, int, int, SecureMemArgs*)
                                          asm("playground$process_recvfrom");
@@ -483,6 +487,14 @@ class Sandbox {
     size_t path_length;
     int    flags;
     mode_t mode;
+  } __attribute__((packed));
+
+  struct Prctl {
+    int    option;
+    unsigned long arg2;
+    unsigned long arg3;
+    unsigned long arg4;
+    unsigned long arg5;
   } __attribute__((packed));
 
   struct Recv {

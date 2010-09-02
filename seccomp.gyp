@@ -33,6 +33,7 @@
         'munmap.cc',
         'mutex.h',
         'open.cc',
+        'prctl.cc',
         'sandbox.cc',
         'sandbox.h',
         'sandbox_impl.h',

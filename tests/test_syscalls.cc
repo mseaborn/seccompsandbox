@@ -4,8 +4,12 @@
 
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
 #include <pthread.h>
 #include <pty.h>
+#include <sys/prctl.h>
+#include <sys/ptrace.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -676,6 +680,35 @@ TEST(test_debugging) {
   assert(sz > 0);
   buf[sz] = '\000';
   assert(strstr(buf, "close:"));
+}
+
+TEST(test_prctl) {
+  int rc = prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+  assert(rc == 0);
+  rc = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+  assert(rc == 0);
+  int fds[2];
+  rc = socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
+  assert(rc == 0);
+  pid_t pid = fork();
+  assert(pid >= 0);
+  char ch = 0;
+  if (pid == 0) {
+    StartSeccompSandbox();
+    read(fds[0], &ch, 1);
+    prctl(PR_SET_DUMPABLE, 1, 0, 0, 0);
+    write(fds[0], &ch, 1);
+    read(fds[0], &ch, 1);
+    _exit(1);
+  }
+  rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
+  assert(rc == -1 && errno == EPERM);
+  write(fds[1], &ch, 1);
+  read(fds[1], &ch, 1);
+  rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
+  assert(rc == 0);
+  rc = ptrace(PTRACE_KILL, pid, 0, 0);
+  assert(rc == 0);
 }
 
 struct testcase {

@@ -59,6 +59,18 @@ const struct SyscallTable syscallTable[] __attribute__((
   [ __NR_futex           ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_getdents        ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_getdents64      ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_getegid         ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__NR_getegid32)
+  [ __NR_getegid32       ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
+  [ __NR_geteuid         ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__NR_geteuid32)
+  [ __NR_geteuid32       ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
+  [ __NR_getgid          ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__NR_getgid32)
+  [ __NR_getgid32        ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
   #if defined(__NR_getpeername)
   [ __NR_getpeername     ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
@@ -69,6 +81,10 @@ const struct SyscallTable syscallTable[] __attribute__((
   #endif
   [ __NR_gettid          ] = { (void*)&sandbox_gettid,   0                   },
   [ __NR_gettimeofday    ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_getuid          ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #if defined(__NR_getuid32)
+  [ __NR_getuid32        ] = { UNRESTRICTED_SYSCALL,     0                   },
+  #endif
   [ __NR_ioctl           ] = { (void*)&sandbox_ioctl,    process_ioctl       },
   #if defined(__NR_ipc)
   [ __NR_ipc             ] = { (void*)&sandbox_ipc,      process_ipc         },
@@ -93,6 +109,7 @@ const struct SyscallTable syscallTable[] __attribute__((
   [ __NR_open            ] = { (void*)&sandbox_open,     process_open        },
   [ __NR_pipe            ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_prctl           ] = { (void*)&sandbox_prctl,    process_prctl       },
   #if defined(__NR_recvfrom)
   [ __NR_recvfrom        ] = { (void*)&sandbox_recvfrom, process_recvfrom    },
   [ __NR_recvmsg         ] = { (void*)&sandbox_recvmsg,  process_recvmsg     },

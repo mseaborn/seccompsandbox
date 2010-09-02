@@ -5,8 +5,8 @@ CPPFLAGS =
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         syscall syscall_table trusted_thread trusted_process                  \
         access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
-        munmap open reference_trusted_thread sigaction sigprocmask socketcall \
-        stat
+        munmap open prctl reference_trusted_thread sigaction sigprocmask      \
+        socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 HEADERS:= $(shell for i in ${MODS}; do [ -r "$$i" ] && echo "$$i"; done)
