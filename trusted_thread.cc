@@ -20,6 +20,8 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
       "mov  %0, %%rbp\n"           // %rbp = args
       "xor  %%rbx, %%rbx\n"        // initial sequence number
       "lea  999f(%%rip), %%r15\n"  // continue in same thread
+      "xor  %%rax, %%rax\n"
+      "movw %%ax, %%gs\n"          // invalidate %gs
 
       // Signal handlers are process-wide. This means that for security
       // reasons, we cannot allow that the trusted thread ever executes any
@@ -722,6 +724,9 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
       : "rax", "rcx", "rdx", "rdi", "rsi", "r8", "r9", "r10", "r11", "r12",
         "r13", "r14", "r15", "rsp", "memory"
 #elif defined(__i386__)
+   // In order for us to later call set_thread_area(), we have to already
+   // reserve an entry number. But for the time being, we invalidate %fs,
+   // so that we can call debugging log functions from int$0 handlers.
   struct user_desc u;
   u.entry_number    = (typeof u.entry_number)-1;
   u.base_addr       = 0;
@@ -736,12 +741,15 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
   if (sys.set_thread_area(&u) < 0) {
     die("Cannot set up thread local storage");
   }
-  asm volatile("movw %w0, %%fs"
-      :
-      : "q"(8*u.entry_number+3));
   asm volatile(
       "push %%ebx\n"
       "push %%ebp\n"
+
+      // Prepare %fs for later use, but for now mark it as invalid. This allows
+      // us to call the debug logging functions from the int$0 handler.
+      "mov  %1, %%esi\n"
+      "xor  %%eax, %%eax\n"
+      "movw %%ax, %%fs\n"
 
       // Signal handlers are process-wide. This means that for security
       // reasons, we cannot allow that the trusted thread ever executes any
@@ -769,6 +777,8 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
       "mov  $120+0xF000, %%eax\n"  // __NR_clone + 0xF000
       "mov  %%esp, %%ebp\n"
       "int  $0\n"                  // push a signal stack frame (see clone.cc)
+      "movw %%si, %%fs\n"
+      "mov  %%esi, 0x4(%%esp)\n"   // set up %fs upon call to sigreturn()
       "mov  %%ebp, 0x1C(%%esp)\n"  // pop stack upon call to sigreturn()
       "mov  %%esp, %%ebp\n"
       "mov  $2, %%ebx\n"           // how     = SIG_SETMASK
@@ -1471,7 +1481,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
   "999:pop  %%ebp\n"
       "pop  %%ebx\n"
       :
-      : "g"(&args)
+      : "g"(&args), "g"(8*u.entry_number+3)
       : "eax", "ecx", "edx", "edi", "esi", "esp", "memory"
 #else
 #error Unsupported target platform

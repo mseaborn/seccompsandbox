@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include "debug.h"
 #include "sandbox_impl.h"
 
 #ifdef DEBUG
@@ -659,6 +660,22 @@ TEST(test_trap_resethand) {
   // Test second invocation of signal handler (should terminate program)
   intend_exit_status(SIGTRAP, true);
   asm volatile("int3");
+}
+
+TEST(test_debugging) {
+  int pipe_fds[2];
+  int rc = pipe(pipe_fds);
+  assert(rc == 0);
+  rc = dup2(pipe_fds[1], 2);
+  playground::Debug::enable();
+  StartSeccompSandbox();
+  rc = close(pipe_fds[1]);
+  assert(rc == 0);
+  char buf[4096];
+  ssize_t sz = read(pipe_fds[0], buf, sizeof(buf)-1);
+  assert(sz > 0);
+  buf[sz] = '\000';
+  assert(strstr(buf, "close:"));
 }
 
 struct testcase {
