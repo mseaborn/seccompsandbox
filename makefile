@@ -65,8 +65,8 @@ timestats: timestats.o
 	${CXX} ${LDFLAGS} -o $@ $<
 
 testbin64: test.cc ${OBJS64}
-	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o testbin.o64 $<
-	${CXX} ${LDFLAGS} -o testbin64 testbin.o64 ${OBJS64} -lpthread -ldl
+	${CXX} ${CFLAGS} ${CPPFLAGS} -m64 -c -o testbin.o64 $<
+	${CXX} ${LDFLAGS} -m64 -o testbin64 testbin.o64 ${OBJS64} -lpthread -ldl
 
 testbin32: test.cc ${OBJS32}
 	${CXX} ${CFLAGS} ${CPPFLAGS} -m32 -c -o testbin.o32 $<
@@ -79,16 +79,16 @@ playground: playground.o
 	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o $@ $<
 
 preload64.so: ${OBJS64}
-	${CXX} ${LDFLAGS} -shared -o $@ $+ -lpthread
+	${CXX} ${LDFLAGS} -m64 -shared -o $@ $+ -lpthread
 
 preload32.so: ${OBJS32}
 	${CXX} ${LDFLAGS} -m32 -shared -o $@ $+ -lpthread
 
 .cc.o64: ${HEADERS}
-	${CXX} ${CFLAGS} ${CPPFLAGS} -fPIC -c -o $@ $<
+	${CXX} ${CFLAGS} ${CPPFLAGS} -m64 -fPIC -c -o $@ $<
 
 .c.o64: ${HEADERS}
-	${CC} ${CFLAGS} ${CPPFLAGS} --std=gnu99 -fPIC -c -o $@ $<
+	${CC} ${CFLAGS} ${CPPFLAGS} -m64 --std=gnu99 -fPIC -c -o $@ $<
 
 .cc.o32: ${HEADERS}
 	${CXX} ${CFLAGS} ${CPPFLAGS} -m32 -fPIC -c -o $@ $<
