@@ -41,6 +41,15 @@
  *   results in prefixes "sys[0..9]_". It is also possible to set this
  *   macro to -1, which avoids all prefixes.
  *
+ * SYS_SYSCALL_ENTRYPOINT:
+ *   Some applications (such as sandboxes that filter system calls), need
+ *   to be able to run custom-code each time a system call is made. If this
+ *   macro is defined, it expands to the name of a "common" symbol. If
+ *   this symbol is assigned a non-NULL pointer value, it is used as the
+ *   address of the system call entrypoint.
+ *   A pointer to this symbol can be obtained by calling
+ *   get_syscall_entrypoint()
+ *
  * This file defines a few internal symbols that all start with "LSS_".
  * Do not access these symbols from outside this file. They are not part
  * of the supported API.
@@ -52,7 +61,8 @@
  * Porting to other related platforms should not be difficult.
  */
 #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) ||   \
-     defined(__mips__) || defined(__PPC__)) && defined(__linux)
+     defined(__mips__) || defined(__PPC__) || defined(__ARM_EABI__)) \
+  && defined(__linux)
 
 #ifndef SYS_CPLUSPLUS
 #ifdef __cplusplus
@@ -81,7 +91,6 @@ extern "C" {
 /* Include definitions of the ABI currently in use.                          */
 #include <sgidefs.h>
 #endif
-
 #endif
 
 /* As glibc often provides subtly incompatible data structures (and implicit
@@ -193,7 +202,8 @@ struct kernel_rusage {
 };
 
 struct siginfo;
-#if defined(__i386__) || defined(__ARM_ARCH_3__) || defined(__PPC__)
+#if defined(__i386__) || defined(__ARM_EABI__) || defined(__ARM_ARCH_3__) \
+  || defined(__PPC__)
 
 /* include/asm-{arm,i386,mips,ppc}/signal.h                                  */
 struct kernel_old_sigaction {
@@ -330,7 +340,7 @@ struct kernel_stat64 {
 #endif
 
 /* include/asm-{arm,i386,mips,x86_64,ppc}/stat.h                             */
-#if defined(__i386__) || defined(__ARM_ARCH_3__)
+#if defined(__i386__) || defined(__ARM_ARCH_3__) || defined(__ARM_EABI__)
 struct kernel_stat {
   /* The kernel headers suggest that st_dev and st_rdev should be 32bit
    * quantities encoding 12bit major and 20bit minor numbers in an interleaved
@@ -496,7 +506,7 @@ struct kernel_statfs {
 
 /* Definitions missing from the standard header files                        */
 #ifndef O_DIRECTORY
-#if defined(__ARM_ARCH_3__)
+#if defined(__ARM_ARCH_3__) || defined(__ARM_EABI__)
 #define O_DIRECTORY             0040000
 #else
 #define O_DIRECTORY             0200000
@@ -746,7 +756,7 @@ struct kernel_statfs {
 #define __NR_fallocate          324
 #endif
 /* End of i386 definitions                                                   */
-#elif defined(__ARM_ARCH_3__)
+#elif defined(__ARM_ARCH_3__) || defined(__ARM_EABI__)
 #ifndef __NR_setresuid
 #define __NR_setresuid          (__NR_SYSCALL_BASE + 164)
 #define __NR_getresuid          (__NR_SYSCALL_BASE + 165)
@@ -849,7 +859,7 @@ struct kernel_statfs {
 #ifndef __NR_getcpu
 #define __NR_getcpu             (__NR_SYSCALL_BASE + 345)
 #endif
-/* End of ARM 3 definitions                                                  */
+/* End of ARM 3/EABI definitions                                                */
 #elif defined(__x86_64__)
 #ifndef __NR_pread64
 #define __NR_pread64             17
@@ -1368,7 +1378,8 @@ struct kernel_statfs {
   #endif
 
   #undef  LSS_RETURN
-  #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__))
+  #if (defined(__i386__) || defined(__x86_64__) || defined(__ARM_ARCH_3__) \
+       || defined(__ARM_EABI__))
   /* Failing system calls return a negative result in the range of
    * -1..-4095. These are "errno" values with the sign inverted.
    */
@@ -1414,12 +1425,56 @@ struct kernel_statfs {
      * at optimizing across __asm__ calls.
      * So, we just have to redefine all of the _syscallX() macros.
      */
+    #undef LSS_ENTRYPOINT
+    #ifdef SYS_SYSCALL_ENTRYPOINT
+    typedef void (**LSS_NAME(syscall_entrypoint_t))(void);
+    static inline LSS_NAME(syscall_entrypoint_t)
+                                       LSS_NAME(get_syscall_entrypoint)(void) {
+      LSS_NAME(syscall_entrypoint_t) entrypoint;
+      asm volatile(".bss\n"
+                   ".align 8\n"
+                   ".globl "SYS_SYSCALL_ENTRYPOINT"\n"
+                   ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"
+                   ".previous\n"
+                   /* This logically does 'lea "SYS_SYSCALL_ENTRYPOINT", %0' */
+                   "call 0f\n"
+                 "0:pop  %0\n"
+                   "add  $_GLOBAL_OFFSET_TABLE_+[.-0b], %0\n"
+                   "mov  "SYS_SYSCALL_ENTRYPOINT"@GOT(%0), %0\n"
+                   : "=r"(entrypoint));
+      return entrypoint;
+    }
+
+    #define LSS_ENTRYPOINT ".bss\n"                                           \
+                           ".align 8\n"                                       \
+                           ".globl "SYS_SYSCALL_ENTRYPOINT"\n"                \
+                           ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"           \
+                           ".previous\n"                                      \
+                           /* Check the SYS_SYSCALL_ENTRYPOINT vector      */ \
+                           "push %%eax\n"                                     \
+                           "call 10000f\n"                                    \
+                     "10000:pop  %%eax\n"                                     \
+                           "add  $_GLOBAL_OFFSET_TABLE_+[.-10000b], %%eax\n"  \
+                           "mov  "SYS_SYSCALL_ENTRYPOINT"@GOT(%%eax), %%eax\n"\
+                           "mov  0(%%eax), %%eax\n"                           \
+                           "test %%eax, %%eax\n"                              \
+                           "jz   10001f\n"                                    \
+                           "push %%eax\n"                                     \
+                           "lea  10002f, %%eax\n"                             \
+                           "xchg 4(%%esp), %%eax\n"                           \
+                           "ret\n"                                            \
+                     "10001:pop  %%eax\n"                                     \
+                           "int $0x80\n"                                      \
+                     "10002:\n"
+    #else
+    #define LSS_ENTRYPOINT "int $0x80\n"
+    #endif
     #undef  LSS_BODY
     #define LSS_BODY(type,args...)                                            \
       long __res;                                                             \
       __asm__ __volatile__("push %%ebx\n"                                     \
                            "movl %2,%%ebx\n"                                  \
-                           "int $0x80\n"                                      \
+                           LSS_ENTRYPOINT                                     \
                            "pop %%ebx"                                        \
                            args                                               \
                            : "esp", "memory");                                \
@@ -1428,10 +1483,10 @@ struct kernel_statfs {
     #define _syscall0(type,name)                                              \
       type LSS_NAME(name)(void) {                                             \
         long __res;                                                           \
-        __asm__ volatile("int $0x80"                                          \
+        __asm__ volatile(LSS_ENTRYPOINT                                       \
                          : "=a" (__res)                                       \
                          : "0" (__NR_##name)                                  \
-                         : "memory");                                         \
+                         : "esp", "memory");                                  \
         LSS_RETURN(type,__res);                                               \
       }
     #undef  _syscall1
@@ -1473,7 +1528,7 @@ struct kernel_statfs {
         __asm__ __volatile__("push %%ebx\n"                                   \
                              "movl %2,%%ebx\n"                                \
                              "movl %1,%%eax\n"                                \
-                             "int  $0x80\n"                                   \
+                             LSS_ENTRYPOINT                                   \
                              "pop  %%ebx"                                     \
                              : "=a" (__res)                                   \
                              : "i" (__NR_##name), "ri" ((long)(arg1)),        \
@@ -1494,7 +1549,7 @@ struct kernel_statfs {
                              "movl 4(%2),%%ebp\n"                             \
                              "movl 0(%2), %%ebx\n"                            \
                              "movl %1,%%eax\n"                                \
-                             "int  $0x80\n"                                   \
+                             LSS_ENTRYPOINT                                   \
                              "pop  %%ebx\n"                                   \
                              "pop  %%ebp"                                     \
                              : "=a" (__res)                                   \
@@ -1550,7 +1605,7 @@ struct kernel_statfs {
                            "pushl  %%ebx\n"
                            "movl   %%eax,%%ebx\n"
                            "movl   %2,%%eax\n"
-                           "int    $0x80\n"
+                           LSS_ENTRYPOINT
 
                            /* In the parent: restore %ebx
                             * In the child:  move "fn" into %ebx
@@ -1578,7 +1633,7 @@ struct kernel_statfs {
                             */
                            "movl   %%eax,%%ebx\n"
                            "movl   $1,%%eax\n"
-                           "int    $0x80\n"
+                           LSS_ENTRYPOINT
 
                            /* Return to parent.
                             */
@@ -1631,7 +1686,7 @@ struct kernel_statfs {
       __asm__ __volatile__("call   2f\n"
                          "0:.align 16\n"
                          "1:movl   %1,%%eax\n"
-                           "int    $0x80\n"
+                           LSS_ENTRYPOINT
                          "2:popl   %0\n"
                            "addl   $(1b-0b),%0\n"
                            : "=a" (res)
@@ -1650,7 +1705,7 @@ struct kernel_statfs {
                          "0:.align 16\n"
                          "1:pop    %%eax\n"
                            "movl   %1,%%eax\n"
-                           "int    $0x80\n"
+                           LSS_ENTRYPOINT
                          "2:popl   %0\n"
                            "addl   $(1b-0b),%0\n"
                            : "=a" (res)
@@ -1664,10 +1719,45 @@ struct kernel_statfs {
      * location (e.g. when using the clone() system call with the CLONE_VM
      * option).
      */
+    #undef LSS_ENTRYPOINT
+    #ifdef SYS_SYSCALL_ENTRYPOINT
+    typedef void (**LSS_NAME(syscall_entrypoint_t))(void);
+    static inline LSS_NAME(syscall_entrypoint_t)
+                                       LSS_NAME(get_syscall_entrypoint)(void) {
+      LSS_NAME(syscall_entrypoint_t) entrypoint;
+      asm volatile(".bss\n"
+                   ".align 8\n"
+                   ".globl "SYS_SYSCALL_ENTRYPOINT"\n"
+                   ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"
+                   ".previous\n"
+                   "mov "SYS_SYSCALL_ENTRYPOINT"@GOTPCREL(%%rip), %0\n"
+                   : "=r"(entrypoint));
+      return entrypoint;
+    }
+
+    #define LSS_ENTRYPOINT                                                    \
+              ".bss\n"                                                        \
+              ".align 8\n"                                                    \
+              ".globl "SYS_SYSCALL_ENTRYPOINT"\n"                             \
+              ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"                        \
+              ".previous\n"                                                   \
+              "mov "SYS_SYSCALL_ENTRYPOINT"@GOTPCREL(%%rip), %%rcx\n"         \
+              "mov  0(%%rcx), %%rcx\n"                                        \
+              "test %%rcx, %%rcx\n"                                           \
+              "jz   10001f\n"                                                 \
+              "call *%%rcx\n"                                                 \
+              "jmp  10002f\n"                                                 \
+        "10001:syscall\n"                                                     \
+        "10002:\n"
+
+    #else
+    #define LSS_ENTRYPOINT "syscall\n"
+    #endif
     #undef  LSS_BODY
     #define LSS_BODY(type,name, ...)                                          \
           long __res;                                                         \
-          __asm__ __volatile__("syscall" : "=a" (__res) : "0" (__NR_##name),  \
+          __asm__ __volatile__(LSS_ENTRYPOINT                                 \
+            : "=a" (__res) : "0" (__NR_##name),                               \
             ##__VA_ARGS__ : "r11", "rcx", "memory");                          \
           LSS_RETURN(type, __res)
     #undef _syscall0
@@ -1695,7 +1785,7 @@ struct kernel_statfs {
     #define _syscall4(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4)  \
       type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4) {   \
           long __res;                                                         \
-          __asm__ __volatile__("movq %5,%%r10; syscall" :                     \
+          __asm__ __volatile__("movq %5,%%r10;" LSS_ENTRYPOINT :              \
             "=a" (__res) : "0" (__NR_##name),                                 \
             "D" ((long)(arg1)), "S" ((long)(arg2)), "d" ((long)(arg3)),       \
             "r" ((long)(arg4)) : "r10", "r11", "rcx", "memory");              \
@@ -1707,7 +1797,7 @@ struct kernel_statfs {
       type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
                           type5 arg5) {                                       \
           long __res;                                                         \
-          __asm__ __volatile__("movq %5,%%r10; movq %6,%%r8; syscall" :       \
+          __asm__ __volatile__("movq %5,%%r10; movq %6,%%r8;" LSS_ENTRYPOINT :\
             "=a" (__res) : "0" (__NR_##name),                                 \
             "D" ((long)(arg1)), "S" ((long)(arg2)), "d" ((long)(arg3)),       \
             "r" ((long)(arg4)), "r" ((long)(arg5)) :                          \
@@ -1721,7 +1811,7 @@ struct kernel_statfs {
                           type5 arg5, type6 arg6) {                           \
           long __res;                                                         \
           __asm__ __volatile__("movq %5,%%r10; movq %6,%%r8; movq %7,%%r9;"   \
-                               "syscall" :                                    \
+                               LSS_ENTRYPOINT :                               \
             "=a" (__res) : "0" (__NR_##name),                                 \
             "D" ((long)(arg1)), "S" ((long)(arg2)), "d" ((long)(arg3)),       \
             "r" ((long)(arg4)), "r" ((long)(arg5)), "r" ((long)(arg6)) :      \
@@ -1765,7 +1855,7 @@ struct kernel_statfs {
                               *                %r10 = child_tidptr)
                               */
                              "movq   %2,%%rax\n"
-                             "syscall\n"
+                             LSS_ENTRYPOINT
 
                              /* if (%rax != 0)
                               *   return;
@@ -1787,7 +1877,7 @@ struct kernel_statfs {
                               */
                              "movq   %%rax,%%rdi\n"
                              "movq   %3,%%rax\n"
-                             "syscall\n"
+                             LSS_ENTRYPOINT
 
                              /* Return to parent.
                               */
@@ -1815,7 +1905,7 @@ struct kernel_statfs {
       __asm__ __volatile__("call   2f\n"
                          "0:.align 16\n"
                          "1:movq   %1,%%rax\n"
-                           "syscall\n"
+                           LSS_ENTRYPOINT
                          "2:popq   %0\n"
                            "addq   $(1b-0b),%0\n"
                            : "=a" (res)
@@ -1826,7 +1916,7 @@ struct kernel_statfs {
     /* Most definitions of _syscallX() neglect to mark "memory" as being
      * clobbered. This causes problems with compilers, that do a better job
      * at optimizing across __asm__ calls.
-     * So, we just have to redefine all fo the _syscallX() macros.
+     * So, we just have to redefine all of the _syscallX() macros.
      */
     #undef LSS_REG
     #define LSS_REG(r,a) register long __r##r __asm__("r"#r) = (long)a
@@ -1939,7 +2029,136 @@ struct kernel_statfs {
                              : "i"(-EINVAL),
                                "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
                                "r"(__ptid), "r"(__tls), "r"(__ctid)
-                             : "lr", "memory");
+                             : "cc", "lr", "memory");
+      }
+      LSS_RETURN(int, __res);
+    }
+  #elif defined(__ARM_EABI__)
+    /* Most definitions of _syscallX() neglect to mark "memory" as being
+     * clobbered. This causes problems with compilers, that do a better job
+     * at optimizing across __asm__ calls.
+     * So, we just have to redefine all fo the _syscallX() macros.
+     */
+    #undef LSS_REG
+    #define LSS_REG(r,a) register long __r##r __asm__("r"#r) = (long)a
+    #undef  LSS_BODY
+    #define LSS_BODY(type,name,args...)                                       \
+          register long __res_r0 __asm__("r0");                               \
+          long __res;                                                         \
+          __asm__ __volatile__ ("push {r7}\n"                                 \
+                                "mov r7, %1\n"                                \
+                                "swi 0x0\n"                                   \
+                                "pop {r7}\n"                                  \
+                                : "=r"(__res_r0)                              \
+                                : "i"(__NR_##name) , ## args                  \
+                                : "lr", "memory");                            \
+          __res = __res_r0;                                                   \
+          LSS_RETURN(type, __res)
+    #undef _syscall0
+    #define _syscall0(type, name)                                             \
+      type LSS_NAME(name)() {                                                 \
+        LSS_BODY(type, name);                                                 \
+      }
+    #undef _syscall1
+    #define _syscall1(type, name, type1, arg1)                                \
+      type LSS_NAME(name)(type1 arg1) {                                       \
+        LSS_REG(0, arg1); LSS_BODY(type, name, "r"(__r0));                    \
+      }
+    #undef _syscall2
+    #define _syscall2(type, name, type1, arg1, type2, arg2)                   \
+      type LSS_NAME(name)(type1 arg1, type2 arg2) {                           \
+        LSS_REG(0, arg1); LSS_REG(1, arg2);                                   \
+        LSS_BODY(type, name, "r"(__r0), "r"(__r1));                           \
+      }
+    #undef _syscall3
+    #define _syscall3(type, name, type1, arg1, type2, arg2, type3, arg3)      \
+      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3) {               \
+        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2));                \
+      }
+    #undef _syscall4
+    #define _syscall4(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4)  \
+      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4) {   \
+        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+        LSS_REG(3, arg4);                                                     \
+        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3));     \
+      }
+    #undef _syscall5
+    #define _syscall5(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
+                      type5,arg5)                                             \
+      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
+                          type5 arg5) {                                       \
+        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+        LSS_REG(3, arg4); LSS_REG(4, arg5);                                   \
+        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
+                             "r"(__r4));                                      \
+      }
+    #undef _syscall6
+    #define _syscall6(type,name,type1,arg1,type2,arg2,type3,arg3,type4,arg4,  \
+                      type5,arg5,type6,arg6)                                  \
+      type LSS_NAME(name)(type1 arg1, type2 arg2, type3 arg3, type4 arg4,     \
+                          type5 arg5, type6 arg6) {                           \
+        LSS_REG(0, arg1); LSS_REG(1, arg2); LSS_REG(2, arg3);                 \
+        LSS_REG(3, arg4); LSS_REG(4, arg5); LSS_REG(5, arg6);                 \
+        LSS_BODY(type, name, "r"(__r0), "r"(__r1), "r"(__r2), "r"(__r3),      \
+                             "r"(__r4), "r"(__r5));                           \
+      }
+    LSS_INLINE int LSS_NAME(clone)(int (*fn)(void *), void *child_stack,
+                                   int flags, void *arg, int *parent_tidptr,
+                                   void *newtls, int *child_tidptr) {
+      long __res;
+      {
+        register int   __flags __asm__("r0") = flags;
+        register void *__stack __asm__("r1") = child_stack;
+        register void *__ptid  __asm__("r2") = parent_tidptr;
+        register void *__tls   __asm__("r3") = newtls;
+        register int  *__ctid  __asm__("r4") = child_tidptr;
+        __asm__ __volatile__(/* if (fn == NULL || child_stack == NULL)
+                              *   return -EINVAL;
+                              */
+                             "cmp   %2,#0\n"
+                             "cmpne %3,#0\n"
+                             "moveq %0,%1\n"
+                             "beq   1f\n"
+
+                             /* Push "arg" and "fn" onto the stack that will be
+                              * used by the child.
+                              */
+                             "str   %5,[%3,#-4]!\n"
+                             "str   %2,[%3,#-4]!\n"
+
+                             /* %r0 = syscall(%r0 = flags,
+                              *               %r1 = child_stack,
+                              *               %r2 = parent_tidptr,
+                              *               %r3 = newtls,
+                              *               %r4 = child_tidptr)
+                              */
+                             "mov r7, %9\n"
+                             "swi 0x0\n"
+
+                             /* if (%r0 != 0)
+                              *   return %r0;
+                              */
+                             "movs  %0,r0\n"
+                             "bne   1f\n"
+
+                             /* In the child, now. Call "fn(arg)".
+                              */
+                             "ldr   r0,[sp, #4]\n"
+                             "mov   lr,pc\n"
+                             "ldr   pc,[sp]\n"
+
+                             /* Call _exit(%r0).
+                              */
+                             "mov r7, %10\n"
+                             "swi 0x0\n"
+                           "1:\n"
+                             : "=r" (__res)
+                             : "i"(-EINVAL),
+                               "r"(fn), "r"(__stack), "r"(__flags), "r"(arg),
+                               "r"(__ptid), "r"(__tls), "r"(__ctid),
+                               "i"(__NR_clone), "i"(__NR_exit)
+                             : "cc", "r7", "lr", "memory");
       }
       LSS_RETURN(int, __res);
     }
@@ -2391,12 +2610,14 @@ struct kernel_statfs {
                        gid_t *,         e,       gid_t *,     s)
   LSS_INLINE _syscall3(int,     getresuid,       uid_t *,     r,
                        uid_t *,         e,       uid_t *,     s)
+#if !defined(__ARM_EABI__)
   LSS_INLINE _syscall2(int,     getrlimit,       int,         r,
                       struct kernel_rlimit*, l)
+#endif
   LSS_INLINE _syscall1(pid_t,   getsid,          pid_t,       p)
   LSS_INLINE _syscall0(pid_t,   _gettid)
-  LSS_INLINE _syscall2(int,     gettimeofday,    struct timeval *, v,
-                       struct timezone *, z)
+  LSS_INLINE _syscall2(pid_t,   gettimeofday,    struct kernel_timeval*, t,
+                       void*, tz)
   LSS_INLINE _syscall5(int,     setxattr,        const char *,p,
                        const char *,   n,        const void *,v,
                        size_t,         s,        int,         f)
@@ -2455,10 +2676,9 @@ struct kernel_statfs {
                        size_t,         c)
   LSS_INLINE _syscall4(int, rt_sigprocmask,      int,         h,
                        const struct kernel_sigset_t*,  s,
-                       struct kernel_sigset_t*,        o, size_t, c);
-  LSS_INLINE _syscall1(int, rt_sigreturn,        unsigned long, u);
+                       struct kernel_sigset_t*,        o, size_t, c)
   LSS_INLINE _syscall2(int, rt_sigsuspend,
-                       const struct kernel_sigset_t*, s,  size_t, c);
+                       const struct kernel_sigset_t*, s,  size_t, c)
   LSS_INLINE _syscall3(int,     sched_getaffinity,pid_t,      p,
                        unsigned int,   l, unsigned long *, m)
   LSS_INLINE _syscall3(int,     sched_setaffinity,pid_t,      p,
@@ -2493,11 +2713,11 @@ struct kernel_statfs {
                        pid_t,          t, int,            s)
   LSS_INLINE _syscall2(int,     tkill,           pid_t,       p,
                        int,            s)
+  LSS_INLINE _syscall1(int,     unlink,           const char*, f)
   LSS_INLINE _syscall3(ssize_t, write,            int,        f,
                        const void *,   b, size_t, c)
   LSS_INLINE _syscall3(ssize_t, writev,           int,        f,
                        const struct kernel_iovec*, v, size_t, c)
-  LSS_INLINE _syscall1(int,     unlink,          const char*, f)
   #if defined(__NR_getcpu)
     LSS_INLINE _syscall3(long, getcpu, unsigned *, cpu,
                          unsigned *, node, void *, unused);
@@ -2595,6 +2815,7 @@ struct kernel_statfs {
     }
   #endif
   #if defined(__x86_64__) || defined(__ARM_ARCH_3__) ||                       \
+      defined(__ARM_EABI__) ||                                             \
      (defined(__mips__) && _MIPS_SIM != _MIPS_SIM_ABI32)
     LSS_INLINE _syscall4(pid_t, wait4,            pid_t, p,
                          int*,                    s, int,       o,
@@ -2608,25 +2829,27 @@ struct kernel_statfs {
     LSS_INLINE _syscall4(int, openat, int, d, const char *, p, int, f, int, m)
     LSS_INLINE _syscall3(int, unlinkat, int, d, const char *, p, int, f)
   #endif
-  #if defined(__i386__) || defined(__ARM_ARCH_3__)
+  #if defined(__i386__) || defined(__ARM_ARCH_3__) || defined(__ARM_EABI__)
     #define __NR__getresgid32 __NR_getresgid32
     #define __NR__getresuid32 __NR_getresuid32
     #define __NR__setfsgid32  __NR_setfsgid32
     #define __NR__setfsuid32  __NR_setfsuid32
     #define __NR__setresgid32 __NR_setresgid32
     #define __NR__setresuid32 __NR_setresuid32
+#if defined(__ARM_EABI__)
     LSS_INLINE _syscall2(int,   ugetrlimit,        int,          r,
                         struct kernel_rlimit*, l)
+#endif
     LSS_INLINE _syscall3(int,     _getresgid32,    gid_t *,      r,
                          gid_t *,            e,    gid_t *,      s)
     LSS_INLINE _syscall3(int,     _getresuid32,    uid_t *,      r,
                          uid_t *,            e,    uid_t *,      s)
-    LSS_INLINE _syscall1(int,     _setfsgid32,      gid_t,       f)
-    LSS_INLINE _syscall1(int,     _setfsuid32,      uid_t,       f)
-    LSS_INLINE _syscall3(int,     _setresgid32,     gid_t,       r,
-                         gid_t,              e,     gid_t,       s)
-    LSS_INLINE _syscall3(int,     _setresuid32,     uid_t,       r,
-                         uid_t,              e,     uid_t,       s)
+    LSS_INLINE _syscall1(int,     _setfsgid32,     gid_t,        f)
+    LSS_INLINE _syscall1(int,     _setfsuid32,     uid_t,        f)
+    LSS_INLINE _syscall3(int,     _setresgid32,    gid_t,        r,
+                         gid_t,              e,    gid_t,        s)
+    LSS_INLINE _syscall3(int,     _setresuid32,    uid_t,        r,
+                         uid_t,              e,    uid_t,        s)
 
     LSS_INLINE int LSS_NAME(getresgid32)(gid_t *rgid,
                                          gid_t *egid,
@@ -2749,7 +2972,7 @@ struct kernel_statfs {
       return 0;
     }
   }
-
+  
   LSS_INLINE int LSS_NAME(sigismember)(struct kernel_sigset_t *set,
                                           int signum) {
     if (signum < 1 || signum > (int)(8*sizeof(set->sig))) {
@@ -2761,6 +2984,7 @@ struct kernel_statfs {
     }
   }
   #if defined(__i386__) || defined(__ARM_ARCH_3__) ||                         \
+      defined(__ARM_EABI__) ||                                             \
      (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI32) || defined(__PPC__)
     #define __NR__sigaction   __NR_sigaction
     #define __NR__sigpending  __NR_sigpending
@@ -2771,7 +2995,9 @@ struct kernel_statfs {
                          struct kernel_stat64 *, b)
     LSS_INLINE _syscall5(int, _llseek,     uint, fd, ulong, hi, ulong, lo,
                          loff_t *, res, uint, wh)
+#if !defined(__ARM_EABI__)
     LSS_INLINE _syscall1(void*, mmap,              void*, a)
+#endif
     LSS_INLINE _syscall6(void*, mmap2,             void*, s,
                          size_t,                   l, int,               p,
                          int,                      f, int,               d,
@@ -2986,12 +3212,37 @@ struct kernel_statfs {
       LSS_SC_BODY(4, int, 8, d, type, protocol, sv);
     }
   #endif
+  #if defined(__ARM_EABI__)
+    LSS_INLINE _syscall3(ssize_t, recvmsg, int, s, struct kernel_msghdr*, msg,
+                         int, flags)
+    LSS_INLINE _syscall3(ssize_t, sendmsg, int, s, const struct kernel_msghdr*,
+                         msg, int, flags)
+    LSS_INLINE _syscall6(ssize_t, sendto, int, s, const void*, buf, size_t, len,
+                         int, falgs, const struct kernel_sockaddr*, to,
+                         unsigned int, tolen)
+    LSS_INLINE _syscall2(int, shutdown, int, s, int, how)
+    LSS_INLINE _syscall3(int, socket, int, domain, int, type, int, protocol)
+    LSS_INLINE _syscall4(int, socketpair, int, d, int, type, int, protocol,
+                         int*, sv)
+  #endif
+  #if defined(__ARM_EABI__)
+    LSS_INLINE _syscall3(ssize_t, recvmsg, int, s, struct kernel_msghdr*, msg,
+                         int, flags)
+    LSS_INLINE _syscall3(ssize_t, sendmsg, int, s, const struct kernel_msghdr*,
+                         msg, int, flags)
+    LSS_INLINE _syscall6(ssize_t, sendto, int, s, const void*, buf, size_t,len,
+                         int, flags, const struct kernel_sockaddr*, to,
+                         unsigned int, tolen)
+    LSS_INLINE _syscall2(int, shutdown, int, s, int, how)
+    LSS_INLINE _syscall3(int, socket, int, domain, int, type, int, protocol)
+    LSS_INLINE _syscall4(int, socketpair, int, d, int, type, int, protocol,
+                         int*, sv)
+  #endif
   #if defined(__i386__) || defined(__ARM_ARCH_3__) ||                         \
       (defined(__mips__) && _MIPS_SIM == _MIPS_SIM_ABI32)
     #define __NR__socketcall  __NR_socketcall
     LSS_INLINE _syscall2(int,      _socketcall,    int,   c,
                          va_list,                  a)
-
     LSS_INLINE int LSS_NAME(socketcall)(int op, ...) {
       int rc;
       va_list ap;
@@ -3069,6 +3320,7 @@ struct kernel_statfs {
   #endif
   /* TODO(csilvers): see if ppc can/should support this as well              */
   #if defined(__i386__) || defined(__ARM_ARCH_3__) ||                         \
+      defined(__ARM_EABI__) ||                                             \
      (defined(__mips__) && _MIPS_SIM != _MIPS_SIM_ABI64)
     #define __NR__statfs64  __NR_statfs64
     #define __NR__fstatfs64 __NR_fstatfs64
@@ -3146,8 +3398,13 @@ struct kernel_statfs {
     switch (name) {
       case _SC_OPEN_MAX: {
         struct kernel_rlimit limit;
+#if defined(__ARM_EABI__)
+        return LSS_NAME(ugetrlimit)(RLIMIT_NOFILE, &limit) < 0
+            ? 8192 : limit.rlim_cur;
+#else
         return LSS_NAME(getrlimit)(RLIMIT_NOFILE, &limit) < 0
-               ? 8192 : limit.rlim_cur;
+            ? 8192 : limit.rlim_cur;
+#endif
       }
       case _SC_PAGESIZE:
         return __getpagesize();
@@ -3177,7 +3434,7 @@ struct kernel_statfs {
                          const void *,   b, size_t, c, unsigned, o1,
                          long, o2)
     LSS_INLINE _syscall4(int, _readahead,          int,         f,
-                         unsigned,       o1, unsigned, o2, size_t, c);
+                         unsigned,       o1, unsigned, o2, size_t, c)
     /* We force 64bit-wide parameters onto the stack, then access each
      * 32-bit component individually. This guarantees that we build the
      * correct parameters independent of the native byte-order of the
