@@ -4,7 +4,8 @@ LDFLAGS = -g
 CPPFLAGS =
 DEPFLAGS = -MMD -MF $@.d
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
-        syscall syscall_table trusted_thread trusted_process                  \
+        syscall syscall_table                                                 \
+        trusted_thread trusted_thread_asm trusted_process                     \
         access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
         munmap open prctl reference_trusted_thread sigaction sigprocmask      \
         socketcall stat
@@ -94,8 +95,14 @@ preload32.so: ${OBJS32}
 .c.o64:
 	${CC} ${CFLAGS} ${CPPFLAGS} -m64 --std=gnu99 -fPIC -c -o $@ $<
 
+.S.o64: ${HEADERS}
+	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m64 -c -o $@ $<
+
 .cc.o32:
 	${CXX} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m32 -fPIC -c -o $@ $<
 
 .c.o32:
 	${CC} ${CFLAGS} ${CPPFLAGS} -m32 --std=gnu99 -fPIC -c -o $@ $<
+
+.S.o32: ${HEADERS}
+	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m32 -c -o $@ $<

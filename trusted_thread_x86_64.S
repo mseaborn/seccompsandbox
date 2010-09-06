@@ -1,9 +1,12 @@
-// This has been automatically extracted from trusted_thread.cc.
-// It will be fixed up in the next commit.
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
+        .global playground$runTrustedThread
+playground$runTrustedThread:
         push %rbx
         push %rbp
-        mov  %0, %rbp            // %rbp = args
+        mov  %rdi, %rbp          // %rbp = args
         xor  %rbx, %rbx          // initial sequence number
         lea  999f(%rip), %r15    // continue in same thread
         xor  %rax, %rax
@@ -705,3 +708,4 @@
 
     999:pop  %rbp
         pop  %rbx
+        ret

@@ -50,6 +50,7 @@
         'tls.h',
         'trusted_process.cc',
         'trusted_thread.cc',
+        'trusted_thread_asm.S',
         'x86_decode.cc',
         'x86_decode.h',
       ],

@@ -1,14 +1,19 @@
-// This has been automatically extracted from trusted_thread.cc.
-// It will be fixed up in the next commit.
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
-        push %ebx
-        push %ebp
+        .global playground$runTrustedThread
+playground$runTrustedThread:
+        mov  4(%esp), %edi       // 1st arg: SecureMem::Args*
 
         // Prepare %fs for later use, but for now mark it as invalid. This allows
         // us to call the debug logging functions from the int$0 handler.
-        mov  %1, %esi
+        mov  8(%esp), %esi       // 2nd arg: segment selector for %fs
         xor  %eax, %eax
         movw %ax, %fs
+
+        push %ebx
+        push %ebp
 
         // Signal handlers are process-wide. This means that for security
         // reasons, we cannot allow that the trusted thread ever executes any
@@ -32,7 +37,6 @@
         // through the same steps of creating a signal stack frame on the
         // newly created thread's stacks prior to cloning. See clone.cc for
         // details.
-        mov  %0, %edi            // create signal stack before accessing MMX
         mov  $120+0xF000, %eax   // __NR_clone + 0xF000
         mov  %esp, %ebp
         int  $0                  // push a signal stack frame (see clone.cc)
@@ -739,3 +743,4 @@
 
     999:pop  %ebp
         pop  %ebx
+        ret
