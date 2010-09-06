@@ -15,6 +15,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
   args.cloneFdPub                       = cloneFdPub_;
 #if defined(__x86_64__)
   asm volatile(
+//CUT_x86_64_START
       "push %%rbx\n"
       "push %%rbp\n"
       "mov  %0, %%rbp\n"           // %rbp = args
@@ -234,7 +235,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
       "lea  101f(%%rip), %%rsi\n"  // "This is an expensive system call"
       "mov  $102f-101f, %%edx\n"   // len = strlen(msg)
       "syscall\n"
-    "6:"
+    "6:\n"
       #endif
 
       "mov  %%fs:0x18, %%rax\n"
@@ -719,6 +720,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
 
   "999:pop  %%rbp\n"
       "pop  %%rbx\n"
+//CUT_x86_64_END
       :
       : "g"(&args)
       : "rax", "rcx", "rdx", "rdi", "rsi", "r8", "r9", "r10", "r11", "r12",
@@ -742,6 +744,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
     die("Cannot set up thread local storage");
   }
   asm volatile(
+//CUT_i386_START
       "push %%ebx\n"
       "push %%ebp\n"
 
@@ -977,7 +980,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
       "mov  $102f-101f, %%edx\n"   // len = strlen(msg)
       "int  $0x80\n"
       "mov  %%ebp, %%ecx\n"
-   "6:"
+   "6:\n"
       #endif
 
       "mov  0x0C-0x1000(%%ecx), %%eax\n"
@@ -1480,6 +1483,7 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
 
   "999:pop  %%ebp\n"
       "pop  %%ebx\n"
+//CUT_i386_END
       :
       : "g"(&args), "g"(8*u.entry_number+3)
       : "eax", "ecx", "edx", "edi", "esi", "esp", "memory"
