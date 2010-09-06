@@ -81,7 +81,7 @@ playground: playground.o
 	${CXX} ${LDFLAGS} -o $@ $<
 
 .cc.o:
-	${CXX} ${CFLAGS} ${CPPFLAGS} -c -o $@ $<
+	${CXX} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -c -o $@ $<
 
 preload64.so: ${OBJS64}
 	${CXX} ${LDFLAGS} -m64 -shared -o $@ $+ -lpthread
@@ -93,16 +93,18 @@ preload32.so: ${OBJS32}
 	${CXX} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m64 -fPIC -c -o $@ $<
 
 .c.o64:
-	${CC} ${CFLAGS} ${CPPFLAGS} -m64 --std=gnu99 -fPIC -c -o $@ $<
+	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m64 --std=gnu99 -fPIC \
+		-c -o $@ $<
 
-.S.o64: ${HEADERS}
+.S.o64:
 	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m64 -c -o $@ $<
 
 .cc.o32:
 	${CXX} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m32 -fPIC -c -o $@ $<
 
 .c.o32:
-	${CC} ${CFLAGS} ${CPPFLAGS} -m32 --std=gnu99 -fPIC -c -o $@ $<
+	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m32 --std=gnu99 -fPIC \
+		-c -o $@ $<
 
-.S.o32: ${HEADERS}
+.S.o32:
 	${CC} ${CFLAGS} ${CPPFLAGS} ${DEPFLAGS} -m32 -c -o $@ $<
