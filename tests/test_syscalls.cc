@@ -707,8 +707,23 @@ TEST(test_prctl) {
   read(fds[1], &ch, 1);
   rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
   assert(rc == 0);
+
+  // Now clean up.  We have to collect the subprocess's stopped state
+  // with waitpid() otherwise PTRACE_KILL will not successfully kill
+  // the subprocess.
+  int status;
+  rc = waitpid(pid, &status, 0);
+  assert(rc == pid);
+  assert(WIFSTOPPED(status));
+  assert(WSTOPSIG(status) == SIGSTOP);
+
   rc = ptrace(PTRACE_KILL, pid, 0, 0);
   assert(rc == 0);
+
+  rc = waitpid(pid, &status, 0);
+  assert(rc == pid);
+  assert(WIFSIGNALED(status));
+  assert(WTERMSIG(status) == SIGKILL);
 }
 
 struct testcase {
