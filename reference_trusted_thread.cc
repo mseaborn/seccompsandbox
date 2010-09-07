@@ -245,10 +245,22 @@ int TrustedThread(void *arg) {
       assert(secureMem->sequence == sequence_no);
       sequence_no += 2;
       if (secureMem->syscallNum == __NR_exit) {
+        assert(sysnum == -2);
         int rc = sys.close(fd);
         assert(rc == 0);
         rc = sys.close(secureMem->threadFdPub);
         assert(rc == 0);
+        // Make the thread's memory area inaccessible as a sanity check.
+        rc = sys.mprotect(secureMem, 0x2000, PROT_NONE);
+        assert(rc == 0);
+        // Although the thread exit syscall does not read from the
+        // secure memory area, we use the mutex for it to ensure that
+        // the trusted process and trusted thread are synchronised.
+        // We do not want the trusted process to think that the
+        // thread's memory area has been freed while the trusted
+        // thread is still reading from it.
+        UnlockSyscallMutex();
+        // Fall through to exit the thread.
       }
       else if (secureMem->syscallNum == __NR_clone) {
         assert(sysnum == -2);
@@ -275,10 +287,6 @@ int TrustedThread(void *arg) {
         continue;
       }
       memcpy(syscall_args, &secureMem->syscallNum, sizeof(syscall_args));
-      // We release the mutex before doing the syscall, because we
-      // have now copied the arguments.
-      if (sysnum == -2)
-        UnlockSyscallMutex();
     }
     else if (sysnum == -3) {
       // RDTSC request.  Send back a dummy answer.
@@ -293,6 +301,13 @@ int TrustedThread(void *arg) {
       assert(got == rest_size);
     }
     syscall_result = DoSyscall(syscall_args);
+    if (sysnum == -2) {
+      // This syscall involves reading from the secure memory area for
+      // the thread.  We should only unlock this area when the syscall
+      // has completed.  Otherwise, the trusted process might
+      // overwrite the data while the kernel is still reading it.
+      UnlockSyscallMutex();
+    }
     int sent = sys.write(fd, &syscall_result, sizeof(syscall_result));
     assert(sent == sizeof(syscall_result));
   }
