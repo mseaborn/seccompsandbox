@@ -149,7 +149,7 @@ bool Maps::Iterator::operator!=(const Maps::Iterator& iter) const {
   return !operator==(iter);
 }
 
-Maps::string Maps::Iterator::name() const {
+const Maps::string& Maps::Iterator::name() const {
   return getIterator()->first;
 }
 

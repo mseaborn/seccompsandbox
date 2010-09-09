@@ -9,6 +9,7 @@
 namespace playground {
 
 extern "C" void preload() {
+  g_policy.allow_file_namespace = true;
   StartSeccompSandbox();
   write(2, "In secure mode, now!\n", 21);
   asm volatile("int3");

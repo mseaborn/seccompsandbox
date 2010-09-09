@@ -56,7 +56,7 @@ class Maps {
     Library* operator*() const;
     bool operator==(const Iterator& iter) const;
     bool operator!=(const Iterator& iter) const;
-    string name() const;
+    const string& name() const;
 
    protected:
     mutable LibraryMap::iterator iter_;
