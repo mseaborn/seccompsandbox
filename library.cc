@@ -359,7 +359,8 @@ bool Library::isSafeInsn(unsigned short insn) {
          (insn >= 0xC0 && insn <= 0xC1) || /* Bit Shift */
          (insn >= 0xD0 && insn <= 0xD3) || /* Bit Shift */
          (insn >= 0xC6 && insn <= 0xC7 /* MOV */) ||
-         (insn == 0xF7) /* TEST, NOT, NEG, MUL, IMUL, DIV, IDIV */;
+         (insn == 0xF7) /* TEST, NOT, NEG, MUL, IMUL, DIV, IDIV */ ||
+         (insn >= 0xF19 && insn <= 0xF1F) /* long NOP */;
 }
 
 char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
