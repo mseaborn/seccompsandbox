@@ -67,6 +67,18 @@ TEST(test_exit) {
   _exit(123);
 }
 
+// Although test_thread and test_clone test __NR_exit, they do not
+// necessarily let the trusted thread's __NR_exit handler run to
+// completion, because the first thread can call __NR_exit_group
+// before that happens.  So we test __NR_exit on its own.
+TEST(test_thread_exit) {
+  StartSeccompSandbox();
+  // The trusted thread and untrusted thread will be racing to return
+  // the exit status, which is fixed as 1 for the untrusted thread.
+  intend_exit_status(1, false);
+  syscall(__NR_exit, 1);
+}
+
 // This has an off-by-three error because it counts ".", "..", and the
 // FD for the /proc/self/fd directory.  This doesn't matter because it
 // is only used to check for differences in the number of open FDs.

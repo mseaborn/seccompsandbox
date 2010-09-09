@@ -241,10 +241,14 @@ int TrustedThread(void *arg) {
     if (sysnum == -1 || sysnum == -2) {
       // Syscall where the registers have been checked by the trusted
       // process, e.g. munmap() ranges must be OK.
-      // Doesn't need extra memory region.
+      // We check the sequence number before and after reading the
+      // syscall register data, in case this data is changed as we
+      // read it.
+      assert(secureMem->sequence == sequence_no);
+      memcpy(syscall_args, &secureMem->syscallNum, sizeof(syscall_args));
       assert(secureMem->sequence == sequence_no);
       sequence_no += 2;
-      if (secureMem->syscallNum == __NR_exit) {
+      if (syscall_args[0] == __NR_exit) {
         assert(sysnum == -2);
         int rc = sys.close(fd);
         assert(rc == 0);
@@ -260,9 +264,9 @@ int TrustedThread(void *arg) {
         // thread's memory area has been freed while the trusted
         // thread is still reading from it.
         UnlockSyscallMutex();
-        // Fall through to exit the thread.
+        sys._exit(1);
       }
-      else if (secureMem->syscallNum == __NR_clone) {
+      else if (syscall_args[0] == __NR_clone) {
         assert(sysnum == -2);
         // Note that HandleNewThread() does UnlockSyscallMutex() for us.
 #if defined(__x86_64__)
@@ -286,7 +290,6 @@ int TrustedThread(void *arg) {
         assert(sent == sizeof(syscall_result));
         continue;
       }
-      memcpy(syscall_args, &secureMem->syscallNum, sizeof(syscall_args));
     }
     else if (sysnum == -3) {
       // RDTSC request.  Send back a dummy answer.
