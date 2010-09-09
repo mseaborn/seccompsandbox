@@ -42,7 +42,6 @@ class Library {
       isVDSO_(false),
       asr_offset_(0),
       vsys_offset_(0),
-      maps_(0),
       image_(0),
       image_size_(0) {
   }
@@ -172,8 +171,9 @@ class Library {
   static int isSimpleSystemCall(char *start, char *end);
   static char* getScratchSpace(const Maps* maps, char* near, int needed,
                                char** extraSpace, int* extraLength);
-  void patchSystemCallsInFunction(const Maps* maps, char *start, char *end,
-                                  char** extraSpace, int* extraLength);
+  static void patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
+                                         char* start, char* end,
+                                         char** extraSpace, int* extraLength);
   int  patchVSystemCalls();
   void patchVDSO(char** extraSpace, int* extraLength);
 
@@ -182,13 +182,13 @@ class Library {
   bool            isVDSO_;
   char*           asr_offset_;
   int             vsys_offset_;
-  Maps*           maps_;
   Elf_Ehdr        ehdr_;
   SectionTable    section_table_;
   SymbolTable     symbols_;
   PltTable        plt_entries_;
   char*           image_;
   size_t          image_size_;
+  static Maps*    maps_;
   static char*    __kernel_vsyscall;
   static char*    __kernel_sigreturn;
   static char*    __kernel_rt_sigreturn;

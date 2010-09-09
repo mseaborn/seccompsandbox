@@ -77,6 +77,7 @@ typedef Elf32_Versym  Elf_Versym;
 
 namespace playground {
 
+Maps::Maps* Library::maps_;
 char* Library::__kernel_vsyscall;
 char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
@@ -382,9 +383,9 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
   Sandbox::die("Insufficient space to intercept system call");
 }
 
-void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
-                                         char *end, char** extraSpace,
-                                         int* extraLength) {
+void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
+                                         char* start, char* end,
+                                         char** extraSpace, int* extraLength) {
   std::set<char *, std::less<char *>, SystemAllocator<char *> > branch_targets;
   for (char *ptr = start; ptr < end; ) {
     unsigned short insn = next_inst((const char **)&ptr, __WORDSIZE == 64);
@@ -437,7 +438,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
         // inspect the destination address. If it indeed points to the
         // VSyscall area, we then adjust the destination address accordingly.
         (is_indirect_call =
-         (isVDSO_ && vsys_offset_ && code[codeIdx].insn == 0xFF &&
+         (vsys_offset && code[codeIdx].insn == 0xFF &&
           !code[codeIdx].is_ip_relative &&
           mod_rm && (*mod_rm & 0x38) == 0x10 /* CALL (indirect) */))) {
       is_syscall = !is_indirect_call;
@@ -759,7 +760,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, char *start,
       *reinterpret_cast<int *>(dest + post + 1) =
           (code[second].addr + code[second].len) - (dest + post + 5);
       if (is_indirect_call) {
-        *reinterpret_cast<int *>(dest + preamble + 13) = vsys_offset_;
+        *reinterpret_cast<int *>(dest + preamble + 13) = vsys_offset;
       } else {
         *reinterpret_cast<int *>(dest + preamble + 11) =
             (code[second].addr + code[second].len) - (dest + preamble + 15);
@@ -953,7 +954,7 @@ int Library::patchVSystemCalls() {
             }
 
             // Translate all SYSCALLs to jumps into our system call handler.
-            patchSystemCallsInFunction(NULL, start, ptr,
+            patchSystemCallsInFunction(NULL, 0, start, ptr,
                                        &extraSpace, &extraLength);
             break;
           }
@@ -1031,8 +1032,8 @@ void Library::patchSystemCalls() {
           has_syscall = false;
           // Our quick scan of the function found a potential system call.
           // Do a more thorough scan, now.
-          patchSystemCallsInFunction(maps_, func, ptr, &extraSpace,
-                                     &extraLength);
+          patchSystemCallsInFunction(maps_, isVDSO_ ? vsys_offset_ : 0, func,
+                                     ptr, &extraSpace, &extraLength);
         }
         func = ptr;
       }
@@ -1044,7 +1045,8 @@ void Library::patchSystemCalls() {
   if (has_syscall) {
     // Patch any remaining system calls that were in the last function before
     // the loop terminated.
-    patchSystemCallsInFunction(maps_, func, stop, &extraSpace, &extraLength);
+    patchSystemCallsInFunction(maps_, isVDSO_ ? vsys_offset_ : 0, func, stop,
+                               &extraSpace, &extraLength);
   }
 
   // Mark our scratch space as write-protected and executable.
