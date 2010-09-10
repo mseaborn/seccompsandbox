@@ -503,8 +503,9 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "jmp  3b\n"
 
       // Forward system call to syscallWrapper()
-   "19:call playground$syscallWrapper\n"
-      "jmp  3b\n"
+   "19:push $3b\n"
+      "push 0xE0(%%esp)\n"         // %eip at time of segmentation fault
+      "jmp  playground$syscallWrapper\n"
 
       // In order to implement SA_NODEFER, we have to keep track of recursive
       // calls to SIGSEGV handlers. This means we have to increment a counter
@@ -845,6 +846,24 @@ void Sandbox::startSandbox() {
 
   // Creating the trusted thread enables sandboxing
   g_create_trusted_thread(secureMem);
+
+  // Force direct system calls to jump to our wrapper function.
+  struct {
+    // Instantiate another copy of linux_syscall_support.h. This time, we
+    // define SYS_SYSCALL_ENTRYPOINT. This gives us access to a
+    // get_syscall_entrypoint() function that we can use to install a pointer
+    // to our system call wrapper.
+    // Any user of linux_syscall_support.h who wants to make sure that the
+    // sandbox properly redirects its system calls would define the same
+    // macro.
+    #undef  SYS_ERRNO
+    #define SYS_INLINE             inline
+    #define SYS_PREFIX             -1
+    #define SYS_SYSCALL_ENTRYPOINT "playground$syscallEntryPoint"
+    #undef  SYS_LINUX_SYSCALL_SUPPORT_H
+    #include "linux_syscall_support.h"
+  } entrypoint;
+  *entrypoint.get_syscall_entrypoint() = syscallWrapperNoFrame;
 
   // We can no longer check for sandboxing support at this point, but we also
   // know for a fact that it is available (as we just turned it on). So update

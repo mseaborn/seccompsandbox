@@ -391,17 +391,20 @@ class Sandbox {
         void* rdx;
         void* rcx;
         void* rbx;
+        void* deadbeef_marker;
         void* rbp;
         void* fake_ret;
       } regs64 __attribute__((packed));
     #elif defined(__i386__)
       struct {
-        void* ebp;
         void* edi;
         void* esi;
         void* edx;
         void* ecx;
         void* ebx;
+        void* deadbeef_marker;
+        void* ebp;
+        void* fake_ret;
       } regs32 __attribute__((packed));
     #else
     #error Unsupported target platform

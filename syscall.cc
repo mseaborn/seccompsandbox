@@ -41,6 +41,25 @@ asm(
 
     // This is the wrapper which is called by the untrusted code, trying to
     // make a system call.
+    "playground$syscallWrapperNoFrame:"
+    ".internal playground$syscallWrapperNoFrame\n"
+    ".globl playground$syscallWrapperNoFrame\n"
+    ".type playground$syscallWrapperNoFrame, @function\n"
+    #if defined(__x86_64__)
+    "mov  0(%rsp), %r11\n"         // add fake return address by duplicating
+    "push %r11\n"                  // real return address
+    /* fall through */
+    #elif defined(__i386__)
+    "push %eax\n"                  // add fake return address, which in this
+    "mov  4(%esp), %eax\n"         // case is identical to the real return
+    "xchg %eax, 0(%esp)\n"         // address
+    /* fall through */
+    #else
+    #error Unsupported target platform
+    #endif
+    ".size playground$syscallWrapperNoFrame, "
+        ".-playground$syscallWrapperNoFrame\n"
+
     "playground$syscallWrapper:"
     ".internal playground$syscallWrapper\n"
     ".globl playground$syscallWrapper\n"
@@ -57,6 +76,8 @@ asm(
 
     // Save all registers
   "1:push %rbp\n"
+    "movq  $0xDEADBEEFDEADBEEF, %rbp\n" // marker used by breakpad to remove
+    "push %rbp\n"                  // seccomp-sandbox's stack frame from dumps
     "mov  %rsp, %rbp\n"
     "push %rbx\n"
     "push %rcx\n"
@@ -113,6 +134,7 @@ asm(
     "pop %rdx\n"
     "pop %rcx\n"
     "pop %rbx\n"
+    "pop %rbp\n"                   // 0xDEADBEEF marker
     "pop %rbp\n"
 
     // Remove fake return address. This is added in the patching code in
@@ -142,7 +164,7 @@ asm(
     #elif defined(__i386__)
     "cmp  $119, %eax\n"            // NR_sigreturn
     "jnz  1f\n"
-    "add  $0x4, %esp\n"            // pop return address
+    "add  $0x8, %esp\n"            // pop return address
   "0:int  $0x80\n"                 // sigreturn() is unrestricted
     "mov  $66, %ebx\n"             // sigreturn() should never return
     "mov  %ebx, %eax\n"            // NR_exit
@@ -164,7 +186,7 @@ asm(
     // rt_sigframe to a legacy sigframe, discarding the extra data in the
     // process. Interestingly, the legacy signal frame is actually larger than
     // the rt signal frame, as it includes a lot more padding.
-    "sub  $0x1C8, %esp\n"          // a legacy signal stack is much larger
+    "sub  $0x1C4, %esp\n"          // a legacy signal stack is much larger
     "mov  0x1CC(%esp), %eax\n"     // push signal number
     "push %eax\n"
     "lea  0x270(%esp), %esi\n"     // copy siginfo register values
@@ -186,15 +208,17 @@ asm(
 
 
     // Preserve all registers
-  "3:push %ebx\n"
+  "3:push %ebp\n"
+    "push $0xDEADBEEF\n"           // marker used by breakpad
+    "push %ebx\n"
     "push %ecx\n"
     "push %edx\n"
     "push %esi\n"
     "push %edi\n"
-    "push %ebp\n"
 
     // Convert from syscall calling conventions to C calling conventions
     "push %ebp\n"
+    "lea  0x18(%esp), %ebp\n"      // frame pointer points to 0xDEADBEEF
     "push %edi\n"
     "push %esi\n"
     "push %edx\n"
@@ -287,12 +311,17 @@ asm(
     "add  $24, %esp\n"
 
     // Restore CPU registers, except for %eax which was set by the system call.
-  "8:pop  %ebp\n"
-    "pop  %edi\n"
+  "8:pop  %edi\n"
     "pop  %esi\n"
     "pop  %edx\n"
     "pop  %ecx\n"
     "pop  %ebx\n"
+    "pop  %ebp\n"                  // 0xDEADBEEF marker
+    "pop  %ebp\n"
+
+    // Remove fake return address. This is added in the patching code in
+    // library.cc and it makes stack traces a little cleaner.
+    "add  $4, %esp\n"
 
     // Return to caller
     "ret\n"

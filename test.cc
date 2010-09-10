@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#define SYS_SYSCALL_ENTRYPOINT "playground$syscallEntryPoint"
 #include "linux_syscall_support.h"
 
 #include "sandbox_impl.h"
@@ -146,6 +147,7 @@ int main(int argc, char *argv[]) {
   printf("It takes %fms to start the sandbox\n",
          tv.tv_sec  * 1000.0 + tv.tv_usec  / 1000.0 -
          tv0.tv_sec * 1000.0 - tv0.tv_usec / 1000.0);
+  sys_gettid();
   testSignals(&orig_sigmask);
 
   gettimeofday(&tv, 0);

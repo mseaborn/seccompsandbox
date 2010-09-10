@@ -561,6 +561,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // TODO(markus): Try to maintain frame pointers on x86-32
       //
       // .. .. .. .. ; any leading instructions copied from original code
+      // 68 .. .. .. ..              PUSH . + 11
       // 68 .. .. .. ..              PUSH return_addr
       // 68 .. .. .. ..              PUSH $syscallWrapper
       // C3                          RET
@@ -568,7 +569,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // 68 .. .. .. ..              PUSH return_addr
       // C3                          RET
       //
-      // Total: 17 bytes + any bytes that were copied
+      // Total: 22 bytes + any bytes that were copied
       //
       // For indirect jumps from the VDSO to the VSyscall page, we instead
       // replace the following code (this is only necessary on x86-64). This
@@ -584,7 +585,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // C7 44 24 04 00 00 00 00     MOVL $0, 4(%rsp)
       // C3                          RETQ
       // 48 87 04 24                 XCHG %rax,(%rsp)
-      // 48 89 44 24 08              MOV  %rax,0x8(%rsp)
+      // 48 89 44 24 08              MOV  %rax, 8(%rsp)
       // 58                          POP  %rax
       // C3                          RETQ
       // .. .. .. .. ; any trailing instructions copied from original code
@@ -627,9 +628,10 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
         // handle in the signal handler. That's a lot slower than rewriting the
         // instruction with a jump, but it should only happen very rarely.
         if (is_syscall) {
-          memcpy(code[codeIdx].addr, "\xCD", 2);
+          memcpy(code[codeIdx].addr, "\xCD" /* INT $0 */, 2);
           if (code[codeIdx].len > 2) {
-            memset(code[codeIdx].addr + 2, 0x90, code[codeIdx].len - 2);
+            memset(code[codeIdx].addr + 2, 0x90 /* NOP */,
+                   code[codeIdx].len - 2);
           }
           goto replaced;
         }
@@ -690,7 +692,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
         needed = 52 + preamble + postamble;
       }
       #elif defined(__i386__)
-      needed = 17 + preamble + postamble;
+      needed = 22 + preamble + postamble;
       #else
       #error Unsupported target platform
       #endif
@@ -713,7 +715,10 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // turn it into a PUSH instruction.
       #if defined(__x86_64__)
       if (is_indirect_call) {
-        memcpy(dest + preamble, "\xE8\x00\x00\x00\x00\x48\x83\x04\x24", 9);
+        memcpy(dest + preamble,
+               "\xE8\x00\x00\x00\x00"        // CALL .
+               "\x48\x83\x04\x24",           // ADDQ $.., (%rsp)
+               9);
         dest[preamble + 9] = code[codeIdx].len + 42;
         memcpy(dest + preamble + 10, code[codeIdx].addr, code[codeIdx].len);
 
@@ -727,15 +732,32 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       memcpy(dest + preamble,
            #if defined(__x86_64__)
            is_indirect_call ?
-           "\x48\x81\x3C\x24\x00\x00\x00\xFF\x72\x10\x81\x2C\x24\x00\x00\x00"
-           "\x00\xC7\x44\x24\x04\x00\x00\x00\x00\xC3\x48\x87\x04\x24\x48\x89"
-           "\x44\x24\x08\x58\xC3" :
-           "\x48\x81\xEC\x80\x00\x00\x00\x50\x48\x8D\x05\x00\x00\x00\x00\x50"
-           "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00\x50\x48\x8D\x05\x06\x00"
-           "\x00\x00\x48\x87\x44\x24\x10\xC3\x48\x81\xC4\x80\x00\x00",
+           "\x48\x81\x3C\x24\x00\x00\x00\xFF"// CMPQ $0xFFFFFFFFFF000000,0(rsp)
+           "\x72\x10"                        // JB   . + 16
+           "\x81\x2C\x24\x00\x00\x00\x00"    // SUBL ..., 0(%rsp)
+           "\xC7\x44\x24\x04\x00\x00\x00\x00"// MOVL $0, 4(%rsp)
+           "\xC3"                            // RETQ
+           "\x48\x87\x04\x24"                // XCHG %rax, (%rsp)
+           "\x48\x89\x44\x24\x08"            // MOV  %rax, 8(%rsp)
+           "\x58"                            // POP  %rax
+           "\xC3" :                          // RETQ
+           "\x48\x81\xEC\x80\x00\x00\x00"    // SUB  $0x80, %rsp
+           "\x50"                            // PUSH %rax
+           "\x48\x8D\x05\x00\x00\x00\x00"    // LEA  ...(%rip), %rax
+           "\x50"                            // PUSH %rax
+           "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00" //MOV $syscallWrapper,rax
+           "\x50"                            // PUSH %rax
+           "\x48\x8D\x05\x06\x00\x00\x00"    // LEA  6(%rip), %rax
+           "\x48\x87\x44\x24\x10"            // XCHG %rax, 16(%rsp)
+           "\xC3"                            // RETQ
+           "\x48\x81\xC4\x80\x00\x00",       // ADD  $0x80, %rsp
            is_indirect_call ? 37 : 47
            #elif defined(__i386__)
-           "\x68\x00\x00\x00\x00\x68\x00\x00\x00\x00\xC3", 11
+           "\x68\x00\x00\x00\x00"            // PUSH . + 11
+           "\x68\x00\x00\x00\x00"            // PUSH return_addr
+           "\x68\x00\x00\x00\x00"            // PUSH $syscallWrapper
+           "\xC3",                           // RET
+           16
            #else
            #error Unsupported target platform
            #endif
@@ -747,7 +769,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
              #if defined(__x86_64__)
              (is_indirect_call ? 37 : 47),
              #elif defined(__i386__)
-             11,
+             16,
              #else
              #error Unsupported target platform
              #endif
@@ -757,7 +779,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // Patch up the various computed values
       #if defined(__x86_64__)
       int post = preamble + (is_indirect_call ? 37 : 47) + postamble;
-      dest[post] = '\xE9';
+      dest[post] = '\xE9'; // JMPQ
       *reinterpret_cast<int *>(dest + post + 1) =
           (code[second].addr + code[second].len) - (dest + post + 5);
       if (is_indirect_call) {
@@ -769,13 +791,15 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
             reinterpret_cast<void *>(&syscallWrapper);
       }
       #elif defined(__i386__)
-      *(dest + preamble + 11 + postamble) = '\x68'; // PUSH
-      *reinterpret_cast<char **>(dest + preamble + 12 + postamble) =
+      *(dest + preamble + 16 + postamble) = '\x68'; // PUSH
+      *reinterpret_cast<char **>(dest + preamble + 17 + postamble) =
           code[second].addr + code[second].len;
-      *(dest + preamble + 16 + postamble) = '\xC3'; // RET
+      *(dest + preamble + 21 + postamble) = '\xC3'; // RET
       *reinterpret_cast<char **>(dest + preamble + 1) =
-          dest + preamble + 11;
-      *reinterpret_cast<void (**)()>(dest + preamble + 6) = syscallWrapper;
+          dest + preamble + 16;
+      *reinterpret_cast<char **>(dest + preamble + 6) =
+          code[second].addr + code[second].len;
+      *reinterpret_cast<void (**)()>(dest + preamble + 11) = syscallWrapper;
       #else
       #error Unsupported target platform
       #endif
@@ -825,10 +849,10 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
   if (__kernel_vsyscall) {
     // Replace the kernel entry point with:
     //
-    // E9 .. .. .. ..    JMP syscallWrapper
-    *__kernel_vsyscall = '\xE9';
+    // E9 .. .. .. ..    JMP syscallWrapperNoFrame
+    *__kernel_vsyscall = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_vsyscall + 1) =
-        reinterpret_cast<char *>(&syscallWrapper) -
+        reinterpret_cast<char *>(&syscallWrapperNoFrame) -
         reinterpret_cast<char *>(__kernel_vsyscall + 5);
   }
   if (__kernel_sigreturn) {
@@ -836,13 +860,17 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
     //
     // 58                POP %eax
     // B8 77 00 00 00    MOV $0x77, %eax
-    // E8 .. .. .. ..    CALL syscallWrapper
+    // E8 .. .. .. ..    CALL syscallWrapperNoFrame
     char* dest = getScratchSpace(maps_, __kernel_sigreturn, 11, extraSpace,
                                  extraLength);
-    memcpy(dest, "\x58\xB8\x77\x00\x00\x00\xE8", 7);
+    memcpy(dest,
+           "\x58"                 // POP %eax
+           "\xB8\x77\x00\x00\x00" // MOV %0x77, %eax
+           "\xE8",                // CALL syscallWrapperNoFrame
+           7);
     *reinterpret_cast<long *>(dest + 7) =
-        reinterpret_cast<char *>(&syscallWrapper) - dest - 11;;
-    *__kernel_sigreturn = '\xE9';
+        reinterpret_cast<char *>(&syscallWrapperNoFrame) - dest - 11;;
+    *__kernel_sigreturn = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_sigreturn + 1) =
         dest - reinterpret_cast<char *>(__kernel_sigreturn) - 5;
   }
@@ -850,13 +878,16 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
     // Replace the rt_sigreturn() system call with a jump to code that does:
     //
     // B8 AD 00 00 00    MOV $0xAD, %eax
-    // E8 .. .. .. ..    CALL syscallWrapper
+    // E8 .. .. .. ..    CALL syscallWrapperNoFrame
     char* dest = getScratchSpace(maps_, __kernel_rt_sigreturn, 10, extraSpace,
                                  extraLength);
-    memcpy(dest, "\xB8\xAD\x00\x00\x00\xE8", 6);
+    memcpy(dest,
+           "\xB8\xAD\x00\x00\x00" // MOV $0xAD, %eax
+           "\xE8",                // CALL syscallWrapperNoFrame
+           6);
     *reinterpret_cast<long *>(dest + 6) =
-        reinterpret_cast<char *>(&syscallWrapper) - dest - 10;
-    *__kernel_rt_sigreturn = '\xE9';
+        reinterpret_cast<char *>(&syscallWrapperNoFrame) - dest - 10;
+    *__kernel_rt_sigreturn = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_rt_sigreturn + 1) =
         dest - reinterpret_cast<char *>(__kernel_rt_sigreturn) - 5;
   }
