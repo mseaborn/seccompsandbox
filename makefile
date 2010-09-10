@@ -11,7 +11,8 @@ MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
-ALL_OBJS = $(OBJS32) $(OBJS64) tests/test_syscalls.o64 tests/test_syscalls.o32
+ALL_OBJS = $(OBJS32) $(OBJS64) tests/test_syscalls.o64 tests/test_syscalls.o32 \
+           timestats.o playground.o
 DEP_FILES = $(wildcard $(foreach f,$(ALL_OBJS),$(f).d))
 
 include $(DEP_FILES)
