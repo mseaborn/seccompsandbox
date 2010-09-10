@@ -701,8 +701,8 @@ playground$runTrustedThread:
         syscall
 
         .pushsection ".rodata"
-    100:.ascii "Sandbox violation detected, program aborted\\n"
-    101:.ascii "WARNING! This is an expensive system call\\n"
+    100:.ascii "Sandbox violation detected, program aborted\n"
+    101:.ascii "WARNING! This is an expensive system call\n"
     102:
         .popsection
 
