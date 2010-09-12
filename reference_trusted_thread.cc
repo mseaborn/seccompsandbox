@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/unistd.h>
 #include "mutex.h"
 #include "sandbox_impl.h"
 
@@ -87,72 +88,6 @@ asm(
     ".popsection\n"
     );
 
-void ReturnFromCloneSyscall(SecureMem::Args *secureMem) {
-  // TODO(mseaborn): Call sigreturn() to unblock signals.
-#if defined(__x86_64__)
-  // Get stack argument that was passed to clone().
-  void **stack = (void**) secureMem->rsi;
-  // Account for the x86-64 red zone adjustment that our syscall
-  // interceptor does when returning from the system call.
-  stack = (void**) ((char*) stack - 128);
-  *--stack = secureMem->ret;
-  *--stack = secureMem->r15;
-  *--stack = secureMem->r14;
-  *--stack = secureMem->r13;
-  *--stack = secureMem->r12;
-  *--stack = secureMem->r11;
-  *--stack = secureMem->r10;
-  *--stack = secureMem->r9;
-  *--stack = secureMem->r8;
-  *--stack = secureMem->rdi;
-  *--stack = secureMem->rsi;
-  *--stack = secureMem->rdx;
-  *--stack = secureMem->rcx;
-  *--stack = secureMem->rbx;
-  *--stack = secureMem->rbp;
-  asm("mov %0, %%rsp\n"
-      "pop %%rbp\n"
-      "pop %%rbx\n"
-      "pop %%rcx\n"
-      "pop %%rdx\n"
-      "pop %%rsi\n"
-      "pop %%rdi\n"
-      "pop %%r8\n"
-      "pop %%r9\n"
-      "pop %%r10\n"
-      "pop %%r11\n"
-      "pop %%r12\n"
-      "pop %%r13\n"
-      "pop %%r14\n"
-      "pop %%r15\n"
-      "mov $0, %%rax\n"
-      "ret\n"
-      : : "m"(stack));
-#elif defined(__i386__)
-  // Get stack argument that was passed to clone().
-  void **stack = (void**) secureMem->ecx;
-  *--stack = secureMem->ret;
-  *--stack = secureMem->ebp;
-  *--stack = secureMem->edi;
-  *--stack = secureMem->esi;
-  *--stack = secureMem->edx;
-  *--stack = secureMem->ecx;
-  *--stack = secureMem->ebx;
-  asm("mov %0, %%esp\n"
-      "pop %%ebx\n"
-      "pop %%ecx\n"
-      "pop %%edx\n"
-      "pop %%esi\n"
-      "pop %%edi\n"
-      "pop %%ebp\n"
-      "mov $0, %%eax\n"
-      "ret\n"
-      : : "m"(stack));
-#else
-#error Unsupported target platform
-#endif
-}
-
 void InitCustomTLS(void *addr) {
   Sandbox::SysCalls sys;
 #if defined(__x86_64__)
@@ -211,10 +146,61 @@ char *AllocateStack() {
   return (char *) stack + stack_size;
 }
 
+void ReturnFromCloneSyscall(void *signal_frame) {
+#if defined(__x86_64__)
+  asm("mov %0, %%rsp\n"
+      "syscall"
+      : : "m"(signal_frame), "a"(__NR_rt_sigreturn));
+#elif defined(__i386__)
+  asm("mov %0, %%esp\n"
+      "int $0x80"
+      : : "m"(signal_frame), "a"(__NR_sigreturn));
+#else
+#error Unsupported target platform
+#endif
+}
+
 int HandleNewThread(void *arg) {
   SecureMem::Args *secureMem = (SecureMem::Args *) arg;
+
+  // TODO(mseaborn): The register values could be copied across in
+  // clone.cc instead of in trusted code.  We don't need to copy the
+  // register values via secureMem.
+  void *signal_frame = secureMem->arg2;
+#if defined(__x86_64__)
+  struct ucontext *uc = (struct ucontext *) signal_frame;
+  uc->uc_mcontext.gregs[REG_R8] = (long) secureMem->r8;
+  uc->uc_mcontext.gregs[REG_R9] = (long) secureMem->r9;
+  uc->uc_mcontext.gregs[REG_R10] = (long) secureMem->r10;
+  uc->uc_mcontext.gregs[REG_R11] = (long) secureMem->r11;
+  uc->uc_mcontext.gregs[REG_R12] = (long) secureMem->r12;
+  uc->uc_mcontext.gregs[REG_R13] = (long) secureMem->r13;
+  uc->uc_mcontext.gregs[REG_R14] = (long) secureMem->r14;
+  uc->uc_mcontext.gregs[REG_R15] = (long) secureMem->r15;
+  uc->uc_mcontext.gregs[REG_RDI] = (long) secureMem->rdi;
+  uc->uc_mcontext.gregs[REG_RSI] = (long) secureMem->rsi;
+  uc->uc_mcontext.gregs[REG_RBP] = (long) secureMem->rbp;
+  uc->uc_mcontext.gregs[REG_RBX] = (long) secureMem->rbx;
+  uc->uc_mcontext.gregs[REG_RDX] = (long) secureMem->rdx;
+  uc->uc_mcontext.gregs[REG_RCX] = (long) secureMem->rcx;
+  uc->uc_mcontext.gregs[REG_RAX] = 0; // Result of clone()
+  uc->uc_mcontext.gregs[REG_RIP] = (long) secureMem->ret;
+#elif defined(__i386__)
+  struct sigcontext *sc = (struct sigcontext *) signal_frame;
+  sc->edi = (long) secureMem->edi;
+  sc->esi = (long) secureMem->esi;
+  sc->ebp = (long) secureMem->ebp;
+  sc->ebx = (long) secureMem->ebx;
+  sc->edx = (long) secureMem->edx;
+  sc->ecx = (long) secureMem->ecx;
+  sc->eax = 0; // Result of clone()
+  sc->eip = (long) secureMem->ret;
+#else
+#error Unsupported target platform
+#endif
+
   CreateReferenceTrustedThread(secureMem->newSecureMem);
-  ReturnFromCloneSyscall(secureMem);
+  ReturnFromCloneSyscall(signal_frame);
   return 0;
 }
 

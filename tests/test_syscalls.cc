@@ -226,6 +226,27 @@ TEST(test_clone_disallowed_flags) {
   assert(errno == EPERM);
 }
 
+void *empty_thread(void *arg) {
+  return NULL;
+}
+
+void *spawn_thread_and_exit(void *arg) {
+  pthread_t *tid = (pthread_t *) arg;
+  pthread_create(tid, NULL, empty_thread, NULL);
+  return NULL;
+}
+
+// This tests that clone() works OK if the parent thread immediately
+// exits.
+TEST(test_thread_parent_exits) {
+  StartSeccompSandbox();
+  pthread_t tid1;
+  pthread_t tid2;
+  pthread_create(&tid1, NULL, spawn_thread_and_exit, &tid2);
+  pthread_join(tid1, NULL);
+  pthread_join(tid2, NULL);
+}
+
 static void *fp_thread(void *x) {
   int val;
   asm("movss %%xmm0, %0" : "=m"(val));
