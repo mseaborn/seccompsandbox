@@ -138,7 +138,8 @@ bool Sandbox::process_stat(int parentMapsFd, int sandboxFd, int threadFdPub,
         (ssize_t)stat_req.path_length) {
       goto read_parm_failed;
     }
-    Debug::message(("Denying access to \"" + std::string(tmp) + "\"").c_str());
+    Debug::message(("Denying access to \"" +
+                    std::string(tmp, stat_req.path_length) + "\"").c_str());
     SecureMem::abandonSystemCall(threadFd, -EACCES);
     return false;
   }
