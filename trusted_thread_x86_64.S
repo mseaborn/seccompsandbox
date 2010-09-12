@@ -140,7 +140,7 @@ playground$runTrustedThread:
         cmp  $-4, %rax           // EINTR
         jz   2b
         cmp  %rdx, %rax
-        jnz  25f                 // exit process
+        jnz  fatal_error
 
         // Retrieve system call number. It is crucial that we only dereference
         // %fs:0x1000 exactly once. Afterwards, memory becomes untrusted and
@@ -152,9 +152,9 @@ playground$runTrustedThread:
         cmp  $-1, %eax
         jnz  5f
       3:cmp  %rbx, %fs:0x8
-        jne  25f                 // exit process
+        jne  fatal_error
         cmp  %fs:0x10, %eax
-        jne  25f                 // exit process
+        jne  fatal_error
         mov  %fs:0x18, %rax
         mov  %fs:0x20, %rdi
         mov  %fs:0x28, %rsi
@@ -163,7 +163,7 @@ playground$runTrustedThread:
         mov  %fs:0x40, %r8
         mov  %fs:0x48, %r9
         cmp  %rbx, %fs:0x8
-        jne  25f                 // exit process
+        jne  fatal_error
         add  $2, %rbx
 
         // shmget() gets some special treatment. Whenever we return from this
@@ -177,7 +177,7 @@ playground$runTrustedThread:
         mov  $1, %esi            // stack = 1
         syscall
         test %rax, %rax
-        js   25f                 // exit process
+        js   fatal_error
         mov  %rax, %rdi
         jnz  8f                  // wait for child, then return result
         mov  %fs:0x0, %rdi       // start = secure_mem
@@ -210,9 +210,9 @@ playground$runTrustedThread:
         cmp  $-2, %eax
         jnz  9f
         cmp  %rbx, %fs:0x8
-        jne  25f                 // exit process
+        jne  fatal_error
         cmp  %eax, %fs:0x10
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // When debugging messages are enabled, warn about expensive system calls
         #ifndef NDEBUG
@@ -234,7 +234,7 @@ playground$runTrustedThread:
         mov  %fs:0x40, %r8
         mov  %fs:0x48, %r9
         cmp  %rbx, %fs:0x8
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // clone() has unusual calling conventions and must be handled specially
         cmp  $56, %rax           // NR_clone
@@ -249,7 +249,7 @@ playground$runTrustedThread:
 
         // Unlock mutex
       7:cmp  %rbx, %fs:0x8
-        jne  25f                 // exit process
+        jne  fatal_error
         add  $2, %rbx
         mov  %rax, %r8
         mov  $56, %eax           // NR_clone
@@ -257,7 +257,7 @@ playground$runTrustedThread:
         mov  $1, %rsi            // stack = 1
         syscall
         test %rax, %rax
-        js   25f                 // exit process
+        js   fatal_error
         jz   22f                 // unlock and exit
         mov  %rax, %rdi
       8:xor  %rsi, %rsi
@@ -293,13 +293,13 @@ playground$runTrustedThread:
         jnz  13f
         #endif
         cmp  playground$maxSyscall(%rip), %eax
-        ja   25f                 // exit process
+        ja   fatal_error
         shl  $4, %rax
         lea  playground$syscallTable(%rip), %rdi
         add  %rdi, %rax
         mov  0(%rax), %rax
         cmp  $1, %rax
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // Default behavior for unrestricted system calls is to just execute
         // them. Read the remaining arguments first.
@@ -312,7 +312,7 @@ playground$runTrustedThread:
         cmp  $-4, %rax           // EINTR
         jz   14b
         cmp  %rdx, %rax
-        jnz  25f                 // exit process
+        jnz  fatal_error
         mov  %r9, %rax
         mov  0x04(%r8), %rdi
         mov  0x0C(%r8), %rsi
@@ -336,7 +336,7 @@ playground$runTrustedThread:
         jz   1b
         cmp  $-4, %rax           // EINTR
         jz   17b
-        jmp  25f                 // exit process
+        jmp  fatal_error
 
         // NR_exit:
         // Exit trusted thread after cleaning up resources
@@ -423,7 +423,7 @@ playground$runTrustedThread:
         // If things went wrong, we don't have an (easy) way of signaling
         // the parent. For our purposes, it is sufficient to fail with a
         // fatal error.
-        jmp  25f                 // exit process
+        jmp  fatal_error
      21:xor  %rsi, %rsi
         xor  %rdx, %rdx
         xor  %r10, %r10
@@ -446,7 +446,8 @@ playground$runTrustedThread:
      23:mov  $60, %eax           // NR_exit
         mov  $1, %edi            // status = 1
      24:syscall
-     25:mov  $1, %eax            // NR_write
+fatal_error:
+        mov  $1, %eax            // NR_write
         mov  $2, %edi            // fd = stderr
         lea  100f(%rip), %rsi    // "Sandbox violation detected"
         mov  $101f-100f, %edx    // len = strlen(msg)
@@ -458,7 +459,7 @@ playground$runTrustedThread:
         // The first page is mapped read-only for use as securely shared memory
      28:mov  0xC8(%rbp), %r12    // %r12 = secure shared memory
         cmp  %rbx, 8(%rbp)
-        jne  25b                 // exit process
+        jne  fatal_error
         mov  $10, %eax           // NR_mprotect
         mov  %r12, %rdi          // addr = secure_mem
         mov  $4096, %esi         // len  = 4096
@@ -483,10 +484,10 @@ playground$runTrustedThread:
         mov  %r12, %r8           // tls   = new_secure_mem
         mov  0xD0(%rbp), %r15d   // %r15  = processFdPub
         cmp  %rbx, 8(%rbp)
-        jne  25b                 // exit process
+        jne  fatal_error
         syscall
         test %rax, %rax
-        js   25b                 // exit process
+        js   fatal_error
         jz   0b                  // invoke trustedThreadFnc()
 
         // Copy the caller's signal mask
@@ -504,7 +505,7 @@ playground$runTrustedThread:
         mov  $0x1001, %edi       // option = ARCH_SET_GS
         syscall
         cmp  $-4095, %rax        // return codes -1..-4095 are errno values
-        jae  25b                 // exit process
+        jae  fatal_error
 
         // Check whether this is the initial thread, or a newly created one.
         // At startup we run the same code as when we create a new thread. At
@@ -556,7 +557,7 @@ playground$runTrustedThread:
         mov  0xC0(%rbp), %rax
         mov  %rax, 0x68(%r8)     // %r15
         cmp  %rbx, 8(%rbp)
-        jne  25b                 // exit process
+        jne  fatal_error
 
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
@@ -566,7 +567,7 @@ playground$runTrustedThread:
         mov  $1, %rsi            // stack = 1
         syscall
         test %rax, %rax
-        js   25b                 // exit process
+        js   fatal_error
         jne  31f
 
         // Use sendmsg() to send to the trusted process the file handles for
@@ -574,7 +575,7 @@ playground$runTrustedThread:
         // of the secure memory area (for sanity checks) and the thread id.
         mov  0xD4(%rbp), %edi    // transport = Sandbox::cloneFdPub()
         cmp  %rbx, 8(%rbp)
-        jne  25b                 // exit process
+        jne  fatal_error
 
         // 0x00 msg:
         //   0x00 msg_name       ($0)
@@ -635,7 +636,7 @@ playground$runTrustedThread:
         mov  $3, %edx            // PROT_READ | PROT_WRITE
         syscall
         cmp  %rbx, 8(%rbp)
-        jne  25b                 // exit process
+        jne  fatal_error
         lock; addl $0x80000000, (%rdi)
         jz   30f                 // exit process (no error message)
         mov  $1, %edx
@@ -664,7 +665,7 @@ playground$runTrustedThread:
         mov  $1, %esi
         syscall
         test %rax, %rax
-        jnz  25b                 // exit process
+        jnz  fatal_error
 
         // We can finally start using the stack. Signal handlers no longer pose
         // a threat to us.
@@ -684,7 +685,7 @@ playground$runTrustedThread:
         cmp  $-4, %rax           // EINTR
         jz   33b
         cmp  %rdx, %rax
-        jne  25b                 // exit process
+        jne  fatal_error
         pop  %rax
 
         // Return to caller. We are in the new thread, now.

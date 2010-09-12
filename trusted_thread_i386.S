@@ -143,7 +143,7 @@ playground$runTrustedThread:
         cmp  $-4, %eax           // EINTR
         jz   2b
         cmp  %edx, %eax
-        jnz  25f                 // exit process
+        jnz  fatal_error
 
         // Retrieve system call number. It is crucial that we only dereference
         // 0x1000(%mm5) exactly once. Afterwards, memory becomes untrusted and
@@ -156,9 +156,9 @@ playground$runTrustedThread:
         jnz  5f
       3:movd %mm2, %ebp
         cmp  %ebp, 0x4-0x1000(%ecx)
-        jne  25f                 // exit process
+        jne  fatal_error
         cmp  0x08-0x1000(%ecx), %eax
-        jne  25f                 // exit process
+        jne  fatal_error
         mov  0x0C-0x1000(%ecx), %eax
         mov  0x10-0x1000(%ecx), %ebx
         mov  0x18-0x1000(%ecx), %edx
@@ -171,7 +171,7 @@ playground$runTrustedThread:
         movd %mm2, %ebp
         movd %mm5, %edi
         cmp  %ebp, 4(%edi)
-        jne  25f                 // exit process
+        jne  fatal_error
         add  $2, %ebp
         movd %ebp, %mm2
         movd %mm4, %edi
@@ -190,7 +190,7 @@ playground$runTrustedThread:
         mov  $1, %ecx            // stack = 1
         int  $0x80
         test %eax, %eax
-        js   25f                 // exit process
+        js   fatal_error
         mov  %eax, %ebx
         jnz  8f                  // wait for child, then return result
         movd %mm5, %ebx          // start = secure_mem
@@ -225,9 +225,9 @@ playground$runTrustedThread:
         jnz  9f
         movd %mm2, %ebp
         cmp  %ebp, 0x4-0x1000(%ecx)
-        jne  25f                 // exit process
+        jne  fatal_error
         cmp  %eax, 0x8-0x1000(%ecx)
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // When debugging messages are enabled, warn about expensive system calls
         #ifndef NDEBUG
@@ -255,7 +255,7 @@ playground$runTrustedThread:
         movd %mm2, %ebp
         movd %mm5, %edi
         cmp  %ebp, 4(%edi)
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // clone() has unusual calling conventions and must be handled specially
         cmp  $120, %eax          // NR_clone
@@ -274,7 +274,7 @@ playground$runTrustedThread:
       7:movd %mm2, %ebp
         movd %mm5, %edi
         cmp  %ebp, 4(%edi)
-        jne  25f                 // exit process
+        jne  fatal_error
         add  $2, %ebp
         movd %ebp, %mm2
         mov  %eax, %ebp
@@ -283,7 +283,7 @@ playground$runTrustedThread:
         mov  $1, %ecx            // stack = 1
         int  $0x80
         test %eax, %eax
-        js   25f                 // exit process
+        js   fatal_error
         jz   22f                 // unlock and exit
         mov  %eax, %ebx
       8:xor  %ecx, %ecx
@@ -320,12 +320,12 @@ playground$runTrustedThread:
         jnz  13f                 // debug mode
         #endif
         cmp  playground$maxSyscall, %eax
-        ja   25f                 // exit process
+        ja   fatal_error
         shl  $3, %eax
         add  $playground$syscallTable, %eax
         mov  0(%eax), %eax
         cmp  $1, %eax
-        jne  25f                 // exit process
+        jne  fatal_error
 
         // Default behavior for unrestricted system calls is to just execute
         // them. Read the remaining arguments first.
@@ -337,7 +337,7 @@ playground$runTrustedThread:
         cmp  $-4, %eax           // EINTR
         jz   14b
         cmp  %edx, %eax
-        jnz  25f                 // exit process
+        jnz  fatal_error
         mov  %ebp, %eax
         mov  0x00(%ecx), %ebx
         mov  0x08(%ecx), %edx
@@ -361,7 +361,7 @@ playground$runTrustedThread:
         jz   1b
         cmp  $-4, %eax           // EINTR
         jz   17b
-        jmp  25f                 // exit process
+        jmp  fatal_error
 
         // NR_exit:
         // Exit trusted thread after cleaning up resources
@@ -383,7 +383,7 @@ playground$runTrustedThread:
         int  $0x80
         mov  %eax, %ebx
         test %eax, %eax
-        js   25f                 // exit process
+        js   fatal_error
         jne  21f                 // reap helper, exit thread
         jmp  22f                 // unlock mutex
 
@@ -452,7 +452,7 @@ playground$runTrustedThread:
         // If things went wrong, we don't have an (easy) way of signaling
         // the parent. For our purposes, it is sufficient to fail with a
         // fatal error.
-        jmp  25f                 // exit process
+        jmp  fatal_error
      21:xor  %ecx, %ecx
         xor  %edx, %edx
         mov  $7, %eax            // NR_waitpid
@@ -474,7 +474,8 @@ playground$runTrustedThread:
      23:mov  $1, %eax            // NR_exit
         mov  $1, %ebx            // status = 1
      24:int  $0x80
-     25:mov  $4, %eax            // NR_write
+fatal_error:
+        mov  $4, %eax            // NR_write
         mov  $2, %ebx            // fd = stderr
         lea  100f, %ecx          // "Sandbox violation detected"
         mov  $101f-100f, %edx    // len = strlen(msg)
@@ -489,7 +490,7 @@ playground$runTrustedThread:
         movd %ebx, %mm5          // %mm5 = secure_mem
         movd %mm2, %esi
         cmp  %esi, 4(%edi)
-        jne  25b                 // exit process
+        jne  fatal_error
         mov  $125, %eax          // NR_mprotect
         mov  $4096, %ecx         // len  = 4096
         mov  $1, %edx            // prot = PROT_READ
@@ -512,10 +513,10 @@ playground$runTrustedThread:
         mov  $1, %ecx            // stack = 1
         movd 0x48(%edi), %mm1    // %mm1  = processFdPub
         cmp  %esi, 4(%edi)
-        jne  25b                 // exit process
+        jne  fatal_error
         int  $0x80
         test %eax, %eax
-        js   25b                 // exit process
+        js   fatal_error
         jz   0b                  // invoke trustedThreadFnc()
 
         // Set up thread local storage
@@ -533,7 +534,7 @@ playground$runTrustedThread:
         lea  -0x10(%ebp), %ebx
         int  $0x80
         test %eax, %eax
-        jnz  25b                 // exit process
+        jnz  fatal_error
 
         // Copy the caller's signal mask
         movd %mm5, %edx
@@ -580,7 +581,7 @@ playground$runTrustedThread:
         mov  0x40(%edi), %eax
         mov  %eax, 0x24(%ebp)    // %ebx
         cmp  %edx, 4(%edi)
-        jne  25b                 // exit process
+        jne  fatal_error
 
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
@@ -590,14 +591,14 @@ playground$runTrustedThread:
         mov  $1, %ecx            // stack = 1
         int  $0x80
         test %eax, %eax
-        js   25b                 // exit process
+        js   fatal_error
         jne  31f
 
         // Use sendmsg() to send to the trusted process the file handles for
         // communicating with the new trusted thread. We also send the address
         // of the secure memory area (for sanity checks) and the thread id.
         cmp  %edx, 4(%edi)
-        jne  25b                 // exit process
+        jne  fatal_error
 
         // 0x00 socketcall:
         //   0x00 socket         (0x4C(%edi))
@@ -670,7 +671,7 @@ playground$runTrustedThread:
         int  $0x80
         movd %mm2, %edx
         cmp  %edx, 0x4(%edi)
-        jnz  25b                 // exit process
+        jnz  fatal_error
         lock; addl $0x80000000, (%ebx)
         jz   30f                 // exit process (no error message)
         mov  $1, %edx
@@ -698,7 +699,7 @@ playground$runTrustedThread:
         mov  $1, %ecx
         int  $0x80
         test %eax, %eax
-        jnz  25b                 // exit process
+        jnz  fatal_error
 
         // We can finally start using the stack. Signal handlers no longer pose
         // a threat to us.
@@ -718,7 +719,7 @@ playground$runTrustedThread:
         cmp  $-4, %eax           // EINTR
         jz   34b
         cmp  %edx, %eax
-        jne  25b                 // exit process
+        jne  fatal_error
         pop  %eax
 
         // Return to caller. We are in the new thread, now.
