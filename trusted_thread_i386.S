@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/unistd.h>
+
+
         .global playground$runTrustedThread
 playground$runTrustedThread:
         mov  4(%esp), %edi       // 1st arg: SecureMem::Args*
@@ -37,7 +40,7 @@ playground$runTrustedThread:
         // through the same steps of creating a signal stack frame on the
         // newly created thread's stacks prior to cloning. See clone.cc for
         // details.
-        mov  $120+0xF000, %eax   // __NR_clone + 0xF000
+        mov  $__NR_clone + 0xF000, %eax
         mov  %esp, %ebp
         int  $0                  // push a signal stack frame (see clone.cc)
         movw %si, %fs
@@ -50,9 +53,9 @@ playground$runTrustedThread:
         mov  %esp, %ecx          // set     = full mask
         xor  %edx, %edx          // old_set = NULL
         mov  $8, %esi            // mask all 64 signals
-        mov  $175, %eax          // NR_rt_sigprocmask
+        mov  $__NR_rt_sigprocmask, %eax
         int  $0x80
-        mov  $126, %eax          // NR_sigprocmask
+        mov  $__NR_sigprocmask, %eax
         int  $0x80
         xor  %esp, %esp          // invalidate the stack in all trusted code
         movd %edi, %mm6          // %mm6 = args
@@ -134,7 +137,7 @@ playground$runTrustedThread:
         // Read request from untrusted thread, or from trusted process. In either
         // case, the data that we read has to be considered untrusted.
         // read(threadFd, &scratch, 4)
-      1:mov  $3, %eax            // NR_read
+      1:mov  $__NR_read, %eax
         movd %mm0, %ebx          // fd  = threadFd
         movd %mm5, %ecx          // secure_mem
         add  $0x1000, %ecx       // buf = &scratch
@@ -179,13 +182,13 @@ playground$runTrustedThread:
 
         // shmget() gets some special treatment. Whenever we return from this
         // system call, we remember the most recently returned SysV shm id.
-        cmp  $117, %eax          // NR_ipc
+        cmp  $__NR_ipc, %eax
         jnz  4f
         cmp  $23, %ebx           // shmget()
         jnz  4f
         int  $0x80
         mov  %eax, %ebp
-        mov  $120, %eax          // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %ebx           // flags = SIGCHLD
         mov  $1, %ecx            // stack = 1
         int  $0x80
@@ -196,7 +199,7 @@ playground$runTrustedThread:
         movd %mm5, %ebx          // start = secure_mem
         mov  $4096, %ecx         // len   = 4096
         mov  $3, %edx            // prot  = PROT_READ | PROT_WRITE
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         int  $0x80
         mov  %ebp, 0x54(%ebx)    // set most recently returned SysV shm id
         xor  %ebx, %ebx
@@ -206,7 +209,7 @@ playground$runTrustedThread:
         movd %mm5, %ecx
         cmpw $0, 0x50(%ecx)      // debug mode
         jz   27f
-        mov  $4, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
         lea  101f, %ecx          // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
@@ -234,7 +237,7 @@ playground$runTrustedThread:
         cmpw $0, 0x50-0x1000(%ecx)
         jz   6f                  // debug mode
         mov  %ecx, %ebp
-        mov  $4, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
         lea  101f, %ecx          // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
@@ -258,11 +261,11 @@ playground$runTrustedThread:
         jne  fatal_error
 
         // clone() has unusual calling conventions and must be handled specially
-        cmp  $120, %eax          // NR_clone
+        cmp  $__NR_clone, %eax
         jz   19f
 
         // exit() terminates trusted thread
-        cmp  $1, %eax            // NR_exit
+        cmp  $__NR_exit, %eax
         jz   18f
 
         // Perform requested system call
@@ -278,7 +281,7 @@ playground$runTrustedThread:
         add  $2, %ebp
         movd %ebp, %mm2
         mov  %eax, %ebp
-        mov  $120, %eax          // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %ebx           // flags = SIGCHLD
         mov  $1, %ecx            // stack = 1
         int  $0x80
@@ -288,7 +291,7 @@ playground$runTrustedThread:
         mov  %eax, %ebx
       8:xor  %ecx, %ecx
         xor  %edx, %edx
-        mov  $7, %eax            // NR_waitpid
+        mov  $__NR_waitpid, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
         jz   8b
@@ -329,7 +332,7 @@ playground$runTrustedThread:
 
         // Default behavior for unrestricted system calls is to just execute
         // them. Read the remaining arguments first.
-     13:mov  $3, %eax            // NR_read
+     13:mov  $__NR_read, %eax
         movd %mm0, %ebx          // fd  = threadFd
         add  $4, %ecx            // buf = &scratch + 4
         mov  $24, %edx           // len = 6*sizeof(void *)
@@ -345,7 +348,7 @@ playground$runTrustedThread:
         mov  0x10(%ecx), %edi
         mov  0x14(%ecx), %ebp
         mov  0x04(%ecx), %ecx
-        cmp  $252, %eax          // NR_exit_group
+        cmp  $__NR_exit_group, %eax
         jz   27f                 // exit program, no message
         int  $0x80
 
@@ -355,7 +358,7 @@ playground$runTrustedThread:
         mov  %eax, (%ecx)
         mov  $4, %edx            // len   = 4
      16:movd %mm0, %ebx          // fd    = threadFd
-        mov  $4, %eax            // NR_write
+        mov  $__NR_write, %eax
      17:int  $0x80
         cmp  %edx, %eax
         jz   1b
@@ -367,17 +370,17 @@ playground$runTrustedThread:
         // Exit trusted thread after cleaning up resources
      18:mov  %edi, %ecx          // secure_mem
         mov  0x68(%ecx), %ebx    // fd     = threadFdPub
-        mov  $6, %eax            // NR_close
+        mov  $__NR_close, %eax
         int  $0x80
         mov  %ecx, %ebx          // start  = secure_mem
         mov  $8192, %ecx         // length = 8192
         xor  %edx, %edx          // prot   = PROT_NONE
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         int  $0x80
         movd %mm0, %ebx          // fd     = threadFd
-        mov  $6, %eax            // NR_close
+        mov  $__NR_close, %eax
         int  $0x80
-        mov  $120, %eax          // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %ebx           // flags = SIGCHLD
         mov  $1, %ecx            // stack = 1
         int  $0x80
@@ -428,7 +431,7 @@ playground$runTrustedThread:
         movd %eax, %mm3          // Request to return from clone() when done
 
         // Get thread id of nascent thread
-     20:mov  $224, %eax          // NR_gettid
+     20:mov  $__NR_gettid, %eax
         int  $0x80
         movd %eax, %mm4
 
@@ -437,7 +440,7 @@ playground$runTrustedThread:
         // We can create the filehandles on the child's stack. Filehandles are
         // always treated as untrusted.
         // socketpair(AF_UNIX, SOCK_STREAM, 0, fds)
-        mov  $102, %eax          // NR_socketcall
+        mov  $__NR_socketcall, %eax
         mov  $8, %ebx            // socketpair
         sub  $8, %ebp            // sv       = child_stack
         mov  %ebp, -0x04(%ebp)
@@ -455,7 +458,7 @@ playground$runTrustedThread:
         jmp  fatal_error
      21:xor  %ecx, %ecx
         xor  %edx, %edx
-        mov  $7, %eax            // NR_waitpid
+        mov  $__NR_waitpid, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
         jz   21b
@@ -463,25 +466,25 @@ playground$runTrustedThread:
      22:lea  playground$syscall_mutex, %ebx
         mov  $4096, %ecx
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         int  $0x80
         lock; addl $0x80000000, (%ebx)
         jz   23f                 // exit thread
         mov  $1, %edx
         mov  %edx, %ecx          // FUTEX_WAKE
-        mov  $240, %eax          // NR_futex
+        mov  $__NR_futex, %eax
         int  $0x80
-     23:mov  $1, %eax            // NR_exit
+     23:mov  $__NR_exit, %eax
         mov  $1, %ebx            // status = 1
      24:int  $0x80
 fatal_error:
-        mov  $4, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
         lea  100f, %ecx          // "Sandbox violation detected"
         mov  $101f-100f, %edx    // len = strlen(msg)
         int  $0x80
      26:mov  $1, %ebx
-     27:mov  $252, %eax          // NR_exit_group
+     27:mov  $__NR_exit_group, %eax
         jmp  24b
 
         // The first page is mapped read-only for use as securely shared memory
@@ -491,14 +494,14 @@ fatal_error:
         movd %mm2, %esi
         cmp  %esi, 4(%edi)
         jne  fatal_error
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         mov  $4096, %ecx         // len  = 4096
         mov  $1, %edx            // prot = PROT_READ
         int  $0x80
 
         // The second page is used as scratch space by the trusted thread.
         // Make it writable.
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         add  $4096, %ebx         // addr = secure_mem + 4096
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         int  $0x80
@@ -508,7 +511,7 @@ fatal_error:
         //       CLONE_SYSVSEM|CLONE_UNTRACED, stack, NULL, NULL, NULL)
         mov  4(%ebp), %eax       // threadFd (on child's stack)
         movd %eax, %mm0          // %mm0  = threadFd
-        mov  $120, %eax          // NR_clone
+        mov  $__NR_clone, %eax
         mov  $0x850F00, %ebx     // flags = VM|FS|FILES|SIGH|THR|SYSV|UTR
         mov  $1, %ecx            // stack = 1
         movd 0x48(%edi), %mm1    // %mm1  = processFdPub
@@ -530,7 +533,7 @@ fatal_error:
         mov  %fs, %eax
         shr  $3, %eax
         mov  %eax, -0x10(%ebp)   // entry_number
-        mov  $243, %eax          // NR_set_thread_area
+        mov  $__NR_set_thread_area, %eax
         lea  -0x10(%ebp), %ebx
         int  $0x80
         test %eax, %eax
@@ -586,7 +589,7 @@ fatal_error:
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
         // clone(SIGCHLD, stack=1)
-     29:mov  $120, %eax          // NR_clone
+     29:mov  $__NR_clone, %eax
         mov  $17, %ebx           // flags = SIGCHLD
         mov  $1, %ecx            // stack = 1
         int  $0x80
@@ -659,12 +662,12 @@ fatal_error:
         movd %mm0, %eax
         mov  %eax, 0x4C(%ecx)    // threadFd
         mov  $16, %ebx           // sendmsg()
-        mov  $102, %eax          // NR_socketcall
+        mov  $__NR_socketcall, %eax
         int  $0x80
 
         // Release syscall_mutex_. This signals the trusted process that
         // it can write into the original thread's secure memory again.
-        mov  $125, %eax          // NR_mprotect
+        mov  $__NR_mprotect, %eax
         lea  playground$syscall_mutex, %ebx
         mov  $4096, %ecx
         mov  $3, %edx            // PROT_READ | PROT_WRITE
@@ -676,7 +679,7 @@ fatal_error:
         jz   30f                 // exit process (no error message)
         mov  $1, %edx
         mov  %edx, %ecx          // FUTEX_WAKE
-        mov  $240, %eax          // NR_futex
+        mov  $__NR_futex, %eax
         int  $0x80
      30:xor  %ebx, %ebx
         jmp  27b                 // exit process (no error message)
@@ -685,7 +688,7 @@ fatal_error:
      31:mov  %eax, %ebx
      32:lea  -4(%ebp), %ecx
         xor  %edx, %edx
-        mov  $7, %eax            // NR_waitpid
+        mov  $__NR_waitpid, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
         jz   32b
@@ -694,7 +697,7 @@ fatal_error:
         jnz  26b                 // exit process (no error message)
 
         // Release privileges by entering seccomp mode.
-     33:mov  $172, %eax          // NR_prctl
+     33:mov  $__NR_prctl, %eax
         mov  $22, %ebx           // PR_SET_SECCOMP
         mov  $1, %ecx
         int  $0x80
@@ -714,7 +717,7 @@ fatal_error:
         mov  $1, %edx            // len       = 1
         mov  %esp, %ecx          // buf       = %esp
         mov  %esi, %ebx          // fd        = threadFdPub
-     34:mov  $3, %eax            // NR_read
+     34:mov  $__NR_read, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
         jz   34b
@@ -733,7 +736,7 @@ fatal_error:
         // with the ones that were in effect prior to calling sandbox_clone().
         pop  %ebx
      35:mov  %ebx, 0x38(%esp)    // compute new %eip
-        mov  $119, %eax          // NR_sigreturn
+        mov  $__NR_sigreturn, %eax
         int  $0x80
 
         .pushsection ".rodata"

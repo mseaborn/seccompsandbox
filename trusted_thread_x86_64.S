@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/unistd.h>
+
+
         .global playground$runTrustedThread
 playground$runTrustedThread:
         push %rbx
@@ -34,7 +37,7 @@ playground$runTrustedThread:
         // through the same steps of creating a signal stack frame on the
         // newly created thread's stacks prior to cloning. See clone.cc for
         // details.
-        mov  $56+0xF000, %eax    // __NR_clone + 0xF000
+        mov  $__NR_clone + 0xF000, %eax
         mov  %rsp, %rcx
         int  $0                  // push a signal stack frame (see clone.cc)
         mov  %rcx, 0xA0(%rsp)    // pop stack upon call to sigreturn()
@@ -44,7 +47,7 @@ playground$runTrustedThread:
         mov  %rsp, %rsi          // set     = full mask
         xor  %rdx, %rdx          // old_set = NULL
         mov  $8, %r10            // mask all 64 signals
-        mov  $14, %eax           // NR_rt_sigprocmask
+        mov  $__NR_rt_sigprocmask, %eax
         syscall
         xor  %rsp, %rsp          // invalidate the stack in all trusted code
         jmp  20f                 // create trusted thread
@@ -168,11 +171,11 @@ playground$runTrustedThread:
 
         // shmget() gets some special treatment. Whenever we return from this
         // system call, we remember the most recently returned SysV shm id.
-        cmp  $29, %eax           // NR_shmget
+        cmp  $__NR_shmget, %eax
         jnz  4f
         syscall
         mov  %rax, %r8
-        mov  $56, %eax           // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %edi           // flags = SIGCHLD
         mov  $1, %esi            // stack = 1
         syscall
@@ -183,7 +186,7 @@ playground$runTrustedThread:
         mov  %fs:0x0, %rdi       // start = secure_mem
         mov  $4096, %esi         // len   = 4096
         mov  $3, %edx            // prot  = PROT_READ | PROT_WRITE
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         syscall
         mov  %r8d, 0xDC(%rdi)    // set most recently returned SysV shm id
         xor  %rdi, %rdi
@@ -192,7 +195,7 @@ playground$runTrustedThread:
         #ifndef NDEBUG
         cmpw $0, %fs:0xD8        // debug mode
         jz   27f
-        mov  $1, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %edi            // fd = stderr
         lea  101f(%rip), %rsi    // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
@@ -218,7 +221,7 @@ playground$runTrustedThread:
         #ifndef NDEBUG
         cmpw $0, %fs:0xD8        // debug mode
         jz   6f
-        mov  $1, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %edi            // fd = stderr
         lea  101f(%rip), %rsi    // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
@@ -237,11 +240,11 @@ playground$runTrustedThread:
         jne  fatal_error
 
         // clone() has unusual calling conventions and must be handled specially
-        cmp  $56, %rax           // NR_clone
+        cmp  $__NR_clone, %rax
         jz   19f
 
         // exit() terminates trusted thread
-        cmp  $60, %eax           // NR_exit
+        cmp  $__NR_exit, %eax
         jz   18f
 
         // Perform requested system call
@@ -252,7 +255,7 @@ playground$runTrustedThread:
         jne  fatal_error
         add  $2, %rbx
         mov  %rax, %r8
-        mov  $56, %eax           // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %rdi           // flags = SIGCHLD
         mov  $1, %rsi            // stack = 1
         syscall
@@ -263,7 +266,7 @@ playground$runTrustedThread:
       8:xor  %rsi, %rsi
         xor  %rdx, %rdx
         xor  %r10, %r10
-        mov  $61, %eax           // NR_wait4
+        mov  $__NR_wait4, %eax
         syscall
         cmp  $-4, %eax           // EINTR
         jz   8b
@@ -320,7 +323,7 @@ playground$runTrustedThread:
         mov  0x1C(%r8), %r10
         mov  0x2C(%r8), %r9
         mov  0x24(%r8), %r8
-        cmp  $231, %rax          // NR_exit_group
+        cmp  $__NR_exit_group, %rax
         jz   27f                 // exit program, no message
         syscall
 
@@ -330,7 +333,7 @@ playground$runTrustedThread:
         mov  %rax, (%rsi)
         mov  $8, %edx            // len   = 8
      16:mov  %r13, %rdi          // fd    = threadFd
-        mov  $1, %eax            // NR_write
+        mov  $__NR_write, %eax
      17:syscall
         cmp  %rdx, %rax
         jz   1b
@@ -342,17 +345,17 @@ playground$runTrustedThread:
         // Exit trusted thread after cleaning up resources
      18:mov  %fs:0x0, %rsi       // secure_mem
         mov  0xF0(%rsi), %rdi    // fd     = threadFdPub
-        mov  $3, %eax            // NR_close
+        mov  $__NR_close, %eax
         syscall
         mov  %rsi, %rdi          // start  = secure_mem
         mov  $8192, %esi         // length = 8192
         xor  %rdx, %rdx          // prot   = PROT_NONE
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         syscall
         mov  %r13, %rdi          // fd     = threadFd
-        mov  $3, %eax            // NR_close
+        mov  $__NR_close, %eax
         syscall
-        mov  $56, %eax           // NR_clone
+        mov  $__NR_clone, %eax
         mov  $17, %rdi           // flags = SIGCHLD
         mov  $1, %rsi            // stack = 1
         syscall
@@ -400,7 +403,7 @@ playground$runTrustedThread:
         xor  %r15, %r15          // Request to return from clone() when done
 
         // Get thread id of nascent thread
-     20:mov  $186, %eax          // NR_gettid
+     20:mov  $__NR_gettid, %eax
         syscall
         mov  %rax, %r14
 
@@ -411,7 +414,7 @@ playground$runTrustedThread:
         // socketpair(AF_UNIX, SOCK_STREAM, 0, fds)
         sub  $0x10, %r9
         mov  %r15, 8(%r9)        // preserve return address on child stack
-        mov  $53, %eax           // NR_socketpair
+        mov  $__NR_socketpair, %eax
         mov  $1, %edi            // domain = AF_UNIX
         mov  $1, %esi            // type = SOCK_STREAM
         xor  %rdx, %rdx          // protocol = 0
@@ -427,7 +430,7 @@ playground$runTrustedThread:
      21:xor  %rsi, %rsi
         xor  %rdx, %rdx
         xor  %r10, %r10
-        mov  $61, %eax           // NR_wait4
+        mov  $__NR_wait4, %eax
         syscall
         cmp  $-4, %eax           // EINTR
         jz   21b
@@ -435,32 +438,32 @@ playground$runTrustedThread:
      22:lea  playground$syscall_mutex(%rip), %rdi
         mov  $4096, %esi
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         syscall
         lock; addl $0x80000000, (%rdi)
         jz   23f                 // exit thread
         mov  $1, %edx
         mov  %rdx, %rsi          // FUTEX_WAKE
-        mov  $202, %eax          // NR_futex
+        mov  $__NR_futex, %eax
         syscall
-     23:mov  $60, %eax           // NR_exit
+     23:mov  $__NR_exit, %eax
         mov  $1, %edi            // status = 1
      24:syscall
 fatal_error:
-        mov  $1, %eax            // NR_write
+        mov  $__NR_write, %eax
         mov  $2, %edi            // fd = stderr
         lea  100f(%rip), %rsi    // "Sandbox violation detected"
         mov  $101f-100f, %edx    // len = strlen(msg)
         syscall
      26:mov  $1, %edi
-     27:mov  $231, %eax          // NR_exit_group
+     27:mov  $__NR_exit_group, %eax
         jmp  24b
 
         // The first page is mapped read-only for use as securely shared memory
      28:mov  0xC8(%rbp), %r12    // %r12 = secure shared memory
         cmp  %rbx, 8(%rbp)
         jne  fatal_error
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         mov  %r12, %rdi          // addr = secure_mem
         mov  $4096, %esi         // len  = 4096
         mov  $1, %edx            // prot = PROT_READ
@@ -468,7 +471,7 @@ fatal_error:
 
         // The second page is used as scratch space by the trusted thread.
         // Make it writable.
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         add  $4096, %rdi         // addr = secure_mem + 4096
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         syscall
@@ -478,7 +481,7 @@ fatal_error:
         //       CLONE_SYSVSEM|CLONE_UNTRACED|CLONE_SETTLS, stack, NULL, NULL,
         //       tls)
         mov  4(%r9), %r13d       // %r13  = threadFd (on child's stack)
-        mov  $56, %eax           // NR_clone
+        mov  $__NR_clone, %eax
         mov  $0x8D0F00, %edi     // flags = VM|FS|FILES|SIGH|THR|SYSV|UTR|TLS
         mov  $1, %rsi            // stack = 1
         mov  %r12, %r8           // tls   = new_secure_mem
@@ -501,7 +504,7 @@ fatal_error:
         // Set up thread local storage with information on how to talk to
         // trusted thread and trusted process.
         lea  0xE0(%r12), %rsi    // args   = &secure_mem.TLS;
-        mov  $158, %eax          // NR_arch_prctl
+        mov  $__NR_arch_prctl, %eax
         mov  $0x1001, %edi       // option = ARCH_SET_GS
         syscall
         cmp  $-4095, %rax        // return codes -1..-4095 are errno values
@@ -562,7 +565,7 @@ fatal_error:
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
         // clone(SIGCHLD, stack=1)
-     29:mov  $56, %eax           // NR_clone
+     29:mov  $__NR_clone, %eax
         mov  $17, %rdi           // flags = SIGCHLD
         mov  $1, %rsi            // stack = 1
         syscall
@@ -624,13 +627,13 @@ fatal_error:
         mov  %r9d, 0x40(%r8)     // threadFdPub
         mov  %r9d, 0x64(%r8)     // threadFdPub
         mov  %r13d, 0x68(%r8)    // threadFd
-        mov  $46, %eax           // NR_sendmsg
+        mov  $__NR_sendmsg, %eax
         mov  %r8, %rsi           // msg
         syscall
 
         // Release syscall_mutex_. This signals the trusted process that
         // it can write into the original thread's secure memory again.
-        mov  $10, %eax           // NR_mprotect
+        mov  $__NR_mprotect, %eax
         lea  playground$syscall_mutex(%rip), %rdi
         mov  $4096, %esi
         mov  $3, %edx            // PROT_READ | PROT_WRITE
@@ -641,7 +644,7 @@ fatal_error:
         jz   30f                 // exit process (no error message)
         mov  $1, %edx
         mov  %rdx, %rsi          // FUTEX_WAKE
-        mov  $202, %eax          // NR_futex
+        mov  $__NR_futex, %eax
         syscall
      30:xor  %rdi, %rdi
         jmp  27b                 // exit process (no error message)
@@ -651,7 +654,7 @@ fatal_error:
      32:lea  -4(%r8), %rsi
         xor  %rdx, %rdx
         xor  %r10, %r10
-        mov  $61, %eax           // NR_wait4
+        mov  $__NR_wait4, %eax
         syscall
         cmp  $-4, %eax           // EINTR
         jz   32b
@@ -660,7 +663,7 @@ fatal_error:
         jnz  26b                 // exit process (no error message)
 
         // Release privileges by entering seccomp mode.
-        mov  $157, %eax          // NR_prctl
+        mov  $__NR_prctl, %eax
         mov  $22, %edi           // PR_SET_SECCOMP
         mov  $1, %esi
         syscall
@@ -698,7 +701,7 @@ fatal_error:
         // with the ones that were in effect prior to calling sandbox_clone().
         pop %r15
      34:mov  %r15, 0xA8(%rsp)    // compute new %rip
-        mov  $15, %eax           // NR_rt_sigreturn
+        mov  $__NR_rt_sigreturn, %eax
         syscall
 
         .pushsection ".rodata"
