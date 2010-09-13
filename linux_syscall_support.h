@@ -1427,10 +1427,8 @@ struct kernel_statfs {
      */
     #undef LSS_ENTRYPOINT
     #ifdef SYS_SYSCALL_ENTRYPOINT
-    typedef void (**LSS_NAME(syscall_entrypoint_t))(void);
-    static inline LSS_NAME(syscall_entrypoint_t)
-                                       LSS_NAME(get_syscall_entrypoint)(void) {
-      LSS_NAME(syscall_entrypoint_t) entrypoint;
+    static inline void (**LSS_NAME(get_syscall_entrypoint)(void))(void) {
+      void (**entrypoint)(void);
       asm volatile(".bss\n"
                    ".align 8\n"
                    ".globl "SYS_SYSCALL_ENTRYPOINT"\n"
@@ -1721,10 +1719,8 @@ struct kernel_statfs {
      */
     #undef LSS_ENTRYPOINT
     #ifdef SYS_SYSCALL_ENTRYPOINT
-    typedef void (**LSS_NAME(syscall_entrypoint_t))(void);
-    static inline LSS_NAME(syscall_entrypoint_t)
-                                       LSS_NAME(get_syscall_entrypoint)(void) {
-      LSS_NAME(syscall_entrypoint_t) entrypoint;
+    static inline void (**LSS_NAME(get_syscall_entrypoint)(void))(void) {
+      void (**entrypoint)(void);
       asm volatile(".bss\n"
                    ".align 8\n"
                    ".globl "SYS_SYSCALL_ENTRYPOINT"\n"

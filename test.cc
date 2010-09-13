@@ -202,7 +202,7 @@ int main(int argc, char *argv[]) {
   pthread_t threads[THREADS];
   for (int i = 0; i < THREADS; ++i) {
     if (pthread_create(&threads[i], NULL, fnc, NULL)) {
-      threads[i] = NULL;
+      threads[i] = (pthread_t)0;
     }
   }
 #endif

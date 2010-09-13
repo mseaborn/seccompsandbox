@@ -77,7 +77,7 @@ typedef Elf32_Versym  Elf_Versym;
 
 namespace playground {
 
-Maps::Maps* Library::maps_;
+Maps* Library::maps_;
 char* Library::__kernel_vsyscall;
 char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
