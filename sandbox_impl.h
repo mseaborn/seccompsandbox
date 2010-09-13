@@ -94,8 +94,10 @@ class Sandbox {
   // Clone() is special as it has a wrapper in syscall_table.c. The wrapper
   // adds one extra argument (the pointer to the saved registers) and then
   // calls playground$sandbox__clone().
-  static long sandbox_clone(int flags, char* stack, int* pid, int* ctid,
-                            void* tls, void* wrapper_sp)
+  // arg4 and arg5 are given non-specific names because their meanings
+  // are reversed between i386 and x86-64.
+  static long sandbox_clone(int flags, char* stack, int* pid, void* arg4,
+                            void* arg5, void* wrapper_sp)
     asm("playground$sandbox__clone")
   #if defined(__x86_64__)
     __attribute__((visibility("internal")))
@@ -374,8 +376,8 @@ class Sandbox {
     int       flags;
     char*     stack;
     int*      pid;
-    int*      ctid;
-    void*     tls;
+    void*     arg4; // ctid on x86-64; tls on i386
+    void*     arg5; // tls on x86-64; ctid on i386
     #if defined(__x86_64__)
       struct {
         void* r15;

@@ -7,8 +7,8 @@
 
 namespace playground {
 
-long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
-                            void* tls, void *wrapper_sp) {
+long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
+                            void* arg5, void *wrapper_sp) {
   long long tm;
   Debug::syscall(&tm, __NR_clone, "Executing handler");
   struct {
@@ -18,8 +18,8 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, int* ctid,
   request.clone_req.flags      = flags;
   request.clone_req.stack      = stack;
   request.clone_req.pid        = pid;
-  request.clone_req.ctid       = ctid;
-  request.clone_req.tls        = tls;
+  request.clone_req.arg4       = arg4;
+  request.clone_req.arg5       = arg5;
 
   // TODO(markus): Passing stack == 0 currently does not do the same thing
   // that the kernel would do without the sandbox. This is just going to
@@ -162,7 +162,7 @@ bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
 
       SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
                                 __NR_clone, clone_req.flags, clone_req.stack,
-                                clone_req.pid, clone_req.ctid, clone_req.tls);
+                                clone_req.pid, clone_req.arg4, clone_req.arg5);
       return true;
     }
   }
