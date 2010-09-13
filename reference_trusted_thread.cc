@@ -255,16 +255,15 @@ int TrustedThread(void *arg) {
       else if (syscall_args[0] == __NR_clone) {
         assert(sysnum == -2);
         // Note that HandleNewThread() does UnlockSyscallMutex() for us.
+        long clone_flags = (long) secureMem->arg1;
+        int *pid_ptr = (int *) secureMem->arg3;
+        // clone() argument ordering differs between platforms.
 #if defined(__x86_64__)
-        long clone_flags = (long) secureMem->rdi;
-        int *pid_ptr = (int *) secureMem->rdx;
-        int *tid_ptr = (int *) secureMem->r10;
-        void *tls_info = secureMem->r8;
+        int *tid_ptr = (int *) secureMem->arg4;
+        void *tls_info = secureMem->arg5;
 #elif defined(__i386__)
-        long clone_flags = (long) secureMem->ebx;
-        int *pid_ptr = (int *) secureMem->edx;
-        void *tls_info = secureMem->esi;
-        int *tid_ptr = (int *) secureMem->edi;
+        int *tid_ptr = (int *) secureMem->arg5;
+        void *tls_info = secureMem->arg4;
 #else
 #error Unsupported target platform
 #endif
