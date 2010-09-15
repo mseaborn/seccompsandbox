@@ -2,14 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(markus): We currently instrument the restorer functions with calls to
-//               the syscallWrapper(). This prevents gdb from properly
-//               creating backtraces of code that is running in signal
-//               handlers. We might instead want to always override the
-//               restorer with a function that contains the "magic" signature
-//               but that is not executable. The SEGV handler can detect this
-//               and then invoke the appropriate restorer.
-
 #include "debug.h"
 #include "sandbox_impl.h"
 

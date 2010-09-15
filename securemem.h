@@ -38,7 +38,7 @@ class SecureMem {
             void*        arg5;
             void*        arg6;
 
-            // Used by clone() to allow return from the syscall wrapper.
+            // Used by clone() to allow return from the syscall entrypoint.
             void*        ret;
             #if defined(__x86_64__)
             void*        rbp;

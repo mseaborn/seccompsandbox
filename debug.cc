@@ -246,7 +246,7 @@ void Debug::gettimeofday(long long* tm) {
 }
 
 void Debug::syscall(long long* tm, int sysnum, const char* msg, int call) {
-  // This function gets called from the system call wrapper. Avoid calling
+  // This function gets called from the system call entrypoint. Avoid calling
   // any library functions that themselves need system calls.
   if (enabled_) {
     if (enter() || !tm) {

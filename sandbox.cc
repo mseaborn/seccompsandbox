@@ -4,6 +4,7 @@
 
 #include "library.h"
 #include "sandbox_impl.h"
+#include "syscall_entrypoint.h"
 #include "syscall_table.h"
 
 namespace playground {
@@ -201,7 +202,8 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       // If the instruction is INT 0, then this was probably the result
       // of playground::Library being unable to find a way to safely
       // rewrite the system call instruction. Retrieve the CPU register
-      // at the time of the segmentation fault and invoke syscallWrapper().
+      // at the time of the segmentation fault and invoke
+      // syscallEntryPointWithFrame().
     "8:cmpw $0x00CD, (%%r15)\n"    // INT $0x0
       "jnz  16f\n"
 #ifndef NDEBUG
@@ -260,11 +262,11 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "mov  %%rax, 0xA8(%%rsp)\n"  // %rsp at time of segmentation fault
       "jmp  7b\n"
 
-      // Forward system call to syscallWrapper()
+      // Forward system call to syscallEntryPointWithFrame()
    "15:lea  7b(%%rip), %%rcx\n"
       "push %%rcx\n"
       "push 0xB8(%%rsp)\n"         // %rip at time of segmentation fault
-      "lea  playground$syscallWrapper(%%rip), %%rcx\n"
+      "lea  playground$syscallEntryPointWithFrame(%%rip), %%rcx\n"
       "jmp  *%%rcx\n"
 
       // In order to implement SA_NODEFER, we have to keep track of recursive
@@ -424,7 +426,8 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       // If the instruction is INT 0, then this was probably the result
       // of playground::Library being unable to find a way to safely
       // rewrite the system call instruction. Retrieve the CPU register
-      // at the time of the segmentation fault and invoke syscallWrapper().
+      // at the time of the segmentation fault and invoke
+      // syscallEntryPointWithFrame().
     "9:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
       "jnz  20f\n"
 #ifndef NDEBUG
@@ -502,10 +505,10 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "mov  %%eax, 0xC0(%%esp)\n"  // %esp at time of segmentation fault
       "jmp  3b\n"
 
-      // Forward system call to syscallWrapper()
+      // Forward system call to syscallEntryPointWithFrame()
    "19:push $3b\n"
       "push 0xE0(%%esp)\n"         // %eip at time of segmentation fault
-      "jmp  playground$syscallWrapper\n"
+      "jmp  playground$syscallEntryPointWithFrame\n"
 
       // In order to implement SA_NODEFER, we have to keep track of recursive
       // calls to SIGSEGV handlers. This means we have to increment a counter
@@ -847,12 +850,12 @@ void Sandbox::startSandbox() {
   // Creating the trusted thread enables sandboxing
   g_create_trusted_thread(secureMem);
 
-  // Force direct system calls to jump to our wrapper function.
+  // Force direct system calls to jump to our entry point.
   struct {
     // Instantiate another copy of linux_syscall_support.h. This time, we
     // define SYS_SYSCALL_ENTRYPOINT. This gives us access to a
     // get_syscall_entrypoint() function that we can use to install a pointer
-    // to our system call wrapper.
+    // to our system call entrypoint handler.
     // Any user of linux_syscall_support.h who wants to make sure that the
     // sandbox properly redirects its system calls would define the same
     // macro.
@@ -863,7 +866,7 @@ void Sandbox::startSandbox() {
     #undef  SYS_LINUX_SYSCALL_SUPPORT_H
     #include "linux_syscall_support.h"
   } entrypoint;
-  *entrypoint.get_syscall_entrypoint() = syscallWrapperNoFrame;
+  *entrypoint.get_syscall_entrypoint() = syscallEntryPointNoFrame;
 
   // We can no longer check for sandboxing support at this point, but we also
   // know for a fact that it is available (as we just turned it on). So update

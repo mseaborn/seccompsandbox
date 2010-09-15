@@ -34,9 +34,10 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
   if (stack == 0) {
     rc = -EINVAL;
   } else {
-    // Pass along the address on the stack where syscallWrapper() stored the
-    // original CPU registers. These registers will be restored in the newly
-    // created thread prior to returning from the wrapped system call.
+    // Pass along the address on the stack where syscallEntryPointWithFrame()
+    // stored the original CPU registers. These registers will be restored in
+    // the newly created thread prior to returning from the wrapped system
+    // call.
     #if defined(__x86_64__)
     memcpy(&request.clone_req.regs64, wrapper_sp,
            sizeof(request.clone_req.regs64) + sizeof(void *));

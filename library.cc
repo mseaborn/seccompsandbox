@@ -23,7 +23,7 @@
 #include "debug.h"
 #include "library.h"
 #include "sandbox_impl.h"
-#include "syscall.h"
+#include "syscall_entrypoint.h"
 #include "syscall_table.h"
 #include "x86_decode.h"
 
@@ -425,7 +425,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       #endif
 
     // Whenever we find a system call, we patch it with a jump to out-of-line
-    // code that redirects to our system call wrapper.
+    // code that redirects to our system call entrypoint.
     bool is_syscall = true;
     #if defined(__x86_64__)
     bool is_indirect_call = false;
@@ -526,7 +526,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // can safely overwrite. On x86-32 we need six bytes, and on x86-64
       // We need five bytes to insert a JMPQ and a 32bit address. We then
       // jump to a code fragment that safely forwards to our system call
-      // wrapper.
+      // entrypoint.
       // On x86-64, this is complicated by the fact that the API allows up
       // to 128 bytes of red-zones below the current stack pointer. So, we
       // cannot write to the stack until we have adjusted the stack
@@ -544,7 +544,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // 50                          PUSH %rax
       // 48 8D 05 .. .. .. ..        LEA  ...(%rip), %rax
       // 50                          PUSH %rax
-      // 48 B8 .. .. .. ..           MOV  $syscallWrapper, %rax
+      // 48 B8 .. .. .. ..           MOV  $syscallEntryPointWithFrame, %rax
       // .. .. .. ..
       // 50                          PUSH %rax
       // 48 8D 05 06 00 00 00        LEA  6(%rip), %rax
@@ -563,7 +563,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // .. .. .. .. ; any leading instructions copied from original code
       // 68 .. .. .. ..              PUSH . + 11
       // 68 .. .. .. ..              PUSH return_addr
-      // 68 .. .. .. ..              PUSH $syscallWrapper
+      // 68 .. .. .. ..              PUSH $syscallEntryPointWithFrame
       // C3                          RET
       // .. .. .. .. ; any trailing instructions copied from original code
       // 68 .. .. .. ..              PUSH return_addr
@@ -745,7 +745,8 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
            "\x50"                            // PUSH %rax
            "\x48\x8D\x05\x00\x00\x00\x00"    // LEA  ...(%rip), %rax
            "\x50"                            // PUSH %rax
-           "\x48\xB8\x00\x00\x00\x00\x00\x00\x00\x00" //MOV $syscallWrapper,rax
+           "\x48\xB8\x00\x00\x00\x00\x00"    // MOV $syscallEntryPointWithFrm,
+           "\x00\x00\x00"                    //     %rax
            "\x50"                            // PUSH %rax
            "\x48\x8D\x05\x06\x00\x00\x00"    // LEA  6(%rip), %rax
            "\x48\x87\x44\x24\x10"            // XCHG %rax, 16(%rsp)
@@ -755,7 +756,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
            #elif defined(__i386__)
            "\x68\x00\x00\x00\x00"            // PUSH . + 11
            "\x68\x00\x00\x00\x00"            // PUSH return_addr
-           "\x68\x00\x00\x00\x00"            // PUSH $syscallWrapper
+           "\x68\x00\x00\x00\x00"            // PUSH $syscallEntryPointWithFrm
            "\xC3",                           // RET
            16
            #else
@@ -788,7 +789,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
         *reinterpret_cast<int *>(dest + preamble + 11) =
             (code[second].addr + code[second].len) - (dest + preamble + 15);
         *reinterpret_cast<void **>(dest + preamble + 18) =
-            reinterpret_cast<void *>(&syscallWrapper);
+            reinterpret_cast<void *>(&syscallEntryPointWithFrame);
       }
       #elif defined(__i386__)
       *(dest + preamble + 16 + postamble) = '\x68'; // PUSH
@@ -799,7 +800,8 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
           dest + preamble + 16;
       *reinterpret_cast<char **>(dest + preamble + 6) =
           code[second].addr + code[second].len;
-      *reinterpret_cast<void (**)()>(dest + preamble + 11) = syscallWrapper;
+      *reinterpret_cast<void (**)()>(dest + preamble + 11) =
+          syscallEntryPointWithFrame;
       #else
       #error Unsupported target platform
       #endif
@@ -849,10 +851,10 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
   if (__kernel_vsyscall) {
     // Replace the kernel entry point with:
     //
-    // E9 .. .. .. ..    JMP syscallWrapperNoFrame
+    // E9 .. .. .. ..    JMP syscallEntryPointNoFrame
     *__kernel_vsyscall = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_vsyscall + 1) =
-        reinterpret_cast<char *>(&syscallWrapperNoFrame) -
+        reinterpret_cast<char *>(&syscallEntryPointNoFrame) -
         reinterpret_cast<char *>(__kernel_vsyscall + 5);
   }
   if (__kernel_sigreturn) {
@@ -860,16 +862,16 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
     //
     // 58                POP %eax
     // B8 77 00 00 00    MOV $0x77, %eax
-    // E8 .. .. .. ..    CALL syscallWrapperNoFrame
+    // E8 .. .. .. ..    CALL syscallEntryPointNoFrame
     char* dest = getScratchSpace(maps_, __kernel_sigreturn, 11, extraSpace,
                                  extraLength);
     memcpy(dest,
            "\x58"                 // POP %eax
            "\xB8\x77\x00\x00\x00" // MOV %0x77, %eax
-           "\xE8",                // CALL syscallWrapperNoFrame
+           "\xE8",                // CALL syscallEntryPointNoFrame
            7);
     *reinterpret_cast<long *>(dest + 7) =
-        reinterpret_cast<char *>(&syscallWrapperNoFrame) - dest - 11;;
+        reinterpret_cast<char *>(&syscallEntryPointNoFrame) - dest - 11;;
     *__kernel_sigreturn = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_sigreturn + 1) =
         dest - reinterpret_cast<char *>(__kernel_sigreturn) - 5;
@@ -878,15 +880,15 @@ void Library::patchVDSO(char** extraSpace, int* extraLength){
     // Replace the rt_sigreturn() system call with a jump to code that does:
     //
     // B8 AD 00 00 00    MOV $0xAD, %eax
-    // E8 .. .. .. ..    CALL syscallWrapperNoFrame
+    // E8 .. .. .. ..    CALL syscallEntryPointNoFrame
     char* dest = getScratchSpace(maps_, __kernel_rt_sigreturn, 10, extraSpace,
                                  extraLength);
     memcpy(dest,
            "\xB8\xAD\x00\x00\x00" // MOV $0xAD, %eax
-           "\xE8",                // CALL syscallWrapperNoFrame
+           "\xE8",                // CALL syscallEntryPointNoFrame
            6);
     *reinterpret_cast<long *>(dest + 6) =
-        reinterpret_cast<char *>(&syscallWrapperNoFrame) - dest - 10;
+        reinterpret_cast<char *>(&syscallEntryPointNoFrame) - dest - 10;
     *__kernel_rt_sigreturn = '\xE9'; // JMPQ
     *reinterpret_cast<long *>(__kernel_rt_sigreturn + 1) =
         dest - reinterpret_cast<char *>(__kernel_rt_sigreturn) - 5;

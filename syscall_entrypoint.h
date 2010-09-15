@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef SYSCALL_H__
-#define SYSCALL_H__
+#ifndef SYSCALL_ENTRYPOINT_H__
+#define SYSCALL_ENTRYPOINT_H__
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// This is the wrapper which is called by the untrusted code, trying to
+// This is the entrypoint which is called by the untrusted code, trying to
 // make a system call.
-void syscallWrapper() asm("playground$syscallWrapper")
+void syscallEntryPointWithFrame() asm("playground$syscallEntryPointWithFrame")
 #if defined(__x86_64__)
                       __attribute__((visibility("internal")))
 #endif
@@ -30,13 +30,13 @@ void syscallWrapper() asm("playground$syscallWrapper")
 // executable code outside of the .text segment.
 //
 // There are a few special situations, though, were we want to call the
-// system call wrapper without having had a chance to initialize our special
+// system call entrypoint without having had a chance to initialize our special
 // call frame. This happens, whenever we don't actually need to instrument
 // instructions (e.g. because there already is a perfectly good "CALL"
-// instructions). In that case, we call the syscallWrapperNoFrame() function.
-// It sets up the extra return address in the stack frame prior to falling
-// through to the syscallWrapper() function.
-void syscallWrapperNoFrame() asm("playground$syscallWrapperNoFrame")
+// instructions). In that case, we call the syscallEntryPointNoFrame()
+// function. It sets up the extra return address in the stack frame prior to
+// falling through to the syscallEntryPointWithFrame() function.
+void syscallEntryPointNoFrame() asm("playground$syscallEntryPointNoFrame")
 #if defined(__x86_64__)
                       __attribute__((visibility("internal")))
 #endif
@@ -46,4 +46,4 @@ void syscallWrapperNoFrame() asm("playground$syscallWrapperNoFrame")
 }
 #endif
 
-#endif // SYSCALL_H__
+#endif // SYSCALL_ENTRYPOINT_H__

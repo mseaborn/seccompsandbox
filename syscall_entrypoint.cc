@@ -13,7 +13,7 @@ asm(
     ".pushsection .text, \"ax\", @progbits\n"
 
     // This is the special wrapper for the clone() system call. The code
-    // relies on the stack layout of the system call wrapper (c.f. below). It
+    // relies on the stack layout of the system call entrypoint (c.f. below). It
     // passes the stack pointer as an additional argument to sandbox__clone(),
     // so that upon starting the child, register values can be restored and
     // the child can start executing at the correct IP, instead of trying to
@@ -22,7 +22,7 @@ asm(
     ".globl playground$sandbox_clone\n"
     ".type playground$sandbox_clone, @function\n"
     #if defined(__x86_64__)
-    // Skip the 8 byte return address into the system call wrapper. The
+    // Skip the 8 byte return address into the system call entrypoint. The
     // following bytes are the saved register values that we need to restore
     // upon return from clone() in the new thread.
     "lea 8(%rsp), %r9\n"
@@ -39,12 +39,12 @@ asm(
     ".size playground$sandbox_clone, .-playground$sandbox_clone\n"
 
 
-    // This is the wrapper which is called by the untrusted code, trying to
+    // This is the entrypoint which is called by the untrusted code, trying to
     // make a system call.
-    "playground$syscallWrapperNoFrame:"
-    ".internal playground$syscallWrapperNoFrame\n"
-    ".globl playground$syscallWrapperNoFrame\n"
-    ".type playground$syscallWrapperNoFrame, @function\n"
+    "playground$syscallEntryPointNoFrame:"
+    ".internal playground$syscallEntryPointNoFrame\n"
+    ".globl playground$syscallEntryPointNoFrame\n"
+    ".type playground$syscallEntryPointNoFrame, @function\n"
     #if defined(__x86_64__)
     "mov  0(%rsp), %r11\n"         // add fake return address by duplicating
     "push %r11\n"                  // real return address
@@ -57,13 +57,13 @@ asm(
     #else
     #error Unsupported target platform
     #endif
-    ".size playground$syscallWrapperNoFrame, "
-        ".-playground$syscallWrapperNoFrame\n"
+    ".size playground$syscallEntryPointNoFrame, "
+        ".-playground$syscallEntryPointNoFrame\n"
 
-    "playground$syscallWrapper:"
-    ".internal playground$syscallWrapper\n"
-    ".globl playground$syscallWrapper\n"
-    ".type playground$syscallWrapper, @function\n"
+    "playground$syscallEntryPointWithFrame:"
+    ".internal playground$syscallEntryPointWithFrame\n"
+    ".globl playground$syscallEntryPointWithFrame\n"
+    ".type playground$syscallEntryPointWithFrame, @function\n"
     #if defined(__x86_64__)
     // Check for rt_sigreturn(). It needs to be handled specially.
     "cmp  $15, %rax\n"             // NR_rt_sigreturn
@@ -340,7 +340,8 @@ asm(
     #else
     #error Unsupported target platform
     #endif
-    ".size playground$syscallWrapper, .-playground$syscallWrapper\n"
+    ".size playground$syscallEntryPointWithFrame,"
+        ".-playground$syscallEntryPointWithFrame\n"
     ".popsection\n"
 );
 
