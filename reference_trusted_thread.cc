@@ -131,6 +131,23 @@ void UnlockSyscallMutex() {
   assert(status == 0);
 }
 
+void SaveShmgetResult(SecureMem::Args *secureMem, int shmid) {
+  Sandbox::SysCalls sys;
+  // TODO(mseaborn): Use clone() to be the same as trusted_thread.cc.
+  int pid = sys.fork();
+  assert(pid >= 0);
+  if (pid == 0) {
+    int rc = sys.mprotect(secureMem, 0x1000, PROT_READ | PROT_WRITE);
+    assert(rc == 0);
+    secureMem->shmId = shmid;
+    sys._exit(0);
+  }
+  int status;
+  int rc = sys.waitpid(pid, &status, 0);
+  assert(rc == pid);
+  assert(status == 0);
+}
+
 // Allocate a stack that is never freed.
 char *AllocateStack() {
   Sandbox::SysCalls sys;
@@ -289,6 +306,17 @@ int TrustedThread(void *arg) {
       assert(got == rest_size);
     }
     syscall_result = DoSyscall(syscall_args);
+
+#if defined(__NR_shmget)
+    if (syscall_args[0] == __NR_shmget) {
+      SaveShmgetResult(secureMem, syscall_result);
+    }
+#elif defined(__NR_ipc)
+    if (syscall_args[0] == __NR_ipc && syscall_args[1] == SHMGET) {
+      SaveShmgetResult(secureMem, syscall_result);
+    }
+#endif
+
     if (sysnum == -2) {
       // This syscall involves reading from the secure memory area for
       // the thread.  We should only unlock this area when the syscall

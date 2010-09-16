@@ -197,19 +197,6 @@ bool Sandbox::process_shmget(int parentMapsFd, int sandboxFd, int threadFdPub,
 #endif
 
 #if defined(__NR_ipc)
-#ifndef SHMAT
-#define SHMAT       21
-#endif
-#ifndef SHMDT
-#define SHMDT       22
-#endif
-#ifndef SHMGET
-#define SHMGET      23
-#endif
-#ifndef SHMCTL
-#define SHMCTL      24
-#endif
-
 long Sandbox::sandbox_ipc(unsigned call, int first, int second, int third,
                          void* ptr, long fifth) {
   long long tm;

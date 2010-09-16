@@ -11,6 +11,7 @@
 #include <pty.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
+#include <sys/shm.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/user.h>
@@ -452,6 +453,24 @@ TEST(test_stat_enabled) {
   rc = stat("path-that-does-not-exist", &st);
   assert(rc == -1);
   assert(errno == ENOENT);
+}
+
+// TODO(mseaborn): It would be good to test the error cases for the
+// sandbox's treatment of SysV SHM.  However, that leads to leaks of
+// SysV shared memory segments, because the sandbox prevents us from
+// freeing a segment with shmctl() if it gets a SysV-related error.
+TEST(test_sysv_shared_memory) {
+  StartSeccompSandbox();
+  int shmid = shmget(IPC_PRIVATE, 0x1000, 0700);
+  assert(shmid != -1);
+  void *addr = shmat(shmid, NULL, 0);
+  assert(addr != MAP_FAILED);
+  // Check that we can access the memory we mapped.
+  memset(addr, 1, 0x1000);
+  int rc = shmdt(addr);
+  assert(rc == 0);
+  rc = shmctl(shmid, IPC_RMID, NULL);
+  assert(rc == 0);
 }
 
 static int g_value;

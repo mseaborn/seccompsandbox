@@ -33,6 +33,21 @@
 #define NOINTR_SYS(x)                                                         \
   ({ typeof(x) i__; while ((i__ = (x)) < 0 && sys.my_errno == EINTR); i__;})
 
+#if defined(__NR_ipc)
+# ifndef SHMAT
+#  define SHMAT       21
+# endif
+# ifndef SHMDT
+#  define SHMDT       22
+# endif
+# ifndef SHMGET
+#  define SHMGET      23
+# endif
+# ifndef SHMCTL
+#  define SHMCTL      24
+# endif
+#endif
+
 #ifdef __cplusplus
 #include <map>
 #include <vector>
