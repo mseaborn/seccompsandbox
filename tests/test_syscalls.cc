@@ -161,6 +161,42 @@ static void *get_tls_base() {
   return base;
 }
 
+// The sandbox requires us to pass CLONE_TLS to clone().  Pass
+// settings that are enough to copy the parent thread's TLS setup.
+// This allows us to invoke libc in the child thread.
+class CopyTLSInfo {
+public:
+#if defined(__x86_64__)
+  void *get_clone_tls_arg() {
+    return get_tls_base();
+  }
+#elif defined(__i386__)
+  struct user_desc tls_desc;
+  void *get_clone_tls_arg() {
+    tls_desc.entry_number = get_gs() >> 3;
+    tls_desc.base_addr = (long) get_tls_base();
+    tls_desc.limit = 0xfffff;
+    tls_desc.seg_32bit = 1;
+    tls_desc.contents = 0;
+    tls_desc.read_exec_only = 0;
+    tls_desc.limit_in_pages = 1;
+    tls_desc.seg_not_present = 0;
+    tls_desc.useable = 1;
+    return &tls_desc;
+  }
+#else
+#error Unsupported target platform
+#endif
+};
+
+void wait_for_child_thread(int *tid_ptr, int tid) {
+  while (*tid_ptr == tid) {
+    int rc = syscall(__NR_futex, tid_ptr, FUTEX_WAIT, tid, NULL);
+    assert(rc == 0);
+  }
+  assert(*tid_ptr == 0);
+}
+
 TEST(test_clone) {
   playground::g_policy.allow_file_namespace = true;  // To allow count_fds()
   StartSeccompSandbox();
@@ -173,38 +209,107 @@ TEST(test_clone) {
     CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
   int tid = -1;
   int x = 999;
-
-  // The sandbox requires us to pass CLONE_TLS.  Pass settings that
-  // are enough to copy the parent thread's TLS setup.  This allows us
-  // to invoke libc in the child thread.
-#if defined(__x86_64__)
-  void *tls = get_tls_base();
-#elif defined(__i386__)
-  struct user_desc tls_desc, *tls = &tls_desc;
-  tls_desc.entry_number = get_gs() >> 3;
-  tls_desc.base_addr = (long) get_tls_base();
-  tls_desc.limit = 0xfffff;
-  tls_desc.seg_32bit = 1;
-  tls_desc.contents = 0;
-  tls_desc.read_exec_only = 0;
-  tls_desc.limit_in_pages = 1;
-  tls_desc.seg_not_present = 0;
-  tls_desc.useable = 1;
-#else
-#error Unsupported target platform
-#endif
-
+  CopyTLSInfo tls_info;
   int rc = clone(clone_func, (void *) (stack + stack_size), flags, &x,
-                 &tid, tls, &tid);
+                 &tid, tls_info.get_clone_tls_arg(), &tid);
   assert(rc > 0);
-  while (tid == rc) {
-    syscall(__NR_futex, &tid, FUTEX_WAIT, rc, NULL);
-  }
-  assert(tid == 0);
+  wait_for_child_thread(&tid, rc);
   assert(x == 124);
   // Check that the process has not leaked FDs.
   int fd_count2 = count_fds();
   assert(fd_count2 == fd_count1);
+}
+
+#if defined(__x86_64)
+const int NO_REGISTERS = 15;
+const long TEST_VALUE = 0x4321000012340000;
+const int SYSCALL_ARG_REGS[] = {
+  0, // %rax
+  5, // %rdi
+  4, // %rsi
+  3, // %rdx
+  9, // %r10
+  7, // %r8
+  8, // %r9
+};
+#elif defined(__i386__)
+const int NO_REGISTERS = 7;
+const long TEST_VALUE = 0x12340000;
+const int SYSCALL_ARG_REGS[] = {
+  0, // %eax
+  1, // %ebx
+  2, // %ecx
+  3, // %edx
+  4, // %esi
+  5, // %edi
+  6, // %ebp
+};
+#else
+#error Unsupported target platform
+#endif
+
+long g_input_regs[NO_REGISTERS];
+long g_out_regs_parent[NO_REGISTERS];
+long g_out_regs_child[NO_REGISTERS];
+extern "C" int clone_test_helper();
+
+// Test that clone() preserves all the registers it should do in the
+// parent and child threads.  This is a hassle to test, because it
+// requires a helper (written in assembly) for setting up and saving
+// registers.  glibc does not care about most registers being
+// preserved in the child thread, which means register preservation is
+// not otherwise tested, but glibc *could* depend on it in the future.
+TEST(test_clone_preserves_registers) {
+  StartSeccompSandbox();
+  int stack_size = 0x1000;
+  char *stack = (char *) malloc(stack_size);
+  assert(stack != NULL);
+  int flags = CLONE_VM | CLONE_FS | CLONE_FILES |
+    CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
+    CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+  int tid = -1;
+  CopyTLSInfo tls_info;
+  for (int i = 0; i < NO_REGISTERS; i++) {
+    // Fill out an arbitrary value that we can test for later.
+    g_input_regs[i] = TEST_VALUE + i;
+  }
+  g_input_regs[SYSCALL_ARG_REGS[0]] = __NR_clone;
+  g_input_regs[SYSCALL_ARG_REGS[1]] = flags;
+  g_input_regs[SYSCALL_ARG_REGS[2]] = (long) (stack + stack_size);
+  g_input_regs[SYSCALL_ARG_REGS[3]] = (long) &tid;
+#if defined(__x86_64__)
+  g_input_regs[SYSCALL_ARG_REGS[4]] = (long) &tid;
+  g_input_regs[SYSCALL_ARG_REGS[5]] = (long) tls_info.get_clone_tls_arg();
+#elif defined(__i386__)
+  g_input_regs[SYSCALL_ARG_REGS[4]] = (long) tls_info.get_clone_tls_arg();
+  g_input_regs[SYSCALL_ARG_REGS[5]] = (long) &tid;
+#else
+#error Unsupported target platform
+#endif
+  int rc = clone_test_helper();
+  assert(rc > 0);
+  wait_for_child_thread(&tid, rc);
+  bool success = true;
+  for (int regnum = 0; regnum < NO_REGISTERS; regnum++) {
+#if defined(__x86_64__) || defined(__i386__)
+    // The result register, %eax/%rax, is always overwritten.
+    if (regnum == 0)
+      continue;
+#endif
+#if defined(__x86_64__)
+    // %r11 can be overwritten by a system call.
+    if (regnum == 10)
+      continue;
+#endif
+    if (g_out_regs_parent[regnum] != g_input_regs[regnum] ||
+        g_out_regs_child[regnum] != g_input_regs[regnum]) {
+      printf("mismatch in register %i: %lx %lx %lx\n",
+             regnum, g_input_regs[regnum], g_out_regs_parent[regnum],
+             g_out_regs_child[regnum]);
+      success = false;
+    }
+  }
+  assert(success);
 }
 
 static int uncalled_clone_func(void *x) {

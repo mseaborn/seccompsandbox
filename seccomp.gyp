@@ -60,6 +60,7 @@
       'type': 'executable',
       'sources': [
         'reference_trusted_thread.cc',
+        'tests/clone_test_helper.S',
         'tests/test_syscalls.cc',
       ],
       'include_dirs': [

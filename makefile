@@ -12,6 +12,7 @@ MODS := allocator preload library debug maps x86_decode securemem sandbox     \
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 ALL_OBJS = $(OBJS32) $(OBJS64) tests/test_syscalls.o64 tests/test_syscalls.o32 \
+           tests/clone_test_helper.o64 tests/clone_test_helper.o32 \
            timestats.o playground.o
 DEP_FILES = $(wildcard $(foreach f,$(ALL_OBJS),$(f).d))
 
@@ -45,10 +46,10 @@ tests/test_syscalls.o64 tests/test_syscalls.o32: tests/test-list.h
 tests/test-list.h: tests/list_tests.py tests/test_syscalls.cc
 	python tests/list_tests.py tests/test_syscalls.cc > $@
 
-run_tests_64: $(OBJS64) tests/test_syscalls.o64
-	g++ -m64 tests/test_syscalls.o64 $(OBJS64) -lpthread -lutil -o $@
-run_tests_32: $(OBJS32) tests/test_syscalls.o32
-	g++ -m32 tests/test_syscalls.o32 $(OBJS32) -lpthread -lutil -o $@
+run_tests_64: $(OBJS64) tests/test_syscalls.o64 tests/clone_test_helper.o64
+	g++ -m64 $^ -lpthread -lutil -o $@
+run_tests_32: $(OBJS32) tests/test_syscalls.o32 tests/clone_test_helper.o32
+	g++ -m32 $^ -lpthread -lutil -o $@
 
 demo: playground preload32.so preload64.so
 	./playground /bin/ls $(HOME)
