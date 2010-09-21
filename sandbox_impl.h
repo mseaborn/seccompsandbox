@@ -387,46 +387,48 @@ class Sandbox {
     socklen_t addrlen;
   } __attribute__((packed));
 
+  #if defined(__x86_64__)
+  struct CloneStackFrame {
+    void* r15;
+    void* r14;
+    void* r13;
+    void* r12;
+    void* r11;
+    void* r10;
+    void* r9;
+    void* r8;
+    void* rdi;
+    void* rsi;
+    void* rdx;
+    void* rcx;
+    void* rbx;
+    void* deadbeef_marker;
+    void* rbp;
+    void* fake_ret;
+    void* ret;
+  } __attribute__((packed));
+  #elif defined(__i386__)
+  struct CloneStackFrame {
+    void* edi;
+    void* esi;
+    void* edx;
+    void* ecx;
+    void* ebx;
+    void* deadbeef_marker;
+    void* ebp;
+    void* fake_ret;
+    void* ret;
+  } __attribute__((packed));
+  #else
+  #error Unsupported target platform
+  #endif
+
   struct Clone {
     int       flags;
     char*     stack;
     int*      pid;
     void*     arg4; // ctid on x86-64; tls on i386
     void*     arg5; // tls on x86-64; ctid on i386
-    #if defined(__x86_64__)
-      struct {
-        void* r15;
-        void* r14;
-        void* r13;
-        void* r12;
-        void* r11;
-        void* r10;
-        void* r9;
-        void* r8;
-        void* rdi;
-        void* rsi;
-        void* rdx;
-        void* rcx;
-        void* rbx;
-        void* deadbeef_marker;
-        void* rbp;
-        void* fake_ret;
-      } regs64 __attribute__((packed));
-    #elif defined(__i386__)
-      struct {
-        void* edi;
-        void* esi;
-        void* edx;
-        void* ecx;
-        void* ebx;
-        void* deadbeef_marker;
-        void* ebp;
-        void* fake_ret;
-      } regs32 __attribute__((packed));
-    #else
-    #error Unsupported target platform
-    #endif
-    void*     ret;
   } __attribute__((packed));
 
   struct Connect {

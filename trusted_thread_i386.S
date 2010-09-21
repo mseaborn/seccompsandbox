@@ -46,6 +46,8 @@ playground$runTrustedThread:
         movw %si, %fs
         mov  %esi, 0x4(%esp)     // set up %fs upon call to sigreturn()
         mov  %ebp, 0x1C(%esp)    // pop stack upon call to sigreturn()
+        lea  999f, %ebp
+        mov  %ebp, 0x38(%esp)    // return address: continue in same thread
         mov  %esp, %ebp
         mov  $2, %ebx            // how     = SIG_SETMASK
         pushl $-1
@@ -59,8 +61,6 @@ playground$runTrustedThread:
         int  $0x80
         xor  %esp, %esp          // invalidate the stack in all trusted code
         movd %edi, %mm6          // %mm6 = args
-        lea  999f, %edi          // continue in same thread
-        movd %edi, %mm3
         xor  %edi, %edi          // initial sequence number
         movd %edi, %mm2
         jmp  20f                 // create trusted thread
@@ -71,7 +71,6 @@ playground$runTrustedThread:
         // Parameters:
         //   %mm0: thread's side of threadFd
         //   %mm1: processFdPub
-        //   %mm3: return address after creation of new trusted thread
         //   %mm5: secure memory region
         //         the page following this one contains the scratch space
 
@@ -95,13 +94,7 @@ playground$runTrustedThread:
         //   0x1C: fourth argument; passed to syscall in %esi
         //   0x20: fifth argument; passed to syscall in %edi
         //   0x24: sixth argument; passed to syscall in %ebp
-        //   0x28: stored return address for clone() system call
-        //   0x2C: stored %ebp value for clone() system call
-        //   0x30: stored %edi value for clone() system call
-        //   0x34: stored %esi value for clone() system call
-        //   0x38: stored %edx value for clone() system call
-        //   0x3C: stored %ecx value for clone() system call
-        //   0x40: stored %ebx value for clone() system call
+        //   0x28-0x40: no longer used
         //   0x44: new shared memory for clone()
         //   0x48: processFdPub for talking to trusted process
         //   0x4C: cloneFdPub for talking to trusted process
@@ -428,7 +421,6 @@ playground$runTrustedThread:
         // TODO(markus): We currently do not support emulating calls to
         // sys_clone() with a zero (i.e. copy) stack parameter. See clone.cc
         // for a discussion on how to fix this, if this ever becomes neccessary.
-        movd %eax, %mm3          // Request to return from clone() when done
 
         // Get thread id of nascent thread
      20:mov  $__NR_gettid, %eax
@@ -550,46 +542,15 @@ fatal_error:
         mov  0(%ebp), %esi       // %esi = threadFdPub
         add  $8, %ebp
 
-        // Check whether this is the initial thread, or a newly created one.
-        // At startup we run the same code as when we create a new thread. At
-        // the very top of this function, you will find that we store 999f
-        // in %%mm3. That is the signal that we should return on the same
-        // stack rather than return to where clone was called.
-        movd %mm3, %eax
+        // Check the sequence number
         movd %mm2, %edx
-        test %eax, %eax
-        jne  29f
-
-        // Returning from clone() into the newly created thread is special. We
-        // cannot unroll the stack, as we just set up a new stack for this
-        // thread. We have to explicitly restore CPU registers to the values
-        // that they had when the program originally called clone().
-        // We patch the register values in the signal stack frame so that we
-        // can ask sigreturn() to restore all registers for us.
-        sub  $0x4, %ebp
-        mov  0x28(%edi), %eax
-        mov  %eax, 0x00(%ebp)    // return address
-        xor  %eax, %eax
-        mov  %eax, 0x30(%ebp)    // %eax = 0
-        mov  0x2C(%edi), %eax
-        mov  %eax, 0x1C(%ebp)    // %ebp
-        mov  0x30(%edi), %eax
-        mov  %eax, 0x14(%ebp)    // %edi
-        mov  0x34(%edi), %eax
-        mov  %eax, 0x18(%ebp)    // %esi
-        mov  0x38(%edi), %eax
-        mov  %eax, 0x28(%ebp)    // %edx
-        mov  0x3C(%edi), %eax
-        mov  %eax, 0x2C(%ebp)    // %ecx
-        mov  0x40(%edi), %eax
-        mov  %eax, 0x24(%ebp)    // %ebx
         cmp  %edx, 4(%edi)
         jne  fatal_error
 
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
         // clone(SIGCHLD, stack=1)
-     29:mov  $__NR_clone, %eax
+        mov  $__NR_clone, %eax
         mov  $17, %ebx           // flags = SIGCHLD
         mov  $1, %ecx            // stack = 1
         int  $0x80
@@ -725,17 +686,10 @@ fatal_error:
         jne  fatal_error
         pop  %eax
 
-        // Return to caller. We are in the new thread, now.
-        movd %mm3, %ebx
-        test %ebx, %ebx
-        jnz  35f                 // Returning to createTrustedThread()
-
         // Returning to the place where clone() had been called. We rely on
         // using sigreturn() for restoring our registers. The caller already
-        // created a signal stack frame, and we patched the register values
+        // created a signal stack frame and patched the register values
         // with the ones that were in effect prior to calling sandbox_clone().
-        pop  %ebx
-     35:mov  %ebx, 0x38(%esp)    // compute new %eip
         mov  $__NR_sigreturn, %eax
         int  $0x80
 

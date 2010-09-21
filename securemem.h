@@ -38,30 +38,12 @@ class SecureMem {
             void*        arg5;
             void*        arg6;
 
-            // Used by clone() to allow return from the syscall entrypoint.
-            void*        ret;
+            // TODO(mseaborn): Remove these when the later offsets are
+            // no longer hard-coded in the assembly code.
             #if defined(__x86_64__)
-            void*        rbp;
-            void*        rbx;
-            void*        rcx;
-            void*        rdx;
-            void*        rsi;
-            void*        rdi;
-            void*        r8;
-            void*        r9;
-            void*        r10;
-            void*        r11;
-            void*        r12;
-            void*        r13;
-            void*        r14;
-            void*        r15;
+            void*        unused[15];
             #elif defined(__i386__)
-            void*        ebp;
-            void*        edi;
-            void*        esi;
-            void*        edx;
-            void*        ecx;
-            void*        ebx;
+            void*        unused[7];
             #else
             #error Unsupported target platform
             #endif

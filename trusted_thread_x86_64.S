@@ -41,6 +41,7 @@ playground$runTrustedThread:
         mov  %rsp, %rcx
         int  $0                  // push a signal stack frame (see clone.cc)
         mov  %rcx, 0xA0(%rsp)    // pop stack upon call to sigreturn()
+        mov  %r15, 0xA8(%rsp)    // return address: continue in same thread
         mov  %rsp, %r9
         mov  $2, %rdi            // how     = SIG_SETMASK
         pushq $-1
@@ -80,21 +81,7 @@ playground$runTrustedThread:
         //   0x38: fourth argument; passed to syscall in %r10
         //   0x40: fifth argument; passed to syscall in %r8
         //   0x48: sixth argument; passed to syscall in %r9
-        //   0x50: stored return address for clone() system call
-        //   0x58: stored %rbp value for clone() system call
-        //   0x60: stored %rbx value for clone() system call
-        //   0x68: stored %rcx value for clone() system call
-        //   0x70: stored %rdx value for clone() system call
-        //   0x78: stored %rsi value for clone() system call
-        //   0x80: stored %rdi value for clone() system call
-        //   0x88: stored %r8 value for clone() system call
-        //   0x90: stored %r9 value for clone() system call
-        //   0x98: stored %r10 value for clone() system call
-        //   0xA0: stored %r11 value for clone() system call
-        //   0xA8: stored %r12 value for clone() system call
-        //   0xB0: stored %r13 value for clone() system call
-        //   0xB8: stored %r14 value for clone() system call
-        //   0xC0: stored %r15 value for clone() system call
+        //   0x50-0xC0: no longer used
         //   0xC8: new shared memory for clone()
         //   0xD0: processFdPub for talking to trusted process
         //   0xD4: cloneFdPub for talking to trusted process
@@ -510,62 +497,16 @@ fatal_error:
         cmp  $-4095, %rax        // return codes -1..-4095 are errno values
         jae  fatal_error
 
-        // Check whether this is the initial thread, or a newly created one.
-        // At startup we run the same code as when we create a new thread. At
-        // the very top of this function, you will find that we push 999(%rip)
-        // on the stack. That is the signal that we should return on the same
-        // stack rather than return to where clone was called.
-        mov  8(%r8), %r15
         add  $0x10, %r8
-        test %r15, %r15
-        jne  29f
 
-        // Returning from clone() into the newly created thread is special. We
-        // cannot unroll the stack, as we just set up a new stack for this
-        // thread. We have to explicitly restore CPU registers to the values
-        // that they had when the program originally called clone().
-        // We patch the register values in the signal stack frame so that we
-        // can ask sigreturn() to restore all registers for us.
-        sub  $0x8, %r8
-        mov  0x50(%rbp), %rax
-        mov  %rax, 0x00(%r8)     // return address
-        xor  %rax, %rax
-        mov  %rax, 0x98(%r8)     // %rax = 0
-        mov  0x58(%rbp), %rax
-        mov  %rax, 0x80(%r8)     // %rbp
-        mov  0x60(%rbp), %rax
-        mov  %rax, 0x88(%r8)     // %rbx
-        mov  0x68(%rbp), %rax
-        mov  %rax, 0xA0(%r8)     // %rcx
-        mov  0x70(%rbp), %rax
-        mov  %rax, 0x90(%r8)     // %rdx
-        mov  0x78(%rbp), %rax
-        mov  %rax, 0x78(%r8)     // %rsi
-        mov  0x80(%rbp), %rax
-        mov  %rax, 0x70(%r8)     // %rdi
-        mov  0x88(%rbp), %rax
-        mov  %rax, 0x30(%r8)     // %r8
-        mov  0x90(%rbp), %rax
-        mov  %rax, 0x38(%r8)     // %r9
-        mov  0x98(%rbp), %rax
-        mov  %rax, 0x40(%r8)     // %r10
-        mov  0xA0(%rbp), %rax
-        mov  %rax, 0x48(%r8)     // %r11
-        mov  0xA8(%rbp), %rax
-        mov  %rax, 0x50(%r8)     // %r12
-        mov  0xB0(%rbp), %rax
-        mov  %rax, 0x58(%r8)     // %r13
-        mov  0xB8(%rbp), %rax
-        mov  %rax, 0x60(%r8)     // %r14
-        mov  0xC0(%rbp), %rax
-        mov  %rax, 0x68(%r8)     // %r15
+        // Check the sequence number
         cmp  %rbx, 8(%rbp)
         jne  fatal_error
 
         // Nascent thread launches a helper that doesn't share any of our
         // resources, except for pages mapped as MAP_SHARED.
         // clone(SIGCHLD, stack=1)
-     29:mov  $__NR_clone, %eax
+        mov  $__NR_clone, %eax
         mov  $17, %rdi           // flags = SIGCHLD
         mov  $1, %rsi            // stack = 1
         syscall
@@ -691,16 +632,10 @@ fatal_error:
         jne  fatal_error
         pop  %rax
 
-        // Return to caller. We are in the new thread, now.
-        test %r15, %r15
-        jnz  34f                 // Returning to createTrustedThread()
-
         // Returning to the place where clone() had been called. We rely on
         // using rt_sigreturn() for restoring our registers. The caller already
-        // created a signal stack frame, and we patched the register values
+        // created a signal stack frame and patched the register values
         // with the ones that were in effect prior to calling sandbox_clone().
-        pop %r15
-     34:mov  %r15, 0xA8(%rsp)    // compute new %rip
         mov  $__NR_rt_sigreturn, %eax
         syscall
 

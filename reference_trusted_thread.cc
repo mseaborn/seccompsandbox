@@ -179,43 +179,8 @@ void ReturnFromCloneSyscall(void *signal_frame) {
 
 int HandleNewThread(void *arg) {
   SecureMem::Args *secureMem = (SecureMem::Args *) arg;
-
-  // TODO(mseaborn): The register values could be copied across in
-  // clone.cc instead of in trusted code.  We don't need to copy the
-  // register values via secureMem.
+  // Copy arg2 before the lock on secureMem is released.
   void *signal_frame = secureMem->arg2;
-#if defined(__x86_64__)
-  struct ucontext *uc = (struct ucontext *) signal_frame;
-  uc->uc_mcontext.gregs[REG_R8] = (long) secureMem->r8;
-  uc->uc_mcontext.gregs[REG_R9] = (long) secureMem->r9;
-  uc->uc_mcontext.gregs[REG_R10] = (long) secureMem->r10;
-  uc->uc_mcontext.gregs[REG_R11] = (long) secureMem->r11;
-  uc->uc_mcontext.gregs[REG_R12] = (long) secureMem->r12;
-  uc->uc_mcontext.gregs[REG_R13] = (long) secureMem->r13;
-  uc->uc_mcontext.gregs[REG_R14] = (long) secureMem->r14;
-  uc->uc_mcontext.gregs[REG_R15] = (long) secureMem->r15;
-  uc->uc_mcontext.gregs[REG_RDI] = (long) secureMem->rdi;
-  uc->uc_mcontext.gregs[REG_RSI] = (long) secureMem->rsi;
-  uc->uc_mcontext.gregs[REG_RBP] = (long) secureMem->rbp;
-  uc->uc_mcontext.gregs[REG_RBX] = (long) secureMem->rbx;
-  uc->uc_mcontext.gregs[REG_RDX] = (long) secureMem->rdx;
-  uc->uc_mcontext.gregs[REG_RCX] = (long) secureMem->rcx;
-  uc->uc_mcontext.gregs[REG_RAX] = 0; // Result of clone()
-  uc->uc_mcontext.gregs[REG_RIP] = (long) secureMem->ret;
-#elif defined(__i386__)
-  struct sigcontext *sc = (struct sigcontext *) signal_frame;
-  sc->edi = (long) secureMem->edi;
-  sc->esi = (long) secureMem->esi;
-  sc->ebp = (long) secureMem->ebp;
-  sc->ebx = (long) secureMem->ebx;
-  sc->edx = (long) secureMem->edx;
-  sc->ecx = (long) secureMem->ecx;
-  sc->eax = 0; // Result of clone()
-  sc->eip = (long) secureMem->ret;
-#else
-#error Unsupported target platform
-#endif
-
   CreateReferenceTrustedThread(secureMem->newSecureMem);
   ReturnFromCloneSyscall(signal_frame);
   return 0;

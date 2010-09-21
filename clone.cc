@@ -34,20 +34,6 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
   if (stack == 0) {
     rc = -EINVAL;
   } else {
-    // Pass along the address on the stack where syscallEntryPointWithFrame()
-    // stored the original CPU registers. These registers will be restored in
-    // the newly created thread prior to returning from the wrapped system
-    // call.
-    #if defined(__x86_64__)
-    memcpy(&request.clone_req.regs64, wrapper_sp,
-           sizeof(request.clone_req.regs64) + sizeof(void *));
-    #elif defined(__i386__)
-    memcpy(&request.clone_req.regs32, wrapper_sp,
-           sizeof(request.clone_req.regs32) + sizeof(void *));
-    #else
-    #error Unsupported target platform
-    #endif
-
     // In order to unblock the signal mask in the newly created thread and
     // after entering Seccomp mode, we have to call sigreturn(). But that
     // requires access to a proper stack frame describing a valid signal.
@@ -88,12 +74,49 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
     #error Unsupported target platform
     #endif
 
-    // Adjust the signal stack frame so that it contains the correct stack
-    // pointer upon returning from sigreturn().
+    // We have created a signal frame that contains the correct values
+    // of FP registers and segment registers, but we need to update it
+    // with:
+    //  * The values of general purpose registers, as saved by
+    //    syscallEntryPoint.
+    //  * The return address, which is also saved by syscallEntryPoint.
+    //    Note that we do not return through defaultSystemCallHandler()
+    //    and the syscallEntryPoint code in the new thread.  We jump
+    //    out of these, straight back to where syscallEntryPoint was
+    //    originally called.
+    //  * The new stack address for the new thread.
+    //  * The return value from the syscall (0 in the new thread).
+    struct CloneStackFrame *regs = (struct CloneStackFrame *) wrapper_sp;
     #if defined(__x86_64__)
-    *(char **)(request.clone_req.stack + 0xA0) = stack;
+    struct ucontext *uc = (struct ucontext *) request.clone_req.stack;
+    uc->uc_mcontext.gregs[REG_R8] = (long) regs->r8;
+    uc->uc_mcontext.gregs[REG_R9] = (long) regs->r9;
+    uc->uc_mcontext.gregs[REG_R10] = (long) regs->r10;
+    uc->uc_mcontext.gregs[REG_R11] = (long) regs->r11;
+    uc->uc_mcontext.gregs[REG_R12] = (long) regs->r12;
+    uc->uc_mcontext.gregs[REG_R13] = (long) regs->r13;
+    uc->uc_mcontext.gregs[REG_R14] = (long) regs->r14;
+    uc->uc_mcontext.gregs[REG_R15] = (long) regs->r15;
+    uc->uc_mcontext.gregs[REG_RDI] = (long) regs->rdi;
+    uc->uc_mcontext.gregs[REG_RSI] = (long) regs->rsi;
+    uc->uc_mcontext.gregs[REG_RBP] = (long) regs->rbp;
+    uc->uc_mcontext.gregs[REG_RBX] = (long) regs->rbx;
+    uc->uc_mcontext.gregs[REG_RDX] = (long) regs->rdx;
+    uc->uc_mcontext.gregs[REG_RCX] = (long) regs->rcx;
+    uc->uc_mcontext.gregs[REG_RAX] = 0; // Result of clone()
+    uc->uc_mcontext.gregs[REG_RIP] = (long) regs->ret;
+    uc->uc_mcontext.gregs[REG_RSP] = (long) stack;
     #elif defined(__i386__)
-    *(char **)(request.clone_req.stack + 0x1C) = stack;
+    struct sigcontext *sc = (struct sigcontext *) request.clone_req.stack;
+    sc->edi = (long) regs->edi;
+    sc->esi = (long) regs->esi;
+    sc->ebp = (long) regs->ebp;
+    sc->ebx = (long) regs->ebx;
+    sc->edx = (long) regs->edx;
+    sc->ecx = (long) regs->ecx;
+    sc->eax = 0; // Result of clone()
+    sc->eip = (long) regs->ret;
+    sc->esp = (long) stack;
     #else
     #error Unsupported target platform
     #endif
@@ -125,36 +148,7 @@ bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
       SecureMem::abandonSystemCall(threadFd, -ENOMEM);
       return false;
     } else {
-      // clone() has unusual semantics. We don't want to return back into the
-      // trusted thread, but instead we need to continue execution at the IP
-      // where we got called initially.
       SecureMem::lockSystemCall(parentMapsFd, mem);
-      mem->ret              = clone_req.ret;
-      #if defined(__x86_64__)
-      mem->rbp              = clone_req.regs64.rbp;
-      mem->rbx              = clone_req.regs64.rbx;
-      mem->rcx              = clone_req.regs64.rcx;
-      mem->rdx              = clone_req.regs64.rdx;
-      mem->rsi              = clone_req.regs64.rsi;
-      mem->rdi              = clone_req.regs64.rdi;
-      mem->r8               = clone_req.regs64.r8;
-      mem->r9               = clone_req.regs64.r9;
-      mem->r10              = clone_req.regs64.r10;
-      mem->r11              = clone_req.regs64.r11;
-      mem->r12              = clone_req.regs64.r12;
-      mem->r13              = clone_req.regs64.r13;
-      mem->r14              = clone_req.regs64.r14;
-      mem->r15              = clone_req.regs64.r15;
-      #elif defined(__i386__)
-      mem->ebp              = clone_req.regs32.ebp;
-      mem->edi              = clone_req.regs32.edi;
-      mem->esi              = clone_req.regs32.esi;
-      mem->edx              = clone_req.regs32.edx;
-      mem->ecx              = clone_req.regs32.ecx;
-      mem->ebx              = clone_req.regs32.ebx;
-      #else
-      #error Unsupported target platform
-      #endif
       newMem->sequence      = 0;
       newMem->shmId         = -1;
       mem->newSecureMem     = newMem;
