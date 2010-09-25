@@ -8,8 +8,7 @@
 - try to find places where we call any of the unrestricted system calls and
   avoid instrumenting the code.
 
-- audit error code handling in trusted_thread.cc. Most notably, add error
-  handling, if mprotect() fails.
+- audit error code handling in trusted_thread.cc.
 
 - get rid of preloader and of ELF helper process.
 

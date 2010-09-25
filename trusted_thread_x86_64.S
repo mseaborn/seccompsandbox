@@ -5,6 +5,9 @@
 #include <asm/unistd.h>
 
 
+#define CHECK_SYSCALL_ZERO  test %rax, %rax; jnz fatal_error
+
+
         .global playground$runTrustedThread
 playground$runTrustedThread:
         push %rbx
@@ -50,6 +53,7 @@ playground$runTrustedThread:
         mov  $8, %r10            // mask all 64 signals
         mov  $__NR_rt_sigprocmask, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         xor  %rsp, %rsp          // invalidate the stack in all trusted code
         jmp  20f                 // create trusted thread
 
@@ -175,6 +179,7 @@ playground$runTrustedThread:
         mov  $3, %edx            // prot  = PROT_READ | PROT_WRITE
         mov  $__NR_mprotect, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         mov  %r8d, 0xDC(%rdi)    // set most recently returned SysV shm id
         xor  %rdi, %rdi
 
@@ -334,14 +339,17 @@ playground$runTrustedThread:
         mov  0xF0(%rsi), %rdi    // fd     = threadFdPub
         mov  $__NR_close, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         mov  %rsi, %rdi          // start  = secure_mem
         mov  $8192, %esi         // length = 8192
         xor  %rdx, %rdx          // prot   = PROT_NONE
         mov  $__NR_mprotect, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         mov  %r13, %rdi          // fd     = threadFd
         mov  $__NR_close, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         mov  $__NR_clone, %eax
         mov  $17, %rdi           // flags = SIGCHLD
         mov  $1, %rsi            // stack = 1
@@ -427,6 +435,7 @@ playground$runTrustedThread:
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         mov  $__NR_mprotect, %eax
         syscall
+        CHECK_SYSCALL_ZERO
         lock; addl $0x80000000, (%rdi)
         jz   23f                 // exit thread
         mov  $1, %edx
@@ -455,6 +464,7 @@ fatal_error:
         mov  $4096, %esi         // len  = 4096
         mov  $1, %edx            // prot = PROT_READ
         syscall
+        CHECK_SYSCALL_ZERO
 
         // The second page is used as scratch space by the trusted thread.
         // Make it writable.
@@ -462,6 +472,7 @@ fatal_error:
         add  $4096, %rdi         // addr = secure_mem + 4096
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         syscall
+        CHECK_SYSCALL_ZERO
 
         // Call clone() to create new trusted thread().
         // clone(CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|
@@ -579,6 +590,7 @@ fatal_error:
         mov  $4096, %esi
         mov  $3, %edx            // PROT_READ | PROT_WRITE
         syscall
+        CHECK_SYSCALL_ZERO
         cmp  %rbx, 8(%rbp)
         jne  fatal_error
         lock; addl $0x80000000, (%rdi)
@@ -608,8 +620,7 @@ fatal_error:
         mov  $22, %edi           // PR_SET_SECCOMP
         mov  $1, %esi
         syscall
-        test %rax, %rax
-        jnz  fatal_error
+        CHECK_SYSCALL_ZERO
 
         // We can finally start using the stack. Signal handlers no longer pose
         // a threat to us.
