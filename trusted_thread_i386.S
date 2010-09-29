@@ -601,7 +601,7 @@ fatal_error:
         //   0x48 threadFdPub    (%esi)
         //   0x4C threadFd       (%mm0)
         // 0x50
-        lea  -0x50(%ebp), %ecx
+        lea  sendmsg_data, %ecx
         xor  %eax, %eax
         mov  %eax, 0x08(%ecx)    // flags
         mov  %eax, 0x0C(%ecx)    // msg_name
@@ -713,3 +713,14 @@ fatal_error:
     999:pop  %ebp
         pop  %ebx
         ret
+
+
+        .bss
+        // Reserve space for sendmsg() data.  This is used in a fork()'d
+        // helper process, so in principle this could safely overlap and
+        // overwrite other data, but it is such a small amount of memory
+        // that it is not worth trying to do that.  The only requirement
+        // is that this must be in a MAP_PRIVATE mapping so that an
+        // untrusted thread cannot modify the forked subprocess's copy.
+sendmsg_data:
+        .space 0x50
