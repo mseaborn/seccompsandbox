@@ -27,7 +27,7 @@ long Sandbox::sandbox_exit(int status) {
   }
 }
 
-  bool Sandbox::process_exit(const SecureMem::SyscallRequestInfo* info) {
+bool Sandbox::process_exit(const SecureMem::SyscallRequestInfo* info) {
   SecureMem::lockSystemCall(*info);
   SecureMem::sendSystemCall(*info, true, 0);
   return true;

@@ -23,7 +23,7 @@ long Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   return rc;
 }
 
-  bool Sandbox::process_ioctl(const SecureMem::SyscallRequestInfo* info) {
+bool Sandbox::process_ioctl(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;

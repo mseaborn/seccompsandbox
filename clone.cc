@@ -127,7 +127,7 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
   return rc;
 }
 
-  bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
+bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   Clone clone_req;
   SysCalls sys;
