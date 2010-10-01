@@ -23,12 +23,13 @@ void die(const char *msg) {
 #define TO_STRING_1(x) #x
 #define TO_STRING(x) TO_STRING_1(x)
 
-#define assert(expr) { \
-  if (!(expr)) die("assertion failed at " __FILE__ ":" TO_STRING(__LINE__) \
+#define assert(expr) {                                                        \
+  if (!(expr)) die("Sandbox violation detected, program aborted\n"            \
+                   "assertion failed at " __FILE__ ":" TO_STRING(__LINE__)    \
                    ": " #expr "\n"); }
 
 // Perform a syscall given an array of syscall arguments.
-extern "C" long DoSyscall(long regs[7]);
+extern "C" long DoSyscall(unsigned long regs[7]);
 asm(
     ".pushsection .text, \"ax\", @progbits\n"
     ".global DoSyscall\n"
@@ -199,7 +200,7 @@ int TrustedThread(void *arg) {
 
   int sequence_no = 2;
   while (1) {
-    long syscall_args[7];
+    unsigned long syscall_args[7];
     memset(syscall_args, 0, sizeof(syscall_args));
     int got = sys.read(fd, syscall_args, 4);
     assert(got == 4);
