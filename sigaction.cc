@@ -136,6 +136,17 @@ bool Sandbox::process_sigaction(int parentMapsFd, int sandboxFd,
       sizeof(sigaction_req)) {
     die("Failed to read parameters for sigaction() [process]");
   }
+  switch (sigaction_req.sysnum) {
+    #if defined(__NR_sigaction)
+    case __NR_sigaction:
+    #endif
+    #if defined(__NR_rt_sigaction)
+    case __NR_rt_sigaction:
+    #endif
+      break;
+    default:
+      die("Invalid sigaction() request");
+  }
   if (sigaction_req.signum == SIGSEGV) {
     // This should never happen. Something went wrong when intercepting the
     // system call. This is not a security problem, but it clearly doesn't
