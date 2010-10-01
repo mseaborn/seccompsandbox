@@ -23,20 +23,20 @@ long Sandbox::sandbox_ioctl(int d, int req, void *arg) {
   return rc;
 }
 
-bool Sandbox::process_ioctl(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMem::Args* mem) {
+  bool Sandbox::process_ioctl(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   IOCtl ioctl_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &ioctl_req, sizeof(ioctl_req)) !=sizeof(ioctl_req)){
+  if (read(sys, info->trustedProcessFd, &ioctl_req, sizeof(ioctl_req)) !=
+      sizeof(ioctl_req)) {
     die("Failed to read parameters for ioctl() [process]");
   }
   int rc = -EINVAL;
   switch (ioctl_req.req) {
     case TCGETS:
     case TIOCGWINSZ:
-      SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_ioctl,
-                                ioctl_req.d, ioctl_req.req, ioctl_req.arg);
+      SecureMem::sendSystemCall(*info, false, ioctl_req.d, ioctl_req.req,
+                                ioctl_req.arg);
       return true;
     default:
       if (Debug::isEnabled()) {
@@ -44,7 +44,7 @@ bool Sandbox::process_ioctl(int parentMapsFd, int sandboxFd, int threadFdPub,
         sprintf(buf, "Unsupported ioctl: 0x%04X\n", ioctl_req.req);
         Debug::message(buf);
       }
-      SecureMem::abandonSystemCall(threadFd, rc);
+      SecureMem::abandonSystemCall(*info, rc);
       return false;
   }
 }

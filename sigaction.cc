@@ -35,7 +35,6 @@ long Sandbox::sandbox_sigaction(int signum, const void* a_, void* oa_) {
       struct RequestHeader header;
       SigAction sigaction_req;
     } __attribute__((packed)) request;
-    request.sigaction_req.sysnum     = __NR_sigaction;
     request.sigaction_req.signum     = signum;
     request.sigaction_req.action     =
       reinterpret_cast<const SysCalls::kernel_sigaction *>(action);
@@ -80,7 +79,6 @@ long Sandbox::sandbox_rt_sigaction(int signum, const void* a_, void* oa_,
       struct RequestHeader header;
       SigAction sigaction_req;
     } __attribute__((packed)) request;
-    request.sigaction_req.sysnum     = __NR_rt_sigaction;
     request.sigaction_req.signum     = signum;
     request.sigaction_req.action     = action;
     request.sigaction_req.old_action = old_action;
@@ -115,9 +113,7 @@ void* Sandbox::sandbox_signal(int signum, const void* handler) {
 }
 #endif
 
-bool Sandbox::process_sigaction(int parentMapsFd, int sandboxFd,
-                                int threadFdPub, int threadFd,
-                                SecureMem::Args* mem) {
+bool Sandbox::process_sigaction(const SyscallRequestInfo* info) {
   // We need to intercept sigaction() in order to properly rewrite calls to
   // sigaction(SEGV). While there is no security implication if we didn't do
   // so, it would end up preventing the program from running correctly as the
@@ -132,32 +128,20 @@ bool Sandbox::process_sigaction(int parentMapsFd, int sandboxFd,
   // Read request
   SigAction sigaction_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &sigaction_req, sizeof(sigaction_req)) !=
-      sizeof(sigaction_req)) {
+  if (read(sys, info->trustedProcessFd, &sigaction_req,
+           sizeof(sigaction_req)) != sizeof(sigaction_req)) {
     die("Failed to read parameters for sigaction() [process]");
-  }
-  switch (sigaction_req.sysnum) {
-    #if defined(__NR_sigaction)
-    case __NR_sigaction:
-    #endif
-    #if defined(__NR_rt_sigaction)
-    case __NR_rt_sigaction:
-    #endif
-      break;
-    default:
-      die("Invalid sigaction() request");
   }
   if (sigaction_req.signum == SIGSEGV) {
     // This should never happen. Something went wrong when intercepting the
     // system call. This is not a security problem, but it clearly doesn't
     // make sense to let the system call pass.
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, sigaction_req.sysnum,
-                            sigaction_req.signum, sigaction_req.action,
-                            sigaction_req.old_action,
-                            sigaction_req.sigsetsize);
+  SecureMem::sendSystemCall(*info, false,
+                           sigaction_req.signum, sigaction_req.action,
+                           sigaction_req.old_action, sigaction_req.sigsetsize);
   return true;
 }
 

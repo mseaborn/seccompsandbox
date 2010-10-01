@@ -110,76 +110,76 @@ class SecureMem {
     };
   } __attribute__((packed)) Args;
 
-  // Allows the trusted process to check whether the parent process still
-  // exists. If it doesn't, kill the trusted process.
-  static void dieIfParentDied(int parentProc);
+  struct SyscallRequestInfo {
+    int  sysnum;
+    Args *mem;
+    int  trustedProcessFd;
+    int  trustedThreadFd;
+    int  applicationFd;
+    int  parentMapsFd;
+  };
 
   // The trusted process received a system call that it intends to deny.
-  static void abandonSystemCall(int fd, int err);
+  static void abandonSystemCall(const SyscallRequestInfo& rpc, long err);
 
   // Acquires the syscall_mutex_ prior to making changes to the parameters in
   // the secure memory page. Used by calls such as exit(), clone(), open(),
   // socketcall(), and stat().
   // After locking the mutex, it is no longer valid to abandon the system
   // call!
-  static void lockSystemCall(int parentProc, Args* mem);
+  static void lockSystemCall(const SyscallRequestInfo& rpc);
 
   // Sends a system call to the trusted thread. If "locked" is true, the
   // caller must first call lockSystemCall() and must also provide
   // "parentProc". In locked mode, sendSystemCall() won't return until the
   // trusted thread has completed processing.
   // Use sparingly as it serializes the operation of the trusted process.
-  static void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                             int syscallNum) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum);
+  static void sendSystemCall(const SyscallRequestInfo& rpc, bool locked) {
+    sendSystemCallInternal(rpc, locked);
   }
   template<class T1> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked, T1 arg1) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1);
   }
   template<class T1, class T2> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1, T2 arg2) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1, (void*)arg2);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+                      T1 arg1, T2 arg2) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2);
   }
   template<class T1, class T2, class T3> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1, T2 arg2, T3 arg3) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1, (void*)arg2, (void*)arg3);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+                      T1 arg1, T2 arg2, T3 arg3) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3);
   }
   template<class T1, class T2, class T3, class T4> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1, T2 arg2, T3 arg3, T4 arg4) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1, (void*)arg2, (void*)arg3, (void*)arg4);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+                      T1 arg1, T2 arg2, T3 arg3, T4 arg4) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+                           (void*)arg4);
   }
   template<class T1, class T2, class T3, class T4, class T5> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1, T2 arg2, T3 arg3, T4 arg4,
-                      T5 arg5) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1, (void*)arg2, (void*)arg3, (void*)arg4,
-                           (void*)arg5);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+                      T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+                           (void*)arg4, (void*)arg5);
   }
   template<class T1, class T2, class T3, class T4, class T5, class T6> static
-  void sendSystemCall(int fd, bool locked, int parentProc, Args* mem,
-                      int syscallNum, T1 arg1, T2 arg2, T3 arg3, T4 arg4,
-                      T5 arg5, T6 arg6) {
-    sendSystemCallInternal(fd, locked, parentProc, mem, syscallNum,
-                           (void*)arg1, (void*)arg2, (void*)arg3, (void*)arg4,
-                           (void*)arg5, (void*)arg6);
+  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+                      T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) {
+    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+                           (void*)arg4, (void*)arg5, (void*)arg6);
   }
 
  private:
-  static void sendSystemCallInternal(int fd, bool locked, int parentProc,
-                                     Args* mem, int syscallNum, void* arg1 = 0,
-                                     void* arg2 = 0, void* arg3 = 0,
-                                     void* arg4 = 0, void* arg5 = 0,
-                                     void* arg6 = 0);
+  // Allows the trusted process to check whether the parent process still
+  // exists. If it doesn't, kill the trusted process.
+  static void dieIfParentDied(int parentMapsFd);
+
+  static void sendSystemCallInternal(const SyscallRequestInfo& rpc,
+                                     bool locked,
+                                     void* arg1 = 0, void* arg2 = 0,
+                                     void* arg3 = 0, void* arg4 = 0,
+                                     void* arg5 = 0, void* arg6 = 0);
 };
 
 } // namespace

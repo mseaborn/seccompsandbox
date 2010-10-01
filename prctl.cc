@@ -26,24 +26,22 @@ long Sandbox::sandbox_prctl(int option, unsigned long arg2, unsigned long arg3,
   return rc;
 }
 
-bool Sandbox::process_prctl(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_prctl(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   SysCalls sys;
   Prctl prctl_req;
-  if (read(sys, sandboxFd, &prctl_req, sizeof(prctl_req)) !=
+  if (read(sys, info->trustedProcessFd, &prctl_req, sizeof(prctl_req)) !=
       sizeof(prctl_req)) {
     die("Failed to read parameters for prctl() [process]");
   }
   switch (prctl_req.option) {
   case PR_GET_DUMPABLE:
   case PR_SET_DUMPABLE:
-    SecureMem::sendSystemCall(threadFdPub, false, parentMapsFd, mem,
-                              __NR_prctl, prctl_req.option, prctl_req.arg2,
+    SecureMem::sendSystemCall(*info, false, prctl_req.option, prctl_req.arg2,
                               0, 0, 0);
     return true;
   default:
-    SecureMem::abandonSystemCall(threadFd, EPERM);
+    SecureMem::abandonSystemCall(*info, -EPERM);
     return false;
   }
 }

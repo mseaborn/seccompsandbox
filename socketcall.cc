@@ -172,13 +172,11 @@ long Sandbox::sandbox_getsockopt(int sockfd, int level, int optname,
   return rc;
 }
 
-bool Sandbox::process_recvfrom(int parentMapsFd, int sandboxFd,
-                               int threadFdPub, int threadFd,
-                               SecureMem::Args* mem) {
+bool Sandbox::process_recvfrom(const SyscallRequestInfo* info) {
   // Read request
   RecvFrom recvfrom_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &recvfrom_req, sizeof(recvfrom_req)) !=
+  if (read(sys, info->trustedProcessFd, &recvfrom_req, sizeof(recvfrom_req)) !=
       sizeof(recvfrom_req)) {
     die("Failed to read parameters for recvfrom() [process]");
   }
@@ -186,26 +184,24 @@ bool Sandbox::process_recvfrom(int parentMapsFd, int sandboxFd,
   // Unsupported flag encountered. Deny the call.
   if (recvfrom_req.flags &
       ~(MSG_DONTWAIT|MSG_OOB|MSG_PEEK|MSG_TRUNC|MSG_WAITALL)) {
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
   // While we do not anticipate any particular need to receive data on
   // unconnected sockets, there is no particular risk in doing so.
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_recvfrom, recvfrom_req.sockfd,
+  SecureMem::sendSystemCall(*info, false, recvfrom_req.sockfd,
                             recvfrom_req.buf, recvfrom_req.len,
                             recvfrom_req.flags, recvfrom_req.from,
                             recvfrom_req.fromlen);
   return true;
 }
 
-bool Sandbox::process_recvmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
-                              int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_recvmsg(const SyscallRequestInfo* info) {
   // Read request
   RecvMsg  recvmsg_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &recvmsg_req, sizeof(recvmsg_req)) !=
+  if (read(sys, info->trustedProcessFd, &recvmsg_req, sizeof(recvmsg_req)) !=
       sizeof(recvmsg_req)) {
     die("Failed to read parameters for recvmsg() [process]");
   }
@@ -213,26 +209,24 @@ bool Sandbox::process_recvmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
   // Unsupported flag encountered. Deny the call.
   if (recvmsg_req.flags &
       ~(MSG_DONTWAIT|MSG_OOB|MSG_PEEK|MSG_TRUNC|MSG_WAITALL)) {
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
   // Receiving messages is general not security critical.
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_recvmsg, recvmsg_req.sockfd,
+  SecureMem::sendSystemCall(*info, false, recvmsg_req.sockfd,
                             recvmsg_req.msg, recvmsg_req.flags);
   return true;
 }
 
-bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
-                              int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_sendmsg(const SyscallRequestInfo* info) {
   // Read request
   struct {
     SendMsg sendmsg_req;
     struct msghdr   msg;
   } __attribute__((packed)) data;
   SysCalls sys;
-  if (read(sys, sandboxFd, &data, sizeof(data)) != sizeof(data)) {
+  if (read(sys, info->trustedProcessFd, &data, sizeof(data)) != sizeof(data)) {
     die("Failed to read parameters for sendmsg() [process]");
   }
 
@@ -240,12 +234,13 @@ bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
     die("Unexpected size for socketcall() payload [process]");
   }
   char extra[data.msg.msg_namelen + data.msg.msg_controllen];
-  if (read(sys, sandboxFd, &extra, sizeof(extra)) != (ssize_t)sizeof(extra)) {
+  if (read(sys, info->trustedProcessFd, &extra, sizeof(extra)) !=
+      (ssize_t)sizeof(extra)) {
     die("Failed to read parameters for sendmsg() [process]");
   }
   if (CMSG_ALIGN(sizeof(struct msghdr)) +
       CMSG_ALIGN(data.msg.msg_namelen) +
-      CMSG_ALIGN(data.msg.msg_controllen) > sizeof(mem->pathname)) {
+      CMSG_ALIGN(data.msg.msg_controllen) > sizeof(info->mem->pathname)) {
     goto deny;
   }
 
@@ -253,7 +248,7 @@ bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
       (data.sendmsg_req.flags &
        ~(MSG_CONFIRM|MSG_DONTWAIT|MSG_EOR|MSG_MORE|MSG_NOSIGNAL|MSG_OOB))) {
  deny:
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
@@ -277,68 +272,66 @@ bool Sandbox::process_sendmsg(int parentMapsFd, int sandboxFd, int threadFdPub,
 
   // This must be a locked system call, because we have to ensure that the
   // untrusted code does not tamper with the msghdr after we have examined it.
-  SecureMem::lockSystemCall(parentMapsFd, mem);
+  SecureMem::lockSystemCall(*info);
   if (sizeof(extra) > 0) {
     if (data.msg.msg_namelen > 0) {
-      data.msg.msg_name = mem->pathname + CMSG_ALIGN(sizeof(struct msghdr));
+      data.msg.msg_name = info->mem->pathname +
+                          CMSG_ALIGN(sizeof(struct msghdr));
       memcpy(data.msg.msg_name, extra, data.msg.msg_namelen);
     }
     if (data.msg.msg_controllen > 0) {
-      data.msg.msg_control = mem->pathname + CMSG_ALIGN(sizeof(struct msghdr))+
+      data.msg.msg_control = info->mem->pathname +
+                             CMSG_ALIGN(sizeof(struct msghdr))+
                              CMSG_ALIGN(data.msg.msg_namelen);
       memcpy(data.msg.msg_control, extra + data.msg.msg_namelen,
              data.msg.msg_controllen);
     }
   }
-  memcpy(mem->pathname, &data.msg, sizeof(struct msghdr));
-  SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
-                            __NR_sendmsg, data.sendmsg_req.sockfd,
-                            mem->pathname - (char*)mem + (char*)mem->self,
+  memcpy(info->mem->pathname, &data.msg, sizeof(struct msghdr));
+  SecureMem::sendSystemCall(*info, true, data.sendmsg_req.sockfd,
+                            info->mem->pathname - (char*)info->mem +
+                            (char*)info->mem->self,
                             data.sendmsg_req.flags);
   return true;
 }
 
-bool Sandbox::process_sendto(int parentMapsFd, int sandboxFd, int threadFdPub,
-                             int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_sendto(const SyscallRequestInfo* info) {
   // Read request
   SendTo   sendto_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &sendto_req, sizeof(sendto_req)) !=
+  if (read(sys, info->trustedProcessFd, &sendto_req, sizeof(sendto_req)) !=
       sizeof(sendto_req)) {
     die("Failed to read parameters for sendto() [process]");
   }
 
   // The sandbox does not allow sending to arbitrary addresses.
   if (sendto_req.to) {
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
   // Unsupported flag encountered. Deny the call.
   if (sendto_req.flags &
       ~(MSG_CONFIRM|MSG_DONTWAIT|MSG_EOR|MSG_MORE|MSG_NOSIGNAL|MSG_OOB)) {
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
   // Sending data on a connected socket is similar to calling write().
   // Allow it.
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_sendto, sendto_req.sockfd,
+  SecureMem::sendSystemCall(*info, false, sendto_req.sockfd,
                             sendto_req.buf, sendto_req.len,
                             sendto_req.flags, sendto_req.to,
                             sendto_req.tolen);
   return true;
 }
 
-bool Sandbox::process_setsockopt(int parentMapsFd, int sandboxFd,
-                                 int threadFdPub, int threadFd,
-                                 SecureMem::Args* mem) {
+bool Sandbox::process_setsockopt(const SyscallRequestInfo* info) {
   // Read request
   SetSockOpt setsockopt_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &setsockopt_req, sizeof(setsockopt_req)) !=
-      sizeof(setsockopt_req)) {
+  if (read(sys, info->trustedProcessFd, &setsockopt_req,
+           sizeof(setsockopt_req)) != sizeof(setsockopt_req)) {
     die("Failed to read parameters for setsockopt() [process]");
   }
 
@@ -356,8 +349,7 @@ bool Sandbox::process_setsockopt(int parentMapsFd, int sandboxFd,
         case SO_REUSEADDR:
         case SO_SNDBUF:
         case SO_TIMESTAMP:
-          SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                                 __NR_setsockopt, setsockopt_req.sockfd,
+          SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
                                  setsockopt_req.level, setsockopt_req.optname,
                                  setsockopt_req.optval, setsockopt_req.optlen);
           return true;
@@ -379,8 +371,7 @@ bool Sandbox::process_setsockopt(int parentMapsFd, int sandboxFd,
         case TCP_QUICKACK:
         case TCP_SYNCNT:
         case TCP_WINDOW_CLAMP:
-          SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                                 __NR_setsockopt, setsockopt_req.sockfd,
+          SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
                                  setsockopt_req.level, setsockopt_req.optname,
                                  setsockopt_req.optval, setsockopt_req.optlen);
           return true;
@@ -391,18 +382,16 @@ bool Sandbox::process_setsockopt(int parentMapsFd, int sandboxFd,
     default:
       break;
   }
-  SecureMem::abandonSystemCall(threadFd, -EINVAL);
+  SecureMem::abandonSystemCall(*info, -EINVAL);
   return false;
 }
 
-bool Sandbox::process_getsockopt(int parentMapsFd, int sandboxFd,
-                                 int threadFdPub, int threadFd,
-                                 SecureMem::Args* mem) {
+bool Sandbox::process_getsockopt(const SyscallRequestInfo* info) {
   // Read request
   GetSockOpt getsockopt_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &getsockopt_req, sizeof(getsockopt_req)) !=
-      sizeof(getsockopt_req)) {
+  if (read(sys, info->trustedProcessFd, &getsockopt_req,
+           sizeof(getsockopt_req)) != sizeof(getsockopt_req)) {
     die("Failed to read parameters for getsockopt() [process]");
   }
 
@@ -423,8 +412,7 @@ bool Sandbox::process_getsockopt(int parentMapsFd, int sandboxFd,
         case SO_SNDBUF:
         case SO_TIMESTAMP:
         case SO_TYPE:
-          SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                                 __NR_getsockopt, getsockopt_req.sockfd,
+          SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
                                  getsockopt_req.level, getsockopt_req.optname,
                                  getsockopt_req.optval, getsockopt_req.optlen);
           return true;
@@ -446,8 +434,7 @@ bool Sandbox::process_getsockopt(int parentMapsFd, int sandboxFd,
         case TCP_QUICKACK:
         case TCP_SYNCNT:
         case TCP_WINDOW_CLAMP:
-          SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                                 __NR_getsockopt, getsockopt_req.sockfd,
+          SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
                                  getsockopt_req.level, getsockopt_req.optname,
                                  getsockopt_req.optval, getsockopt_req.optlen);
           return true;
@@ -458,7 +445,7 @@ bool Sandbox::process_getsockopt(int parentMapsFd, int sandboxFd,
     default:
       break;
   }
-  SecureMem::abandonSystemCall(threadFd, -EINVAL);
+  SecureMem::abandonSystemCall(*info, -EINVAL);
   return false;
 }
 
@@ -678,14 +665,12 @@ long Sandbox::sandbox_socketcall(int call, void* args) {
   return rc;
 }
 
-bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
-                                 int threadFdPub, int threadFd,
-                                 SecureMem::Args* mem) {
+bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
   // Read request
   SocketCall socketcall_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &socketcall_req, sizeof(socketcall_req)) !=
-      sizeof(socketcall_req)) {
+  if (read(sys, info->trustedProcessFd, &socketcall_req,
+           sizeof(socketcall_req)) != sizeof(socketcall_req)) {
     die("Failed to read parameters for socketcall() [process]");
   }
 
@@ -718,7 +703,8 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
   // Read the extra payload, if any.
   char extra[numExtraData];
   if (numExtraData) {
-    if (read(sys, sandboxFd, extra, numExtraData) != (ssize_t)numExtraData) {
+    if (read(sys, info->trustedProcessFd, extra, numExtraData) !=
+        (ssize_t)numExtraData) {
       die("Failed to read socketcall() payload [process]");
     }
   }
@@ -737,7 +723,7 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
   }
   char sendmsgExtra[numSendmsgExtra];
   if (numSendmsgExtra) {
-    if (read(sys, sandboxFd, sendmsgExtra, serializedExtraLen) !=
+    if (read(sys, info->trustedProcessFd, sendmsgExtra, serializedExtraLen) !=
         serializedExtraLen) {
       die("Failed to read socketcall() payload [process]");
     } else {
@@ -772,8 +758,8 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
     accept_simple:
       // None of the parameters need to be checked, so it is OK to refer
       // to the parameter block created by the untrusted code.
-      SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_socketcall,
-                                socketcall_req.call, socketcall_req.arg_ptr);
+      SecureMem::sendSystemCall(*info, false, socketcall_req.call,
+                                socketcall_req.arg_ptr);
       return true;
     case SYS_GETSOCKNAME:
     case SYS_GETPEERNAME:
@@ -804,11 +790,12 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       // that should not be tampered with after it has been inspected. Copy it
       // into the write-protected securely shared memory before telling the
       // trusted thread to execute the socket call.
-      SecureMem::lockSystemCall(parentMapsFd, mem);
-      memcpy(mem->pathname, &socketcall_req.args, sizeof(socketcall_req.args));
-      SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
-                                __NR_socketcall, socketcall_req.call,
-                                mem->pathname - (char*)mem + (char*)mem->self);
+      SecureMem::lockSystemCall(*info);
+      memcpy(info->mem->pathname, &socketcall_req.args,
+             sizeof(socketcall_req.args));
+      SecureMem::sendSystemCall(*info, true, socketcall_req.call,
+                                info->mem->pathname - (char*)info->mem +
+                                (char*)info->mem->self);
       return true;
     case SYS_RECVFROM:
       // While we do not anticipate any particular need to receive data on
@@ -921,7 +908,7 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       if (CMSG_ALIGN(sizeof(socketcall_req.args)) +
           CMSG_ALIGN(sizeof(*msg)) +
           numSendmsgExtra >
-          sizeof(mem->pathname)) {
+          sizeof(info->mem->pathname)) {
         goto deny;
       }
 
@@ -952,12 +939,13 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       // This must be a locked system call, because we have to ensure that
       // the untrusted code does not tamper with the msghdr after we have
       // examined it.
-      SecureMem::lockSystemCall(parentMapsFd, mem);
+      SecureMem::lockSystemCall(*info);
       socketcall_req.args.sendmsg.msg =
-          reinterpret_cast<struct msghdr*>(mem->pathname +
-                                      CMSG_ALIGN(sizeof(socketcall_req.args)) -
-                                      (char*)mem + (char*)mem->self);
-      memcpy(mem->pathname, &socketcall_req.args, sizeof(socketcall_req.args));
+          reinterpret_cast<struct msghdr*>(info->mem->pathname +
+                                    CMSG_ALIGN(sizeof(socketcall_req.args)) -
+                                    (char*)info->mem + (char*)info->mem->self);
+      memcpy(info->mem->pathname, &socketcall_req.args,
+             sizeof(socketcall_req.args));
       if (numSendmsgExtra) {
         if (msg->msg_namelen > 0) {
           msg->msg_name = (char *)socketcall_req.args.sendmsg.msg +
@@ -968,16 +956,16 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
                              CMSG_ALIGN(sizeof(*msg)) +
                              CMSG_ALIGN(msg->msg_namelen);
         }
-        memcpy(mem->pathname +
+        memcpy(info->mem->pathname +
                CMSG_ALIGN(sizeof(socketcall_req.args)) +
                CMSG_ALIGN(sizeof(*msg)),
                sendmsgExtra, numSendmsgExtra);
       }
-      memcpy(mem->pathname + CMSG_ALIGN(sizeof(socketcall_req.args)),
+      memcpy(info->mem->pathname + CMSG_ALIGN(sizeof(socketcall_req.args)),
              msg, sizeof(*msg));
-      SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
-                                __NR_socketcall, socketcall_req.call,
-                                mem->pathname - (char*)mem + (char*)mem->self);
+      SecureMem::sendSystemCall(*info, true, socketcall_req.call,
+                                info->mem->pathname - (char*)info->mem +
+                                (char*)info->mem->self);
       return true;
     }
     case SYS_RECVMSG:
@@ -989,7 +977,7 @@ bool Sandbox::process_socketcall(int parentMapsFd, int sandboxFd,
       goto accept_complex;
     default:
     deny:
-      SecureMem::abandonSystemCall(threadFd, rc);
+      SecureMem::abandonSystemCall(*info, rc);
       return false;
   }
 }

@@ -4,18 +4,17 @@
 
 #include "debug.h"
 #include "mutex.h"
-#include "sandbox_impl.h"
 #include "securemem.h"
 
 namespace playground {
 
-void SecureMem::abandonSystemCall(int fd, int err) {
+void SecureMem::abandonSystemCall(const SyscallRequestInfo& rpc, long err) {
   void* rc = reinterpret_cast<void *>(err);
   if (err) {
     Debug::message("System call failed\n");
   }
   Sandbox::SysCalls sys;
-  if (Sandbox::write(sys, fd, &rc, sizeof(rc)) != sizeof(rc)) {
+  if (Sandbox::write(sys, rpc.applicationFd, &rc, sizeof(rc)) != sizeof(rc)) {
     Sandbox::die("Failed to send system call");
   }
 }
@@ -38,9 +37,9 @@ void SecureMem::dieIfParentDied(int parentMapsFd) {
   }
 }
 
-void SecureMem::lockSystemCall(int parentMapsFd, Args* mem) {
+void SecureMem::lockSystemCall(const SyscallRequestInfo& rpc) {
   while (!Mutex::lockMutex(&Sandbox::syscall_mutex_, 500)) {
-    dieIfParentDied(parentMapsFd);
+    dieIfParentDied(rpc.parentMapsFd);
   }
   asm volatile(
   #if defined(__x86_64__)
@@ -51,14 +50,14 @@ void SecureMem::lockSystemCall(int parentMapsFd, Args* mem) {
   #error Unsupported target platform
   #endif
       :
-      : "q"(&mem->sequence)
+      : "q"(&rpc.mem->sequence)
       : "memory");
 }
 
-void SecureMem::sendSystemCallInternal(int fd, bool locked, int parentMapsFd,
-                                       Args* mem, int syscallNum, void* arg1,
-                                       void* arg2, void* arg3, void* arg4,
-                                       void* arg5, void* arg6) {
+void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
+                                       bool locked,
+                                       void* arg1, void* arg2, void* arg3,
+                                       void* arg4, void* arg5, void* arg6) {
   if (!locked) {
     asm volatile(
     #if defined(__x86_64__)
@@ -69,17 +68,17 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, int parentMapsFd,
     #error Unsupported target platform
     #endif
         :
-        : "q"(&mem->sequence)
+        : "q"(&rpc.mem->sequence)
         : "memory");
   }
-  mem->callType    = locked ? -2 : -1;
-  mem->syscallNum  = syscallNum;
-  mem->arg1        = arg1;
-  mem->arg2        = arg2;
-  mem->arg3        = arg3;
-  mem->arg4        = arg4;
-  mem->arg5        = arg5;
-  mem->arg6        = arg6;
+  rpc.mem->callType    = locked ? -2 : -1;
+  rpc.mem->syscallNum  = rpc.sysnum;
+  rpc.mem->arg1        = arg1;
+  rpc.mem->arg2        = arg2;
+  rpc.mem->arg3        = arg3;
+  rpc.mem->arg4        = arg4;
+  rpc.mem->arg5        = arg5;
+  rpc.mem->arg6        = arg6;
   asm volatile(
   #if defined(__x86_64__)
       "lock; incq (%0)\n"
@@ -89,15 +88,16 @@ void SecureMem::sendSystemCallInternal(int fd, bool locked, int parentMapsFd,
   #error Unsupported target platform
   #endif
       :
-      : "q"(&mem->sequence)
+      : "q"(&rpc.mem->sequence)
       : "memory");
   Sandbox::SysCalls sys;
-  if (Sandbox::write(sys, fd, &mem->callType, sizeof(int)) != sizeof(int)) {
+  if (Sandbox::write(sys, rpc.trustedThreadFd, &rpc.mem->callType,
+                     sizeof(int)) != sizeof(int)) {
     Sandbox::die("Failed to send system call");
   }
-  if (parentMapsFd >= 0) {
+  if (locked) {
     while (!Mutex::waitForUnlock(&Sandbox::syscall_mutex_, 500)) {
-      dieIfParentDied(parentMapsFd);
+      dieIfParentDied(rpc.parentMapsFd);
     }
   }
 }

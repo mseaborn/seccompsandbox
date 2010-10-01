@@ -112,11 +112,14 @@ newThreadCreated:
 
     // Dispatch system call to handler function. Treat both exit() and clone()
     // specially.
-    if (syscallTable[header.sysnum].trustedProcess(parentMapsFd,
-                                                   sandboxFd,
-                                                   currentThread->fdPub,
-                                                   currentThread->fd,
-                                                   currentThread->mem) &&
+    SyscallRequestInfo info      = { 0 };
+    info.sysnum                  = header.sysnum;
+    info.mem                     = currentThread->mem;
+    info.trustedProcessFd        = sandboxFd;
+    info.trustedThreadFd         = currentThread->fdPub;
+    info.applicationFd           = currentThread->fd;
+    info.parentMapsFd            = parentMapsFd;
+    if (syscallTable[header.sysnum].trustedProcess(&info) &&
         header.sysnum == __NR_clone) {
       nextThread = currentThread->mem->newSecureMem;
       goto newThreadCreated;

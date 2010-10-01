@@ -12,8 +12,9 @@
 playground$runTrustedThread:
         mov  4(%esp), %edi       // 1st arg: SecureMem::Args*
 
-        // Prepare %fs for later use, but for now mark it as invalid. This allows
-        // us to call the debug logging functions from the int$0 handler.
+        // Prepare %fs for later use, but for now mark it as invalid. This
+        // allows us to call the debug logging functions from the int$0
+        // handler.
         mov  8(%esp), %esi       // 2nd arg: segment selector for %fs
         xor  %eax, %eax
         movw %ax, %fs
@@ -70,8 +71,8 @@ playground$runTrustedThread:
         movd %edi, %mm2
         jmp  20f                 // create trusted thread
 
-        // TODO(markus): Coalesce the read() operations by reading into a bigger
-        // buffer.
+        // TODO(markus): Coalesce the read() operations by reading into a
+        //               bigger buffer.
 
         // Parameters:
         //   %mm0: thread's side of threadFd
@@ -123,7 +124,7 @@ playground$runTrustedThread:
         //   0x24: RDTSCP result (%edx)
         //   0x28: RDTSCP result (%ecx)
         //   0x2C: last system call (updated in syscall.cc)
-        //   0x30: number of consecutive calls to a time fnc. (e.g. gettimeofday)
+        //   0x30: number of consecutive calls to a time fnc (e.g.gettimeofday)
         //   0x34: nesting level of system calls (for debugging purposes only)
         //   0x38: signal mask
         //   0x40: in SEGV handler
@@ -132,8 +133,8 @@ playground$runTrustedThread:
         mov  $2, %eax            // %mm2 = initial sequence number
         movd %eax, %mm2
 
-        // Read request from untrusted thread, or from trusted process. In either
-        // case, the data that we read has to be considered untrusted.
+        // Read request from untrusted thread, or from trusted process. In
+        // either case, the data that we read has to be considered untrusted.
         // read(threadFd, &scratch, 4)
       1:mov  $__NR_read, %eax
         movd %mm0, %ebx          // fd  = threadFd
@@ -203,7 +204,8 @@ playground$runTrustedThread:
         mov  %ebp, 0x54(%ebx)    // set most recently returned SysV shm id
         xor  %ebx, %ebx
 
-        // When debugging messages are enabled, warn about expensive system calls
+        // When debugging messages are enabled, warn about expensive system
+        // calls
         #ifndef NDEBUG
         movd %mm5, %ecx
         cmpw $0, 0x50(%ecx)      // debug mode
@@ -231,7 +233,8 @@ playground$runTrustedThread:
         cmp  %eax, 0x8-0x1000(%ecx)
         jne  fatal_error
 
-        // When debugging messages are enabled, warn about expensive system calls
+        // When debugging messages are enabled, warn about expensive system
+        // calls
         #ifndef NDEBUG
         cmpw $0, 0x50-0x1000(%ecx)
         jz   6f                  // debug mode
@@ -259,7 +262,8 @@ playground$runTrustedThread:
         cmp  %ebp, 4(%edi)
         jne  fatal_error
 
-        // clone() has unusual calling conventions and must be handled specially
+        // clone() has unusual calling conventions and must be handled
+        // specially
         cmp  $__NR_clone, %eax
         jz   19f
 
@@ -429,7 +433,7 @@ playground$runTrustedThread:
         //
         // TODO(markus): We currently do not support emulating calls to
         // sys_clone() with a zero (i.e. copy) stack parameter. See clone.cc
-        // for a discussion on how to fix this, if this ever becomes neccessary.
+        // for a discussion on how to fix this, if this ever becomes neccessary
 
         // Get thread id of nascent thread
      20:mov  $__NR_gettid, %eax
@@ -549,7 +553,7 @@ fatal_error:
         mov  0x103C(%edi), %eax
         mov  %eax, 0x103C(%edx)
 
-        // Done creating trusted thread. We can now get ready to return to caller
+        // Done creating trusted thread. We can get ready to return to caller
         mov  0(%ebp), %esi       // %esi = threadFdPub
         add  $8, %ebp
 
@@ -683,8 +687,8 @@ fatal_error:
         // Back in the newly created sandboxed thread, wait for trusted process
         // to receive request. It is possible for an attacker to make us
         // continue even before the trusted process is done. This is OK. It'll
-        // result in us putting stale values into the new thread's TLS. But that
-        // data is considered untrusted anyway.
+        // result in us putting stale values into the new thread's TLS. But
+        // that data is considered untrusted anyway.
         push %eax
         mov  $1, %edx            // len       = 1
         mov  %esp, %ecx          // buf       = %esp

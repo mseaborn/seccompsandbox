@@ -7,21 +7,29 @@
 
 #include <sys/types.h>
 
+// syscall_table.c has to be implemented in C, as C++ does not support
+// designated initializers for arrays. The only other alternative would be
+// to have a source code generator for this table.
+//
+// We would still like the C source file to include our header file. This
+// requires some define statements to transform C++ specific constructs to
+// something that is palatable to a C compiler.
 #ifdef __cplusplus
 #include "securemem.h"
 extern "C" {
 namespace playground {
-#define SecureMemArgs SecureMem::Args
+  typedef SecureMem::Args SecureMemArgs;
+  typedef SecureMem::SyscallRequestInfo SyscallRequestInfo;
 #else
-#define SecureMemArgs void
-#define bool          int
+  typedef void SecureMemArgs;
+  typedef void SyscallRequestInfo;
+  typedef int bool;
 #endif
   #define UNRESTRICTED_SYSCALL ((void *)1)
 
   struct SyscallTable {
     void   *handler;
-    bool  (*trustedProcess)(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMemArgs* mem);
+    bool  (*trustedProcess)(const SyscallRequestInfo* info);
   };
   extern const struct SyscallTable syscallTable[]
     asm("playground$syscallTable")

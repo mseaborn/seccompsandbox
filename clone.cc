@@ -127,12 +127,12 @@ long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
   return rc;
 }
 
-bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMem::Args* mem) {
+  bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   Clone clone_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &clone_req, sizeof(clone_req)) !=sizeof(clone_req)){
+  if (read(sys, info->trustedProcessFd, &clone_req, sizeof(clone_req)) !=
+      sizeof(clone_req)) {
     die("Failed to read parameters for clone() [process]");
   }
 
@@ -140,23 +140,22 @@ bool Sandbox::process_clone(int parentMapsFd, int sandboxFd, int threadFdPub,
   if ((clone_req.flags & ~CLONE_DETACHED) != (CLONE_VM|CLONE_FS|CLONE_FILES|
       CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|
       CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID)) {
-    SecureMem::abandonSystemCall(threadFd, -EPERM);
+    SecureMem::abandonSystemCall(*info, -EPERM);
     return false;
   } else {
-    SecureMem::Args* newMem = getNewSecureMem();
+    SecureMem::Args* newMem  = getNewSecureMem();
     if (!newMem) {
-      SecureMem::abandonSystemCall(threadFd, -ENOMEM);
+      SecureMem::abandonSystemCall(*info, -ENOMEM);
       return false;
     } else {
-      SecureMem::lockSystemCall(parentMapsFd, mem);
-      newMem->sequence      = 0;
-      newMem->shmId         = -1;
-      mem->newSecureMem     = newMem;
-      mem->processFdPub     = processFdPub_;
-      mem->cloneFdPub       = cloneFdPub_;
+      SecureMem::lockSystemCall(*info);
+      newMem->sequence       = 0;
+      newMem->shmId          = -1;
+      info->mem->newSecureMem = newMem;
+      info->mem->processFdPub = processFdPub_;
+      info->mem->cloneFdPub   = cloneFdPub_;
 
-      SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
-                                __NR_clone, clone_req.flags, clone_req.stack,
+      SecureMem::sendSystemCall(*info, true, clone_req.flags, clone_req.stack,
                                 clone_req.pid, clone_req.arg4, clone_req.arg5);
       return true;
     }

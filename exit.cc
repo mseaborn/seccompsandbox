@@ -27,11 +27,9 @@ long Sandbox::sandbox_exit(int status) {
   }
 }
 
-bool Sandbox::process_exit(int parentMapsFd, int sandboxFd, int threadFdPub,
-                           int threadFd, SecureMem::Args* mem) {
-  SecureMem::lockSystemCall(parentMapsFd, mem);
-  SecureMem::sendSystemCall(threadFdPub, true, parentMapsFd, mem,
-                            __NR_exit, 0);
+  bool Sandbox::process_exit(const SecureMem::SyscallRequestInfo* info) {
+  SecureMem::lockSystemCall(*info);
+  SecureMem::sendSystemCall(*info, true, 0);
   return true;
 }
 

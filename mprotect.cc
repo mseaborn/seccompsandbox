@@ -23,13 +23,11 @@ long Sandbox::sandbox_mprotect(const void *addr, size_t len, int prot) {
   return rc;
 }
 
-bool Sandbox::process_mprotect(int parentMapsFd, int sandboxFd,
-                               int threadFdPub, int threadFd,
-                               SecureMem::Args* mem) {
+bool Sandbox::process_mprotect(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   SysCalls sys;
   MProtect mprotect_req;
-  if (read(sys, sandboxFd, &mprotect_req, sizeof(mprotect_req)) !=
+  if (read(sys, info->trustedProcessFd, &mprotect_req, sizeof(mprotect_req)) !=
       sizeof(mprotect_req)) {
     die("Failed to read parameters for mprotect() [process]");
   }
@@ -48,15 +46,14 @@ bool Sandbox::process_mprotect(int parentMapsFd, int sandboxFd,
     if (mprotect_req.addr < reinterpret_cast<void *>(
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         stop > iter->first) {
-      SecureMem::abandonSystemCall(threadFd, rc);
+      SecureMem::abandonSystemCall(*info, rc);
       return false;
     }
   }
 
   // Changing permissions on memory regions that were newly mapped inside of
   // the sandbox is OK.
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_mprotect,
-                            mprotect_req.addr,  mprotect_req.len,
+  SecureMem::sendSystemCall(*info, false, mprotect_req.addr, mprotect_req.len,
                             mprotect_req.prot);
   return true;
 }

@@ -23,12 +23,11 @@ long Sandbox::sandbox_madvise(void* start, size_t length, int advice) {
   return rc;
 }
 
-bool Sandbox::process_madvise(int parentMapsFd, int sandboxFd, int threadFdPub,
-                              int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_madvise(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   MAdvise madvise_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &madvise_req, sizeof(madvise_req)) !=
+  if (read(sys, info->trustedProcessFd, &madvise_req, sizeof(madvise_req)) !=
       sizeof(madvise_req)) {
     die("Failed to read parameters for madvise() [process]");
   }
@@ -39,9 +38,8 @@ bool Sandbox::process_madvise(int parentMapsFd, int sandboxFd, int threadFdPub,
     case MADV_SEQUENTIAL:
     case MADV_WILLNEED:
     ok:
-      SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_madvise,
-                                madvise_req.start, madvise_req.len,
-                                madvise_req.advice);
+      SecureMem::sendSystemCall(*info, false, madvise_req.start,
+                                madvise_req.len, madvise_req.advice);
       return true;
     default:
       // All other flags to madvise() are potential dangerous (as opposed to
@@ -58,7 +56,7 @@ bool Sandbox::process_madvise(int parentMapsFd, int sandboxFd, int threadFdPub,
         if (madvise_req.start < reinterpret_cast<void *>(
                 reinterpret_cast<char *>(iter->first) + iter->second) &&
             stop > iter->first) {
-          SecureMem::abandonSystemCall(threadFd, rc);
+          SecureMem::abandonSystemCall(*info, rc);
           return false;
         }
       }

@@ -22,12 +22,11 @@ long Sandbox::sandbox_munmap(void* start, size_t length) {
   return rc;
 }
 
-bool Sandbox::process_munmap(int parentMapsFd, int sandboxFd, int threadFdPub,
-                             int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_munmap(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   SysCalls sys;
   MUnmap munmap_req;
-  if (read(sys, sandboxFd, &munmap_req, sizeof(munmap_req)) !=
+  if (read(sys, info->trustedProcessFd, &munmap_req, sizeof(munmap_req)) !=
       sizeof(munmap_req)) {
     die("Failed to read parameters for munmap() [process]");
   }
@@ -46,15 +45,14 @@ bool Sandbox::process_munmap(int parentMapsFd, int sandboxFd, int threadFdPub,
     if (munmap_req.start < reinterpret_cast<void *>(
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         stop > iter->first) {
-      SecureMem::abandonSystemCall(threadFd, rc);
+      SecureMem::abandonSystemCall(*info, rc);
       return false;
     }
   }
 
   // Unmapping memory regions that were newly mapped inside of the sandbox
   // is OK.
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_munmap,
-                            munmap_req.start, munmap_req.length);
+  SecureMem::sendSystemCall(*info, false, munmap_req.start, munmap_req.length);
   return true;
 }
 

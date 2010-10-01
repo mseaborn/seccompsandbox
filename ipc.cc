@@ -84,37 +84,35 @@ long Sandbox::sandbox_shmget(int key, size_t size, int shmflg) {
   return rc;
 }
 
-bool Sandbox::process_shmat(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_shmat(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   ShmAt shmat_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &shmat_req, sizeof(shmat_req)) !=
+  if (read(sys, info->trustedProcessFd, &shmat_req, sizeof(shmat_req)) !=
       sizeof(shmat_req)) {
     die("Failed to read parameters for shmat() [process]");
   }
 
   // We only allow attaching to the shm identifier that was returned by
   // the most recent call to shmget(IPC_PRIVATE)
-  if (shmat_req.shmaddr || shmat_req.shmflg || shmat_req.shmid != mem->shmId) {
-    mem->shmId = -1;
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+  if (shmat_req.shmaddr || shmat_req.shmflg ||
+      shmat_req.shmid != info->mem->shmId) {
+    info->mem->shmId = -1;
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
-  mem->shmId = -1;
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_shmat, shmat_req.shmid, shmat_req.shmaddr,
+  info->mem->shmId   = -1;
+  SecureMem::sendSystemCall(*info, false, shmat_req.shmid, shmat_req.shmaddr,
                             shmat_req.shmflg);
   return true;
 }
 
-bool Sandbox::process_shmctl(int parentMapsFd, int sandboxFd, int threadFdPub,
-                             int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_shmctl(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   ShmCtl shmctl_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &shmctl_req, sizeof(shmctl_req)) !=
+  if (read(sys, info->trustedProcessFd, &shmctl_req, sizeof(shmctl_req)) !=
       sizeof(shmctl_req)) {
     die("Failed to read parameters for shmctl() [process]");
   }
@@ -122,24 +120,22 @@ bool Sandbox::process_shmctl(int parentMapsFd, int sandboxFd, int threadFdPub,
   // The only shmctl() operation that we need to support is removal. This
   // operation is generally safe.
   if ((shmctl_req.cmd & ~(IPC_64 | IPC_RMID)) || shmctl_req.buf) {
-    mem->shmId = -1;
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    info->mem->shmId = -1;
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
-  mem->shmId = -1;
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_shmctl, shmctl_req.shmid, shmctl_req.cmd,
+  info->mem->shmId   = -1;
+  SecureMem::sendSystemCall(*info, false, shmctl_req.shmid, shmctl_req.cmd,
                             shmctl_req.buf);
   return true;
 }
 
-bool Sandbox::process_shmdt(int parentMapsFd, int sandboxFd, int threadFdPub,
-                            int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_shmdt(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   ShmDt shmdt_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &shmdt_req, sizeof(shmdt_req)) !=
+  if (read(sys, info->trustedProcessFd, &shmdt_req, sizeof(shmdt_req)) !=
       sizeof(shmdt_req)) {
     die("Failed to read parameters for shmdt() [process]");
   }
@@ -157,24 +153,22 @@ bool Sandbox::process_shmdt(int parentMapsFd, int sandboxFd, int threadFdPub,
     if (shmdt_req.shmaddr < reinterpret_cast<void *>(
             reinterpret_cast<char *>(iter->first) + iter->second) &&
         shmdt_req.shmaddr >= iter->first) {
-      mem->shmId = -1;
-      SecureMem::abandonSystemCall(threadFd, -EINVAL);
+      info->mem->shmId = -1;
+      SecureMem::abandonSystemCall(*info, -EINVAL);
       return false;
     }
   }
 
-  mem->shmId = -1;
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_shmdt, shmdt_req.shmaddr);
+  info->mem->shmId     = -1;
+  SecureMem::sendSystemCall(*info, false, shmdt_req.shmaddr);
   return true;
 }
 
-bool Sandbox::process_shmget(int parentMapsFd, int sandboxFd, int threadFdPub,
-                             int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_shmget(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   ShmGet shmget_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &shmget_req, sizeof(shmget_req)) !=
+  if (read(sys, info->trustedProcessFd, &shmget_req, sizeof(shmget_req)) !=
       sizeof(shmget_req)) {
     die("Failed to read parameters for shmget() [process]");
   }
@@ -183,14 +177,13 @@ bool Sandbox::process_shmget(int parentMapsFd, int sandboxFd, int threadFdPub,
   // shared memory regions. We only allow it to access regions that it
   // created itself.
   if (shmget_req.key != IPC_PRIVATE || shmget_req.shmflg & ~0777) {
-    mem->shmId = -1;
-    SecureMem::abandonSystemCall(threadFd, -EINVAL);
+    info->mem->shmId = -1;
+    SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
 
-  mem->shmId = -1;
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                            __NR_shmget, shmget_req.key, shmget_req.size,
+  info->mem->shmId   = -1;
+  SecureMem::sendSystemCall(*info, false, shmget_req.key, shmget_req.size,
                             shmget_req.shmflg);
   return true;
 }
@@ -217,12 +210,12 @@ long Sandbox::sandbox_ipc(unsigned call, int first, int second, int third,
   return rc;
 }
 
-bool Sandbox::process_ipc(int parentMapsFd, int sandboxFd, int threadFdPub,
-                          int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_ipc(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   IPC ipc_req;
   SysCalls sys;
-  if (read(sys, sandboxFd, &ipc_req, sizeof(ipc_req)) != sizeof(ipc_req)) {
+  if (read(sys, info->trustedProcessFd, &ipc_req, sizeof(ipc_req)) !=
+      sizeof(ipc_req)) {
     die("Failed to read parameters for ipc() [process]");
   }
 
@@ -233,13 +226,12 @@ bool Sandbox::process_ipc(int parentMapsFd, int sandboxFd, int threadFdPub,
     case SHMAT: {
       // We only allow attaching to the shm identifier that was returned by
       // the most recent call to shmget(IPC_PRIVATE)
-      if (ipc_req.ptr || ipc_req.second || ipc_req.first != mem->shmId) {
+      if (ipc_req.ptr || ipc_req.second || ipc_req.first != info->mem->shmId) {
         goto deny;
       }
     accept:
-      mem->shmId = -1;
-      SecureMem::sendSystemCall(threadFdPub, false, -1, mem,
-                                __NR_ipc, ipc_req.call, ipc_req.first,
+      info->mem->shmId = -1;
+      SecureMem::sendSystemCall(*info, false, ipc_req.call, ipc_req.first,
                                 ipc_req.second, ipc_req.third, ipc_req.ptr,
                                 ipc_req.fifth);
       return true;
@@ -283,8 +275,8 @@ bool Sandbox::process_ipc(int parentMapsFd, int sandboxFd, int threadFdPub,
       // Other than SysV shared memory, we do not actually need to support any
       // other SysV IPC calls.
     deny:
-      mem->shmId = -1;
-      SecureMem::abandonSystemCall(threadFd, -EINVAL);
+      info->mem->shmId = -1;
+      SecureMem::abandonSystemCall(*info, -EINVAL);
       return false;
   }
 }

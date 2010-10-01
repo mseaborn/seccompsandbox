@@ -27,12 +27,12 @@ void* Sandbox::sandbox_mmap(void *start, size_t length, int prot, int flags,
   return (void *) rc;
 }
 
-bool Sandbox::process_mmap(int parentMapsFd, int sandboxFd, int threadFdPub,
-                           int threadFd, SecureMem::Args* mem) {
+bool Sandbox::process_mmap(const SecureMem::SyscallRequestInfo* info) {
   // Read request
   SysCalls sys;
   MMap mmap_req;
-  if (read(sys, sandboxFd, &mmap_req, sizeof(mmap_req)) != sizeof(mmap_req)) {
+  if (read(sys, info->trustedProcessFd, &mmap_req, sizeof(mmap_req)) !=
+      sizeof(mmap_req)) {
     die("Failed to read parameters for mmap() [process]");
   }
 
@@ -50,16 +50,16 @@ bool Sandbox::process_mmap(int parentMapsFd, int sandboxFd, int threadFdPub,
               reinterpret_cast<char *>(iter->first) + iter->second) &&
           stop > iter->first) {
         int rc = -EINVAL;
-        SecureMem::abandonSystemCall(threadFd, rc);
+        SecureMem::abandonSystemCall(*info, rc);
         return false;
       }
     }
   }
 
   // All other mmap() requests are OK
-  SecureMem::sendSystemCall(threadFdPub, false, -1, mem, __NR_MMAP,
-                            mmap_req.start, mmap_req.length, mmap_req.prot,
-                            mmap_req.flags, mmap_req.fd, mmap_req.offset);
+  SecureMem::sendSystemCall(*info, false, mmap_req.start, mmap_req.length,
+                            mmap_req.prot, mmap_req.flags, mmap_req.fd,
+                            mmap_req.offset);
   return true;
 }
 
