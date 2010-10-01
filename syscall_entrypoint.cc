@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "syscall_entrypoint.h"
+
 #include "debug.h"
 #include "sandbox_impl.h"
 #include "syscall_table.h"

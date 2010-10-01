@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "maps.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/unistd.h>
@@ -13,7 +15,6 @@
 #include <sys/wait.h>
 
 #include "library.h"
-#include "maps.h"
 #include "sandbox_impl.h"
 
 namespace playground {

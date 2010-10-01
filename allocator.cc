@@ -14,10 +14,11 @@
 // We don't worry about memory fragmentation as the allocator is expected to
 // be short-lived.
 
+#include "allocator.h"
+
 #include <stdint.h>
 #include <sys/mman.h>
 
-#include "allocator.h"
 #include "linux_syscall_support.h"
 
 namespace playground {

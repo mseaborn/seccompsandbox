@@ -3,6 +3,9 @@
 // found in the LICENSE file.
 
 #define XOPEN_SOURCE 500
+
+#include "library.h"
+
 #include <algorithm>
 #include <elf.h>
 #include <errno.h>
@@ -21,7 +24,6 @@
 
 #include "allocator.h"
 #include "debug.h"
-#include "library.h"
 #include "sandbox_impl.h"
 #include "syscall_entrypoint.h"
 #include "syscall_table.h"

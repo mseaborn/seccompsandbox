@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "syscall_table.h"
+
 #include <asm/unistd.h>
 #include "sandbox_impl.h"
-#include "syscall_table.h"
 
 #if defined(__x86_64__)
 #ifndef __NR_set_robust_list
