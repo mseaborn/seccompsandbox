@@ -152,7 +152,6 @@ bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
       newMem->sequence       = 0;
       newMem->shmId          = -1;
       info->mem->newSecureMem = newMem;
-      info->mem->processFdPub = processFdPub_;
       info->mem->cloneFdPub   = cloneFdPub_;
 
       SecureMem::sendSystemCall(*info, true, clone_req.flags, clone_req.stack,

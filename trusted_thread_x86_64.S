@@ -64,7 +64,6 @@ playground$runTrustedThread:
         //   *%fs: secure memory region
         //         the page following this one contains the scratch space
         //   %r13: thread's side of threadFd
-        //   %r15: processFdPub
 
         // Local variables:
         //   %rbx: sequence number for trusted calls
@@ -87,7 +86,7 @@ playground$runTrustedThread:
         //   0x48: sixth argument; passed to syscall in %r9
         //   0x50-0xC0: no longer used
         //   0xC8: new shared memory for clone()
-        //   0xD0: processFdPub for talking to trusted process
+        //   0xD0: no longer used
         //   0xD4: cloneFdPub for talking to trusted process
         //   0xD8: set to non-zero, if in debugging mode
         //   0xDC: most recent SHM id returned by shmget(IPC_PRIVATE)
@@ -486,7 +485,6 @@ fatal_error:
         mov  $0x8D0F00, %edi     // flags = VM|FS|FILES|SIGH|THR|SYSV|UTR|TLS
         mov  $1, %rsi            // stack = 1
         mov  %r12, %r8           // tls   = new_secure_mem
-        mov  0xD0(%rbp), %r15d   // %r15  = processFdPub
         cmp  %rbx, 8(%rbp)
         jne  fatal_error
         syscall

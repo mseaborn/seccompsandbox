@@ -76,7 +76,6 @@ playground$runTrustedThread:
 
         // Parameters:
         //   %mm0: thread's side of threadFd
-        //   %mm1: processFdPub
         //   %mm5: secure memory region
         //         the page following this one contains the scratch space
 
@@ -102,7 +101,7 @@ playground$runTrustedThread:
         //   0x24: sixth argument; passed to syscall in %ebp
         //   0x28-0x40: no longer used
         //   0x44: new shared memory for clone()
-        //   0x48: processFdPub for talking to trusted process
+        //   0x48: no longer used
         //   0x4C: cloneFdPub for talking to trusted process
         //   0x50: set to non-zero, if in debugging mode
         //   0x54: most recent SHM id returned by shmget(IPC_PRIVATE)
@@ -522,7 +521,6 @@ fatal_error:
         mov  $__NR_clone, %eax
         mov  $0x850F00, %ebx     // flags = VM|FS|FILES|SIGH|THR|SYSV|UTR
         mov  $1, %ecx            // stack = 1
-        movd 0x48(%edi), %mm1    // %mm1  = processFdPub
         cmp  %esi, 4(%edi)
         jne  fatal_error
         int  $0x80
