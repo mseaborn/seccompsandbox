@@ -714,7 +714,7 @@ class Sandbox {
   }            status_;
   static int   pid_;
   static int   processFdPub_;
-  static int   cloneFdPub_;
+  static int   cloneFdPub_ asm("playground$cloneFdPub");
 
   #ifdef __i386__
   struct SocketCallArgInfo;

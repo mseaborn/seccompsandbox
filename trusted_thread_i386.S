@@ -102,7 +102,7 @@ playground$runTrustedThread:
         //   0x28-0x40: no longer used
         //   0x44: new shared memory for clone()
         //   0x48: no longer used
-        //   0x4C: cloneFdPub for talking to trusted process
+        //   0x4C: no longer used
         //   0x50: set to non-zero, if in debugging mode
         //   0x54: most recent SHM id returned by shmget(IPC_PRIVATE)
         //   0x58: cookie assigned to us by the trusted process (TLS_COOKIE)
@@ -578,7 +578,7 @@ fatal_error:
         jne  fatal_error
 
         // 0x00 socketcall:
-        //   0x00 socket         (0x4C(%edi))
+        //   0x00 socket         (cloneFdPub)
         //   0x04 msg            (%ecx + 0x0C)
         //   0x08 flags          ($0)
         // 0x0C msg:
@@ -617,7 +617,7 @@ fatal_error:
         mov  $0x14, %eax
         mov  %eax, 0x20(%ecx)    // msg_controllen
         mov  %eax, 0x3C(%ecx)    // cmsg_len
-        mov  0x4C(%edi), %eax    // cloneFdPub
+        mov  playground$cloneFdPub, %eax  // cloneFdPub
         mov  %eax, 0x00(%ecx)    // socket
         lea  0x0C(%ecx), %eax
         mov  %eax, 0x04(%ecx)    // msg

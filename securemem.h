@@ -51,7 +51,7 @@ class SecureMem {
             // Used by clone() to set up data for the new thread.
             struct Args* newSecureMem;
             int          unused2; // TODO(mseaborn): Remove this.
-            int          cloneFdPub;
+            int          unused3; // TODO(mseaborn): Remove this.
 
             // Set to non-zero, if in debugging mode
             int          allowAllSystemCalls;

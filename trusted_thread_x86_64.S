@@ -87,7 +87,7 @@ playground$runTrustedThread:
         //   0x50-0xC0: no longer used
         //   0xC8: new shared memory for clone()
         //   0xD0: no longer used
-        //   0xD4: cloneFdPub for talking to trusted process
+        //   0xD4: no longer used
         //   0xD8: set to non-zero, if in debugging mode
         //   0xDC: most recent SHM id returned by shmget(IPC_PRIVATE)
         //   0xE0: cookie assigned to us by the trusted process (TLS_COOKIE)
@@ -529,7 +529,8 @@ fatal_error:
         // Use sendmsg() to send to the trusted process the file handles for
         // communicating with the new trusted thread. We also send the address
         // of the secure memory area (for sanity checks) and the thread id.
-        mov  0xD4(%rbp), %edi    // transport = Sandbox::cloneFdPub()
+        // transport = Sandbox::cloneFdPub()
+        mov  playground$cloneFdPub(%rip), %edi
         cmp  %rbx, 8(%rbp)
         jne  fatal_error
 

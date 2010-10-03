@@ -15,7 +15,12 @@ int                                 Sandbox::proc_self_maps_ = -1;
 enum Sandbox::SandboxStatus         Sandbox::status_ = STATUS_UNKNOWN;
 int                                 Sandbox::pid_;
 int                                 Sandbox::processFdPub_;
-int                                 Sandbox::cloneFdPub_;
+int                                 Sandbox::cloneFdPub_
+  // This is necessary to locate the symbol from assembly code on
+  // x86-64 (with %rip-relative addressing) in order for this to work
+  // in relocatable code (a .so or a PIE).  On i386 this is not
+  // necessary but it does not hurt.
+  __attribute__((visibility("internal")));
 Sandbox::SysCalls::kernel_sigaction Sandbox::sa_segv_;
 Sandbox::ProtectedMap               Sandbox::protectedMap_;
 std::vector<SecureMem::Args*>       Sandbox::secureMemPool_;

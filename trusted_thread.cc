@@ -14,7 +14,6 @@ void Sandbox::createTrustedThread(SecureMem::Args* secureMem) {
   SecureMem::Args args                  = { { { { { 0 } } } } };
   args.self                             = &args;
   args.newSecureMem                     = secureMem;
-  args.cloneFdPub                       = cloneFdPub_;
 
 #if defined(__i386__)
   struct user_desc u;
