@@ -192,7 +192,7 @@ public:
 void wait_for_child_thread(int *tid_ptr, int tid) {
   while (*tid_ptr == tid) {
     int rc = syscall(__NR_futex, tid_ptr, FUTEX_WAIT, tid, NULL);
-    assert(rc == 0);
+    assert(rc == 0 || (rc == -1 && errno == EAGAIN));
   }
   assert(*tid_ptr == 0);
 }
