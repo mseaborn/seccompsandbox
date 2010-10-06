@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #include <asm/unistd.h>
-#include <assert.h>
 #include <dirent.h>
 #include <errno.h>
 #include <poll.h>
@@ -31,6 +30,67 @@
 #define MSG(fmt, ...) do { } while (0)
 #endif
 
+// Checks that "expr" evaluates to "true". Returns value of "expr".
+#define CHECK(expr)                                                           \
+  ({ typeof (expr) check_res = (expr);                                        \
+     if (!check_res) {                                                        \
+       fprintf(stderr, "%s:%d: Check failed in \"%s\": %s\n",                 \
+               __FILE__, __LINE__, __PRETTY_FUNCTION__, #expr);               \
+       _exit(1);                                                              \
+     }                                                                        \
+     check_res;                                                               \
+  })
+
+// Checks that "expr" evaluates to "true". Prints "errno" value on failure.
+// Returns value of "expr".
+#define CHECK_SUCCEEDS(expr)                                                  \
+  ({ typeof (expr) check_res = (expr);                                        \
+     if (!check_res) {                                                        \
+       char errmsg[80];                                                       \
+       fprintf(stderr, "%s:%d: Check failed in \"%s\": %s: \"%s\"\n",         \
+               __FILE__, __LINE__, __PRETTY_FUNCTION__, #expr,                \
+               strerror_r(errno, errmsg, sizeof(errmsg)));                    \
+       _exit(1);                                                              \
+     }                                                                        \
+     check_res;                                                               \
+  })
+
+// Checks that "expr" evaluates to "true", or that is sets "errno" to
+// "exp_errno". Prints "errno" value on failure. Returns value of "expr".
+#define CHECK_MAYFAIL(expr, exp_errno)                                        \
+  ({ typeof (expr) check_res = (expr);                                        \
+    if (!check_res && errno != (exp_errno)) {                                 \
+      char errmsg1[80], errmsg2[80];                                          \
+      fprintf(stderr, "%s:%d: Check failed in \"%s\": %s: expected \"%s\" "   \
+              "but was \"%s\"\n",                                             \
+              __FILE__, __LINE__, __PRETTY_FUNCTION__, #expr,                 \
+              strerror_r(exp_errno, errmsg1, sizeof(errmsg1)),                \
+              strerror_r(errno, errmsg2, sizeof(errmsg2)));                   \
+      _exit(1);                                                               \
+    }                                                                         \
+    check_res;                                                                \
+  })
+
+// Checks that "expr" evaluates to "-1" and that it sets "errno" to
+// "exp_errno". Prints actual "errno" value otherwise. Returns value of "expr".
+#define CHECK_ERRNO(expr, exp_errno)                                          \
+  ({ typeof (expr) check_res = (expr);                                        \
+    if (check_res != (typeof check_res)-1) {                                  \
+       fprintf(stderr, "%s:%d: Check unexpectedly succeeded in \"%s\": %s\n", \
+               __FILE__, __LINE__, __PRETTY_FUNCTION__, #expr);               \
+       _exit(1);                                                              \
+    } else if (errno != (exp_errno)) {                                        \
+      char errmsg1[80], errmsg2[80];                                          \
+      fprintf(stderr, "%s:%d: Check failed in \"%s\": %s: expected \"%s\" "   \
+              "but was \"%s\"\n",                                             \
+              __FILE__, __LINE__, __PRETTY_FUNCTION__, #expr,                 \
+              strerror_r(exp_errno, errmsg1, sizeof(errmsg1)),                \
+              strerror_r(errno, errmsg2, sizeof(errmsg2)));                   \
+      _exit(1);                                                               \
+    }                                                                         \
+    check_res;                                                                \
+  })
+
 int g_intended_status_fd = -1;
 
 // Declares the wait() status that the test subprocess intends to exit with.
@@ -41,8 +101,8 @@ void intend_exit_status(int val, bool is_signal) {
     val = W_EXITCODE(val, 0);
   }
   if (g_intended_status_fd != -1) {
-    int sent = write(g_intended_status_fd, &val, sizeof(val));
-    assert(sent == sizeof(val));
+    CHECK_SUCCEEDS(write(g_intended_status_fd, &val, sizeof(val)) ==
+                   sizeof(val));
   } else {
     // This prints in cases where we run one test without forking
     printf("Intending to exit with status %i...\n", val);
@@ -56,10 +116,9 @@ void intend_exit_status(int val, bool is_signal) {
 TEST(test_dup) {
   StartSeccompSandbox();
   // Test a simple syscall that is marked as UNRESTRICTED_SYSCALL.
-  int fd = dup(1);
-  assert(fd >= 0);
-  int rc = close(fd);
-  assert(rc == 0);
+  int fd;
+  CHECK_SUCCEEDS((fd = dup(1)) >= 0);
+  CHECK_SUCCEEDS(close(fd) == 0);
 }
 
 TEST(test_segfault) {
@@ -92,8 +151,8 @@ TEST(test_thread_exit) {
 // FD for the /proc/self/fd directory.  This doesn't matter because it
 // is only used to check for differences in the number of open FDs.
 static int count_fds() {
-  DIR *dir = opendir("/proc/self/fd");
-  assert(dir != NULL);
+  DIR *dir;
+  CHECK_SUCCEEDS((dir = opendir("/proc/self/fd")) != NULL);
   int count = 0;
   while (1) {
     struct dirent *d = readdir(dir);
@@ -101,8 +160,7 @@ static int count_fds() {
       break;
     count++;
   }
-  int rc = closedir(dir);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(closedir(dir) == 0);
   return count;
 }
 
@@ -123,11 +181,11 @@ TEST(test_thread) {
   pthread_create(&tid, NULL, thread_func, &x);
   MSG("Waiting for thread\n");
   pthread_join(tid, &result);
-  assert(result == (void *) 456);
-  assert(x == 123);
+  CHECK(result == (void *) 456);
+  CHECK(x == 123);
   // Check that the process has not leaked FDs.
   int fd_count2 = count_fds();
-  assert(fd_count2 == fd_count1);
+  CHECK(fd_count2 == fd_count1);
 }
 
 static int clone_func(void *x) {
@@ -191,10 +249,10 @@ public:
 
 void wait_for_child_thread(int *tid_ptr, int tid) {
   while (*tid_ptr == tid) {
-    int rc = syscall(__NR_futex, tid_ptr, FUTEX_WAIT, tid, NULL);
-    assert(rc == 0 || (rc == -1 && errno == EAGAIN));
+    CHECK_MAYFAIL(syscall(__NR_futex, tid_ptr, FUTEX_WAIT, tid, NULL) == 0,
+                  EAGAIN);
   }
-  assert(*tid_ptr == 0);
+  CHECK(*tid_ptr == 0);
 }
 
 TEST(test_clone) {
@@ -202,22 +260,23 @@ TEST(test_clone) {
   StartSeccompSandbox();
   int fd_count1 = count_fds();
   int stack_size = 0x1000;
-  char *stack = (char *) malloc(stack_size);
-  assert(stack != NULL);
+  char *stack;
+  CHECK_SUCCEEDS((stack = (char *) malloc(stack_size)) != NULL);
   int flags = CLONE_VM | CLONE_FS | CLONE_FILES |
     CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
     CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
   int tid = -1;
   int x = 999;
   CopyTLSInfo tls_info;
-  int rc = clone(clone_func, (void *) (stack + stack_size), flags, &x,
-                 &tid, tls_info.get_clone_tls_arg(), &tid);
-  assert(rc > 0);
+  int rc;
+  CHECK_SUCCEEDS((rc = clone(clone_func, (void *) (stack + stack_size),
+                             flags, &x, &tid, tls_info.get_clone_tls_arg(),
+                             &tid)) > 0);
   wait_for_child_thread(&tid, rc);
-  assert(x == 124);
+  CHECK(x == 124);
   // Check that the process has not leaked FDs.
   int fd_count2 = count_fds();
-  assert(fd_count2 == fd_count1);
+  CHECK(fd_count2 == fd_count1);
 }
 
 #if defined(__x86_64)
@@ -262,8 +321,8 @@ extern "C" int clone_test_helper();
 TEST(test_clone_preserves_registers) {
   StartSeccompSandbox();
   int stack_size = 0x1000;
-  char *stack = (char *) malloc(stack_size);
-  assert(stack != NULL);
+  char *stack;
+  CHECK_SUCCEEDS((stack = (char *) malloc(stack_size)) != NULL);
   int flags = CLONE_VM | CLONE_FS | CLONE_FILES |
     CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
     CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
@@ -286,8 +345,8 @@ TEST(test_clone_preserves_registers) {
 #else
 #error Unsupported target platform
 #endif
-  int rc = clone_test_helper();
-  assert(rc > 0);
+  int rc;
+  CHECK((rc = clone_test_helper()) > 0);
   wait_for_child_thread(&tid, rc);
   bool success = true;
   for (int regnum = 0; regnum < NO_REGISTERS; regnum++) {
@@ -309,7 +368,7 @@ TEST(test_clone_preserves_registers) {
       success = false;
     }
   }
-  assert(success);
+  CHECK(success);
 }
 
 static int uncalled_clone_func(void *x) {
@@ -320,16 +379,14 @@ static int uncalled_clone_func(void *x) {
 TEST(test_clone_disallowed_flags) {
   StartSeccompSandbox();
   int stack_size = 4096;
-  char *stack = (char *) malloc(stack_size);
-  assert(stack != NULL);
+  char *stack;
+  CHECK_SUCCEEDS((stack = (char *) malloc(stack_size)) != NULL);
   /* We omit the flags CLONE_SETTLS, CLONE_PARENT_SETTID and
      CLONE_CHILD_CLEARTID, which is disallowed by the sandbox. */
   int flags = CLONE_VM | CLONE_FS | CLONE_FILES |
     CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM;
-  int rc = clone(uncalled_clone_func, (void *) (stack + stack_size),
-                 flags, NULL, NULL, NULL, NULL);
-  assert(rc == -1);
-  assert(errno == EPERM);
+  CHECK_ERRNO(clone(uncalled_clone_func, (void *) (stack + stack_size),
+                    flags, NULL, NULL, NULL, NULL), EPERM);
 }
 
 void *empty_thread(void *arg) {
@@ -388,28 +445,26 @@ TEST(test_rdtsc) {
 }
 
 TEST(test_getpid) {
-  int pid1 = getpid();
+  pid_t pid = getpid();
   StartSeccompSandbox();
-  int pid2 = getpid();
-  assert(pid1 == pid2);
+  CHECK_SUCCEEDS(pid == getpid());
   // Bypass any caching that glibc's getpid() wrapper might do.
-  int pid3 = syscall(__NR_getpid);
-  assert(pid1 == pid3);
+  CHECK_SUCCEEDS(pid == syscall(__NR_getpid));
 }
 
 TEST(test_gettid) {
   // glibc doesn't provide a gettid() wrapper.
-  int tid1 = syscall(__NR_gettid);
-  assert(tid1 > 0);
+  pid_t tid;
+  CHECK_SUCCEEDS((tid = syscall(__NR_gettid)) > 0);
   StartSeccompSandbox();
-  int tid2 = syscall(__NR_gettid);
-  assert(tid1 == tid2);
+  CHECK_SUCCEEDS(tid == syscall(__NR_gettid));
 }
 
 static void *map_something() {
-  void *addr = mmap(NULL, 0x1000, PROT_READ,
-                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  assert(addr != MAP_FAILED);
+  void *addr;
+  CHECK_SUCCEEDS((addr = mmap(NULL, 0x1000, PROT_READ,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)) !=
+                 MAP_FAILED);
   return addr;
 }
 
@@ -418,56 +473,45 @@ TEST(test_mmap_disallows_remapping) {
   StartSeccompSandbox();
   // Overwriting a mapping that was created before the sandbox was
   // enabled is not allowed.
-  void *result = mmap(addr, 0x1000, PROT_READ,
-                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-  assert(result == MAP_FAILED);
-  assert(errno == EINVAL);
+  CHECK_ERRNO(mmap(addr, 0x1000, PROT_READ,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0), EINVAL);
 }
 
 TEST(test_mmap_disallows_low_address) {
   StartSeccompSandbox();
   // Mapping pages at low addresses is not allowed because this helps
   // with exploiting buggy kernels.
-  void *result = mmap(NULL, 0x1000, PROT_READ,
-                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-  assert(result == MAP_FAILED);
-  assert(errno == EINVAL);
+  CHECK_ERRNO(mmap(NULL, 0x1000, PROT_READ,
+                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0), EINVAL);
 }
 
 TEST(test_munmap_allowed) {
   StartSeccompSandbox();
   void *addr = map_something();
-  int result = munmap(addr, 0x1000);
-  assert(result == 0);
+  CHECK_SUCCEEDS(munmap(addr, 0x1000) == 0);
 }
 
 TEST(test_munmap_disallowed) {
   void *addr = map_something();
   StartSeccompSandbox();
-  int result = munmap(addr, 0x1000);
-  assert(result == -1);
-  assert(errno == EINVAL);
+  CHECK_ERRNO(munmap(addr, 0x1000), EINVAL);
 }
 
 TEST(test_mprotect_allowed) {
   StartSeccompSandbox();
   void *addr = map_something();
-  int result = mprotect(addr, 0x1000, PROT_READ | PROT_WRITE);
-  assert(result == 0);
+  CHECK_SUCCEEDS(mprotect(addr, 0x1000, PROT_READ | PROT_WRITE) == 0);
 }
 
 TEST(test_mprotect_disallowed) {
   void *addr = map_something();
   StartSeccompSandbox();
-  int result = mprotect(addr, 0x1000, PROT_READ | PROT_WRITE);
-  assert(result == -1);
-  assert(errno == EINVAL);
+  CHECK_ERRNO(mprotect(addr, 0x1000, PROT_READ | PROT_WRITE), EINVAL);
 }
 
 static int get_tty_fd() {
   int master_fd, tty_fd;
-  int rc = openpty(&master_fd, &tty_fd, NULL, NULL, NULL);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(openpty(&master_fd, &tty_fd, NULL, NULL, NULL) == 0);
   return tty_fd;
 }
 
@@ -476,8 +520,7 @@ TEST(test_ioctl_tiocgwinsz_allowed) {
   StartSeccompSandbox();
   int size[2];
   // Get terminal width and height.
-  int result = ioctl(tty_fd, TIOCGWINSZ, size);
-  assert(result == 0);
+  CHECK_SUCCEEDS(ioctl(tty_fd, TIOCGWINSZ, size) == 0);
 }
 
 TEST(test_ioctl_disallowed) {
@@ -486,78 +529,68 @@ TEST(test_ioctl_disallowed) {
   // This ioctl call inserts a character into the tty's input queue,
   // which provides a way to send commands to an interactive shell.
   char c = 'x';
-  int result = ioctl(tty_fd, TIOCSTI, &c);
-  assert(result == -1);
-  assert(errno == EINVAL);
+  CHECK_ERRNO(ioctl(tty_fd, TIOCSTI, &c), EINVAL);
 }
 
 TEST(test_socket) {
   StartSeccompSandbox();
-  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-  assert(fd == -1);
-  // TODO: Make it consistent between i386 and x86-64.
-  assert(errno == EINVAL || errno == ENOSYS);
+  CHECK_ERRNO(socket(AF_UNIX, SOCK_STREAM, 0),
+              // TODO: Make it consistent between i386 and x86-64.
+              #if defined(__x86_64__)
+              ENOSYS
+              #elif defined(__i386__)
+              EINVAL
+              #else
+              #error Unsupported target platform
+              #endif
+              );
 }
 
 TEST(test_open_disabled) {
   StartSeccompSandbox();
-  int fd = open("/dev/null", O_RDONLY);
-  assert(fd == -1);
-  assert(errno == EACCES);
+  CHECK_ERRNO(open("/dev/null", O_RDONLY), EACCES);
 
   // Writing to the policy flag does not change this.
   playground::g_policy.allow_file_namespace = true;
-  fd = open("/dev/null", O_RDONLY);
-  assert(fd == -1);
-  assert(errno == EACCES);
+  CHECK_ERRNO(open("/dev/null", O_RDONLY), EACCES);
 }
 
 TEST(test_open_enabled) {
   playground::g_policy.allow_file_namespace = true;
   StartSeccompSandbox();
-  int fd = open("/dev/null", O_RDONLY);
-  assert(fd >= 0);
-  int rc = close(fd);
-  assert(rc == 0);
-  fd = open("/dev/null", O_WRONLY);
-  assert(fd == -1);
-  assert(errno == EACCES);
+
+  int fd;
+  CHECK_SUCCEEDS((fd = open("/dev/null", O_RDONLY)) >= 0);
+  CHECK_SUCCEEDS(close(fd) == 0);
+
+  CHECK_ERRNO(open("/dev/null", O_WRONLY), EACCES);
+  CHECK_ERRNO(open("/dev/null", O_RDWR), EACCES);
 }
 
 TEST(test_access_disabled) {
   StartSeccompSandbox();
-  int rc = access("/dev/null", R_OK);
-  assert(rc == -1);
-  assert(errno == EACCES);
+  CHECK_ERRNO(access("/dev/null", R_OK), EACCES);
 }
 
 TEST(test_access_enabled) {
   playground::g_policy.allow_file_namespace = true;
   StartSeccompSandbox();
-  int rc = access("/dev/null", R_OK);
-  assert(rc == 0);
-  rc = access("path-that-does-not-exist", R_OK);
-  assert(rc == -1);
-  assert(errno == ENOENT);
+  CHECK_SUCCEEDS(access("/dev/null", R_OK) == 0);
+  CHECK_ERRNO(access("path-that-does-not-exist", R_OK), ENOENT);
 }
 
 TEST(test_stat_disabled) {
   StartSeccompSandbox();
   struct stat st;
-  int rc = stat("/dev/null", &st);
-  assert(rc == -1);
-  assert(errno == EACCES);
+  CHECK_ERRNO(stat("/dev/null", &st), EACCES);
 }
 
 TEST(test_stat_enabled) {
   playground::g_policy.allow_file_namespace = true;
   StartSeccompSandbox();
   struct stat st;
-  int rc = stat("/dev/null", &st);
-  assert(rc == 0);
-  rc = stat("path-that-does-not-exist", &st);
-  assert(rc == -1);
-  assert(errno == ENOENT);
+  CHECK_SUCCEEDS(stat("/dev/null", &st) == 0);
+  CHECK_ERRNO(stat("path-that-does-not-exist", &st), ENOENT);
 }
 
 // TODO(mseaborn): It would be good to test the error cases for the
@@ -566,16 +599,14 @@ TEST(test_stat_enabled) {
 // freeing a segment with shmctl() if it gets a SysV-related error.
 TEST(test_sysv_shared_memory) {
   StartSeccompSandbox();
-  int shmid = shmget(IPC_PRIVATE, 0x1000, 0700);
-  assert(shmid != -1);
-  void *addr = shmat(shmid, NULL, 0);
-  assert(addr != MAP_FAILED);
+  int shmid;
+  CHECK_SUCCEEDS((shmid = shmget(IPC_PRIVATE, 0x1000, 0700)) != -1);
+  void *addr;
+  CHECK_SUCCEEDS((addr = shmat(shmid, NULL, 0)) != MAP_FAILED);
   // Check that we can access the memory we mapped.
   memset(addr, 1, 0x1000);
-  int rc = shmdt(addr);
-  assert(rc == 0);
-  rc = shmctl(shmid, IPC_RMID, NULL);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(shmdt(addr) == 0);
+  CHECK_SUCCEEDS(shmctl(shmid, IPC_RMID, NULL) == 0);
 }
 
 static int g_value;
@@ -658,17 +689,15 @@ static void (*generic_signal_handler(void))
 }
 
 TEST(test_signal_handler) {
-  sighandler_t result = signal(SIGTRAP, signal_handler);
-  assert(result != SIG_ERR);
+  CHECK_SUCCEEDS(signal(SIGTRAP, signal_handler) != SIG_ERR);
 
   StartSeccompSandbox();
 
-  result = signal(SIGTRAP, signal_handler);
-  assert(result != SIG_ERR);
+  CHECK_SUCCEEDS(signal(SIGTRAP, signal_handler) != SIG_ERR);
 
   g_value = 200;
   asm("int3");
-  assert(g_value == 300);
+  CHECK(g_value == 300);
 }
 
 TEST(test_sigaction_handler) {
@@ -676,41 +705,35 @@ TEST(test_sigaction_handler) {
   act.sa_sigaction = sigaction_handler;
   sigemptyset(&act.sa_mask);
   act.sa_flags = SA_SIGINFO;
-  int rc = sigaction(SIGTRAP, &act, NULL);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(sigaction(SIGTRAP, &act, NULL) == 0);
 
   StartSeccompSandbox();
 
-  rc = sigaction(SIGTRAP, &act, NULL);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(sigaction(SIGTRAP, &act, NULL) == 0);
 
   g_value = 200;
   asm("int3");
-  assert(g_value == 300);
+  CHECK(g_value == 300);
 }
 
 TEST(test_blocked_signal) {
-  sighandler_t result = signal(SIGTRAP, signal_handler);
-  assert(result != SIG_ERR);
+  CHECK_SUCCEEDS(signal(SIGTRAP, signal_handler) != SIG_ERR);
   StartSeccompSandbox();
 
   // Initially the signal should not be blocked.
   sigset_t sigs;
   sigfillset(&sigs);
-  int rc = sigprocmask(0, NULL, &sigs);
-  assert(rc == 0);
-  assert(!sigismember(&sigs, SIGTRAP));
+  CHECK_SUCCEEDS(sigprocmask(0, NULL, &sigs) == 0);
+  CHECK(!sigismember(&sigs, SIGTRAP));
 
   sigemptyset(&sigs);
   sigaddset(&sigs, SIGTRAP);
-  rc = sigprocmask(SIG_BLOCK, &sigs, NULL);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(sigprocmask(SIG_BLOCK, &sigs, NULL) == 0);
 
   // Check that we can read back the blocked status.
   sigemptyset(&sigs);
-  rc = sigprocmask(0, NULL, &sigs);
-  assert(rc == 0);
-  assert(sigismember(&sigs, SIGTRAP));
+  CHECK_SUCCEEDS(sigprocmask(0, NULL, &sigs) == 0);
+  CHECK(sigismember(&sigs, SIGTRAP));
 
   // Check that the signal handler really is blocked.
   intend_exit_status(SIGTRAP, true);
@@ -723,12 +746,9 @@ TEST(test_sigaltstack) {
   StartSeccompSandbox();
   stack_t st;
   st.ss_size = 0x4000;
-  st.ss_sp = malloc(st.ss_size);
-  assert(st.ss_sp != NULL);
+  CHECK_SUCCEEDS((st.ss_sp = malloc(st.ss_size)) != NULL);
   st.ss_flags = 0;
-  int rc = sigaltstack(&st, NULL);
-  assert(rc == -1);
-  assert(errno == ENOSYS);
+  CHECK_ERRNO(sigaltstack(&st, NULL), ENOSYS);
 }
 
 TEST(test_sa_flags) {
@@ -745,13 +765,13 @@ TEST(test_sa_flags) {
     g_value = 200;
     sigaction(SIGSEGV, &sa, NULL);
     asm volatile("hlt");
-    assert(g_value == 300);
+    CHECK(g_value == 300);
 
     // Test non-SEGV handling
     g_value = 200;
     sigaction(SIGTRAP, &sa, NULL);
     asm volatile("int3");
-    assert(g_value == 300);
+    CHECK(g_value == 300);
   }
 }
 
@@ -832,31 +852,34 @@ TEST(test_trap_resethand) {
 }
 
 TEST(test_debugging) {
+  // We will be inspecting the debugging output that the sandbox writes to
+  // stderr. But we still want to make sure that our CHECK() macro can
+  // write messages that the user can read. Move glibc's stderr variable
+  // to a different file descriptor.
+  int new_stderr;
+  CHECK_SUCCEEDS((new_stderr = dup(2)) != -1);
+  CHECK_SUCCEEDS((stderr = fdopen(new_stderr, "a")) != NULL);
+
   int pipe_fds[2];
-  int rc = pipe(pipe_fds);
-  assert(rc == 0);
-  rc = dup2(pipe_fds[1], 2);
+  CHECK_SUCCEEDS(pipe(pipe_fds) == 0);
+  CHECK_SUCCEEDS(dup2(pipe_fds[1], 2) == 2);
   playground::Debug::enable();
   StartSeccompSandbox();
-  rc = close(pipe_fds[1]);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(close(pipe_fds[1]) == 0);
   char buf[4096];
-  ssize_t sz = read(pipe_fds[0], buf, sizeof(buf)-1);
-  assert(sz > 0);
+  ssize_t sz;
+  CHECK_SUCCEEDS((sz = read(pipe_fds[0], buf, sizeof(buf)-1)) > 0);
   buf[sz] = '\000';
-  assert(strstr(buf, "close:"));
+  CHECK(strstr(buf, "close:"));
 }
 
 TEST(test_prctl) {
-  int rc = prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
-  assert(rc == 0);
-  rc = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) == 0);
+  CHECK_SUCCEEDS(prctl(PR_GET_DUMPABLE, 0, 0, 0, 0) == 0);
   int fds[2];
-  rc = socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-  assert(rc == 0);
-  pid_t pid = fork();
-  assert(pid >= 0);
+  CHECK_SUCCEEDS(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
+  pid_t pid;
+  CHECK_SUCCEEDS((pid = fork()) >= 0);
   char ch = 0;
   if (pid == 0) {
     StartSeccompSandbox();
@@ -866,29 +889,24 @@ TEST(test_prctl) {
     read(fds[0], &ch, 1);
     _exit(1);
   }
-  rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
-  assert(rc == -1 && errno == EPERM);
+  CHECK_ERRNO(ptrace(PTRACE_ATTACH, pid, 0, 0), EPERM);
   write(fds[1], &ch, 1);
   read(fds[1], &ch, 1);
-  rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(ptrace(PTRACE_ATTACH, pid, 0, 0) == 0);
 
   // Now clean up.  We have to collect the subprocess's stopped state
   // with waitpid() otherwise PTRACE_KILL will not successfully kill
   // the subprocess.
   int status;
-  rc = waitpid(pid, &status, 0);
-  assert(rc == pid);
-  assert(WIFSTOPPED(status));
-  assert(WSTOPSIG(status) == SIGSTOP);
+  CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+  CHECK(WIFSTOPPED(status));
+  CHECK(WSTOPSIG(status) == SIGSTOP);
 
-  rc = ptrace(PTRACE_KILL, pid, 0, 0);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(ptrace(PTRACE_KILL, pid, 0, 0) == 0);
 
-  rc = waitpid(pid, &status, 0);
-  assert(rc == pid);
-  assert(WIFSIGNALED(status));
-  assert(WTERMSIG(status) == SIGKILL);
+  CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+  CHECK(WIFSIGNALED(status));
+  CHECK(WTERMSIG(status) == SIGKILL);
 }
 
 TEST(test_syscall_entrypoint_var) {
@@ -907,22 +925,20 @@ static bool safe_memcpy(void *dest, void *src, int size) {
   // This is only guaranteed to work, if we don't stuff more than one page
   // of data into the kernel's buffers. If we ever needed more, we have to
   // break things up into smaller parts.
-  assert(size <= 4096);
+  CHECK(size <= 4096);
 
   static int fds[2] = { -1, -1 };
   if (fds[0] == -1) {
-    int rc = pipe(fds);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(pipe(fds) == 0);
   }
 
-  int written = write(fds[1], src, size);
+  int written;
+  CHECK_MAYFAIL((written = write(fds[1], src, size)) == size, EFAULT);
   if (written != size) {
-    assert(written == -1);
-    assert(written == EFAULT);
+    CHECK_ERRNO(written, EFAULT);
     return false;
   } else {
-    int got = read(fds[0], dest, size);
-    assert(got == size);
+    CHECK_SUCCEEDS(read(fds[0], dest, size) == size);
     return true;
   }
 }
@@ -937,19 +953,17 @@ TEST(test_backtrace) {
   //
   // First we make ourselves dumpable, so that we can use ptrace() for the
   // rest of this test.
-  int rc = prctl(PR_SET_DUMPABLE, 1, 0, 0, 0);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(prctl(PR_SET_DUMPABLE, 1, 0, 0, 0) == 0);
   int fds[2];
 
   // Create a socketpair() that we will use to a) block the child process,
   // and b) dereference pointers that might possibly be invalid.
-  rc = socketpair(AF_UNIX, SOCK_STREAM, 0, fds);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == 0);
 
   // Create child process that we can then analyze as it is setting up the
   // sandbox.
-  pid_t pid = fork();
-  assert(pid >= 0);
+  pid_t pid;
+  CHECK_SUCCEEDS((pid = fork()) >= 0);
   char ch = 0;
   if (pid == 0) {
     // Start the sandbox and block on a read() call. Different versions of
@@ -967,19 +981,16 @@ TEST(test_backtrace) {
   // checking our child every so often.
   for (;;) {
     // Attach to the child process.
-    rc = ptrace(PTRACE_ATTACH, pid, 0, 0);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(ptrace(PTRACE_ATTACH, pid, 0, 0) == 0);
     int status;
-    rc = waitpid(pid, &status, 0);
-    assert(rc == pid);
-    assert(WIFSTOPPED(status));
-    assert(WSTOPSIG(status) == SIGSTOP);
+    CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+    CHECK(WIFSTOPPED(status));
+    CHECK(WSTOPSIG(status) == SIGSTOP);
 
     // Read the integer CPU registers.
     struct user user;
     memset(&user, 0, sizeof(user));
-    rc = ptrace(PTRACE_GETREGS, pid, 0, &user);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(ptrace(PTRACE_GETREGS, pid, 0, &user) == 0);
     #if defined(__x86_64__)
     unsigned long sp = user.regs.rsp;
     unsigned long bp = user.regs.rbp;
@@ -1044,13 +1055,11 @@ TEST(test_backtrace) {
           }
 
           // Everything is OK, kill the child process and finish the test.
-          rc = ptrace(PTRACE_KILL, pid, 0, 0);
-          assert(rc == 0);
+          CHECK_SUCCEEDS(ptrace(PTRACE_KILL, pid, 0, 0) == 0);
   
-          rc = waitpid(pid, &status, 0);
-          assert(rc == pid);
-          assert(WIFSIGNALED(status));
-          assert(WTERMSIG(status) == SIGKILL);
+          CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+          CHECK(WIFSIGNALED(status));
+          CHECK(WTERMSIG(status) == SIGKILL);
 
           return;
         }
@@ -1067,12 +1076,10 @@ TEST(test_backtrace) {
     }
 
     // The child hasn't completed initialization of the sandbox just yet.
-    rc = ptrace(PTRACE_DETACH, pid, 0, 0);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(ptrace(PTRACE_DETACH, pid, 0, 0) == 0);
 
     // Try again in 20ms.
-    rc = poll(NULL, 0, 20);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(poll(NULL, 0, 20) == 0);
   }
 }
 
@@ -1089,20 +1096,18 @@ struct testcase all_tests[] = {
 static int run_test_forked(struct testcase *test) {
   printf("** %s\n", test->test_name);
   int pipe_fds[2];
-  int rc = pipe(pipe_fds);
-  assert(rc == 0);
-  int pid = fork();
+  CHECK_SUCCEEDS(pipe(pipe_fds) == 0);
+  pid_t pid;
+  CHECK_SUCCEEDS((pid = fork()) >= 0);
   if (pid == 0) {
-    rc = close(pipe_fds[0]);
-    assert(rc == 0);
+    CHECK_SUCCEEDS(close(pipe_fds[0]) == 0);
     g_intended_status_fd = pipe_fds[1];
 
     test->test_func();
     intend_exit_status(0, false);
     _exit(0);
   }
-  rc = close(pipe_fds[1]);
-  assert(rc == 0);
+  CHECK_SUCCEEDS(close(pipe_fds[1]) == 0);
 
   int intended_status;
   int got = read(pipe_fds[0], &intended_status, sizeof(intended_status));
@@ -1112,8 +1117,7 @@ static int run_test_forked(struct testcase *test) {
   }
 
   int status;
-  int pid2 = waitpid(pid, &status, 0);
-  assert(pid2 == pid);
+  CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
   if (!got_intended_status) {
     printf("Test returned exit status %i\n", status);
     return 1;
