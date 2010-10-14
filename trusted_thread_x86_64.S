@@ -93,6 +93,7 @@ playground$runTrustedThread:
         //   0xE0: cookie assigned to us by the trusted process (TLS_COOKIE)
         //   0xE8: thread id (TLS_TID)
         //   0xF0: threadFdPub (TLS_THREAD_FD)
+        //   0xF8: syscallMutex
         //   0x200-0x1000: securely passed verified file name(s)
 
         // Layout of (untrusted) scratch space:
@@ -247,6 +248,7 @@ playground$runTrustedThread:
         // Unlock mutex
       7:cmp  %rbx, %fs:0x8
         jne  fatal_error
+        mov  %fs:0, %r12
         add  $2, %rbx
         mov  %rax, %r8
         mov  $__NR_clone, %eax
@@ -337,12 +339,12 @@ playground$runTrustedThread:
 
         // NR_exit:
         // Exit trusted thread after cleaning up resources
-     18:mov  %fs:0x0, %rsi       // secure_mem
-        mov  0xF0(%rsi), %rdi    // fd     = threadFdPub
+     18:mov  %fs:0x0, %r12       // secure_mem
+        mov  0xF0(%r12), %rdi    // fd     = threadFdPub
         mov  $__NR_close, %eax
         syscall
         CHECK_SYSCALL_ZERO
-        mov  %rsi, %rdi          // start  = secure_mem
+        mov  %r12, %rdi          // start  = secure_mem
         mov  $8192, %esi         // length = 8192
         xor  %rdx, %rdx          // prot   = PROT_NONE
         mov  $__NR_mprotect, %eax
@@ -432,12 +434,16 @@ playground$runTrustedThread:
         cmp  $-4, %eax           // EINTR
         jz   21b
         jmp  23f                 // exit thread (no message)
-     22:lea  playground$syscall_mutex(%rip), %rdi
+        // Unlock syscallMutex and exit.
+        // On entry %r12 = secureMem.  We cannot use %fs:0 in the case where
+        // the page has been mprotect()'d to PROT_NONE.
+     22:mov  %r12, %rdi
         mov  $4096, %esi
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         mov  $__NR_mprotect, %eax
         syscall
         CHECK_SYSCALL_ZERO
+        add  $0xF8, %rdi
         lock; addl $0x80000000, (%rdi)
         jz   23f                 // exit thread
         mov  $1, %edx

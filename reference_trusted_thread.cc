@@ -114,16 +114,15 @@ void InitCustomTLS(void *addr) {
 #endif
 }
 
-void UnlockSyscallMutex() {
+void UnlockSyscallMutex(SecureMem::Args *secureMem) {
   Sandbox::SysCalls sys;
   // TODO(mseaborn): Use clone() to be the same as trusted_thread.cc.
   int pid = sys.fork();
   assert(pid >= 0);
   if (pid == 0) {
-    int rc = sys.mprotect(&Sandbox::syscall_mutex_, 0x1000,
-                          PROT_READ | PROT_WRITE);
+    int rc = sys.mprotect(secureMem, 0x1000, PROT_READ | PROT_WRITE);
     assert(rc == 0);
-    Mutex::unlockMutex(&Sandbox::syscall_mutex_);
+    Mutex::unlockMutex(&secureMem->syscallMutex);
     sys._exit(0);
   }
   int status;
@@ -232,7 +231,7 @@ int TrustedThread(void *arg) {
         // We do not want the trusted process to think that the
         // thread's memory area has been freed while the trusted
         // thread is still reading from it.
-        UnlockSyscallMutex();
+        UnlockSyscallMutex(secureMem);
         sys._exit(1);
       }
       else if (syscall_args[0] == __NR_clone) {
@@ -288,7 +287,7 @@ int TrustedThread(void *arg) {
       // the thread.  We should only unlock this area when the syscall
       // has completed.  Otherwise, the trusted process might
       // overwrite the data while the kernel is still reading it.
-      UnlockSyscallMutex();
+      UnlockSyscallMutex(secureMem);
     }
     int sent = sys.write(fd, &syscall_result, sizeof(syscall_result));
     assert(sent == sizeof(syscall_result));

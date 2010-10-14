@@ -108,6 +108,7 @@ playground$runTrustedThread:
         //   0x58: cookie assigned to us by the trusted process (TLS_COOKIE)
         //   0x60: thread id (TLS_TID)
         //   0x68: threadFdPub (TLS_THREAD_FD)
+        //   0x70: syscallMutex
         //   0x200-0x1000: securely passed verified file name(s)
 
         // Layout of (untrusted) scratch space:
@@ -467,12 +468,14 @@ playground$runTrustedThread:
         cmp  $-4, %eax           // EINTR
         jz   21b
         jmp  23f                 // exit thread (no message)
-     22:lea  playground$syscall_mutex, %ebx
+        // Unlock syscallMutex and exit.
+     22:movd %mm5, %ebx
         mov  $4096, %ecx
         mov  $3, %edx            // prot = PROT_READ | PROT_WRITE
         mov  $__NR_mprotect, %eax
         int  $0x80
         CHECK_SYSCALL_ZERO
+        addl $0x70, %ebx
         lock; addl $0x80000000, (%ebx)
         jz   23f                 // exit thread
         mov  $1, %edx

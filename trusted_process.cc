@@ -197,13 +197,6 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
     die("Failed to allocate secure memory arena");
   }
 
-  // Set up the mutex to be accessible from the trusted process and from
-  // children of the trusted thread(s)
-  if (mmap(&syscall_mutex_, 4096, PROT_READ|PROT_WRITE,
-           MAP_SHARED|MAP_ANONYMOUS|MAP_FIXED, -1, 0) != &syscall_mutex_) {
-    die("Failed to initialize secure mutex");
-  }
-
   // Create a trusted process that can evaluate system call parameters and
   // decide whether a system call should execute. This process runs outside of
   // the seccomp sandbox. It communicates with the sandbox'd process through
@@ -256,7 +249,6 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
 
   // We are still in the untrusted code. Deny access to restricted resources.
   mprotect(secureArena, 8192*kMaxThreads, PROT_NONE);
-  mprotect(&syscall_mutex_, 4096, PROT_NONE);
   close(sandboxFd);
 
   return secureArena;

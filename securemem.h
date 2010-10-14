@@ -64,6 +64,16 @@ class SecureMem {
             long long    cookie;
             long long    threadId;
             long long    threadFdPub;
+
+            // syscallMutex can only be directly accessed by the
+            // trusted process.  It can be accessed by the trusted
+            // thread after fork()ing and calling
+            // mprotect(PROT_READ|PROT_WRITE).  The mutex is used for
+            // system calls that require passing additional data, and
+            // that require the trusted process to wait until the
+            // trusted thread is done processing (e.g. exit(), open(),
+            // stat()).
+            int          syscallMutex;
           } __attribute__((packed));
           char           header[512];
         };
@@ -122,7 +132,7 @@ class SecureMem {
   // The trusted process received a system call that it intends to deny.
   static void abandonSystemCall(const SyscallRequestInfo& rpc, long err);
 
-  // Acquires the syscall_mutex_ prior to making changes to the parameters in
+  // Acquires the syscallMutex prior to making changes to the parameters in
   // the secure memory page. Used by calls such as exit(), open(),
   // socketcall(), and stat().
   // After locking the mutex, it is no longer valid to abandon the system

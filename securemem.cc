@@ -21,11 +21,12 @@ void SecureMem::abandonSystemCall(const SyscallRequestInfo& rpc, long err) {
 }
 
 void SecureMem::dieIfParentDied(int parentMapsFd) {
-  // The syscall_mutex_ should not be contended. If it is, we are either
-  // experiencing a very unusual load of system calls that the sandbox is not
-  // optimized for; or, more likely, the sandboxed process terminated while the
-  // trusted process was in the middle of waiting for the mutex. We detect
-  // this situation and terminate the trusted process.
+  // syscallMutex should not stay locked for long.  If it is, then either:
+  //  1) We are executing a blocking syscall, and the sandbox should be
+  //     changed not to wait for syscallMutex while the syscall is blocking.
+  //  2) The sandboxed process terminated while the trusted process was in
+  //     the middle of waiting for the mutex.  We detect this situation and
+  //     terminate the trusted process.
   int alive = !lseek(parentMapsFd, 0, SEEK_SET);
   if (alive) {
     char buf;
@@ -39,7 +40,7 @@ void SecureMem::dieIfParentDied(int parentMapsFd) {
 }
 
 void SecureMem::lockSystemCall(const SyscallRequestInfo& rpc) {
-  while (!Mutex::lockMutex(&Sandbox::syscall_mutex_, 500)) {
+  while (!Mutex::lockMutex(&rpc.mem->syscallMutex, 500)) {
     dieIfParentDied(rpc.parentMapsFd);
   }
   asm volatile(
@@ -99,7 +100,7 @@ void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
     Sandbox::die("Failed to send system call");
   }
   if (locked) {
-    while (!Mutex::waitForUnlock(&Sandbox::syscall_mutex_, 500)) {
+    while (!Mutex::waitForUnlock(&rpc.mem->syscallMutex, 500)) {
       dieIfParentDied(rpc.parentMapsFd);
     }
   }
