@@ -203,8 +203,6 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
            MAP_SHARED|MAP_ANONYMOUS|MAP_FIXED, -1, 0) != &syscall_mutex_) {
     die("Failed to initialize secure mutex");
   }
-  syscall_mutex_ = 0x80000000;
-
 
   // Create a trusted process that can evaluate system call parameters and
   // decide whether a system call should execute. This process runs outside of

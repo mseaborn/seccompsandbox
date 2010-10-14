@@ -236,7 +236,7 @@ int TrustedThread(void *arg) {
         sys._exit(1);
       }
       else if (syscall_args[0] == __NR_clone) {
-        assert(sysnum == -2);
+        assert(sysnum == -1);
         // Note that HandleNewThread() does UnlockSyscallMutex() for us.
         long clone_flags = (long) secureMem->arg1;
         int *pid_ptr = (int *) secureMem->arg3;
@@ -330,8 +330,6 @@ void CreateReferenceTrustedThread(SecureMem::Args *secureMem) {
   // syscall.c works around this when addressing from %fs.
   void *tls = (void*) &secureMem->cookie;
   InitCustomTLS(tls);
-
-  UnlockSyscallMutex();
 
   int tid = sys.gettid();
   assert(tid > 0);

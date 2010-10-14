@@ -729,8 +729,8 @@ class Sandbox {
   // It can be accessed by the trusted thread after fork()ing and calling
   // mprotect(PROT_READ|PROT_WRITE). The mutex is used for system calls that
   // require passing additional data, and that require the trusted process to
-  // wait until the trusted thread is done processing (e.g. exit(), clone(),
-  // open(), stat())
+  // wait until the trusted thread is done processing (e.g. exit(), open(),
+  // stat()).
   static int syscall_mutex_ asm("playground$syscall_mutex");
 
   // Available in trusted process, only

@@ -159,6 +159,11 @@ playground$runTrustedThread:
         jne  fatal_error
         add  $2, %rbx
 
+        // clone() has unusual calling conventions and must be handled
+        // specially
+        cmp  $__NR_clone, %rax
+        jz   19f
+
         // shmget() gets some special treatment. Whenever we return from this
         // system call, we remember the most recently returned SysV shm id.
         cmp  $__NR_shmget, %eax
@@ -231,11 +236,6 @@ playground$runTrustedThread:
         mov  %fs:0x48, %r9
         cmp  %rbx, %fs:0x8
         jne  fatal_error
-
-        // clone() has unusual calling conventions and must be handled
-        // specially
-        cmp  $__NR_clone, %rax
-        jz   19f
 
         // exit() terminates trusted thread
         cmp  $__NR_exit, %eax
@@ -374,11 +374,11 @@ playground$runTrustedThread:
         syscall                  // calls NR_clone
         cmp  $-4095, %rax        // return codes -1..-4095 are errno values
         jae  7b                  // unlock mutex, return result
-        add  $2, %rbx
         test %rax, %rax
         jne  15b                 // return result
 
         // In nascent thread, now.
+        // Undo sequence number increase that was made for the general case.
         sub  $2, %rbx
 
         // We want to maintain an invalid %rsp whenver we access untrusted
@@ -583,23 +583,6 @@ fatal_error:
         mov  %r13d, 0x68(%r8)    // threadFd
         mov  $__NR_sendmsg, %eax
         mov  %r8, %rsi           // msg
-        syscall
-
-        // Release syscall_mutex_. This signals the trusted process that
-        // it can write into the original thread's secure memory again.
-        mov  $__NR_mprotect, %eax
-        lea  playground$syscall_mutex(%rip), %rdi
-        mov  $4096, %esi
-        mov  $3, %edx            // PROT_READ | PROT_WRITE
-        syscall
-        CHECK_SYSCALL_ZERO
-        cmp  %rbx, 8(%rbp)
-        jne  fatal_error
-        lock; addl $0x80000000, (%rdi)
-        jz   30f                 // exit process (no error message)
-        mov  $1, %edx
-        mov  %rdx, %rsi          // FUTEX_WAKE
-        mov  $__NR_futex, %eax
         syscall
      30:xor  %rdi, %rdi
         jmp  27b                 // exit process (no error message)

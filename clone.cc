@@ -148,13 +148,12 @@ bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
       SecureMem::abandonSystemCall(*info, -ENOMEM);
       return false;
     } else {
-      SecureMem::lockSystemCall(*info);
       newMem->sequence       = 0;
       newMem->shmId          = -1;
-      info->mem->newSecureMem = newMem;
 
-      SecureMem::sendSystemCall(*info, true, clone_req.flags, clone_req.stack,
-                                clone_req.pid, clone_req.arg4, clone_req.arg5);
+      SecureMem::sendSystemCall(*info, false, clone_req.flags, clone_req.stack,
+                                clone_req.pid, clone_req.arg4, clone_req.arg5,
+                                NULL, newMem);
       return true;
     }
   }

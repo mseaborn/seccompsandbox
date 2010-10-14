@@ -123,7 +123,7 @@ class SecureMem {
   static void abandonSystemCall(const SyscallRequestInfo& rpc, long err);
 
   // Acquires the syscall_mutex_ prior to making changes to the parameters in
-  // the secure memory page. Used by calls such as exit(), clone(), open(),
+  // the secure memory page. Used by calls such as exit(), open(),
   // socketcall(), and stat().
   // After locking the mutex, it is no longer valid to abandon the system
   // call!
@@ -165,9 +165,11 @@ class SecureMem {
   }
   template<class T1, class T2, class T3, class T4, class T5, class T6> static
   void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
-                      T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) {
+                      T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6,
+                      Args* newSecureMem = 0) {
     sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
-                           (void*)arg4, (void*)arg5, (void*)arg6);
+                           (void*)arg4, (void*)arg5, (void*)arg6,
+                           newSecureMem);
   }
 
  private:
@@ -179,7 +181,8 @@ class SecureMem {
                                      bool locked,
                                      void* arg1 = 0, void* arg2 = 0,
                                      void* arg3 = 0, void* arg4 = 0,
-                                     void* arg5 = 0, void* arg6 = 0);
+                                     void* arg5 = 0, void* arg6 = 0,
+                                     Args* newSecureMem = 0);
 };
 
 } // namespace

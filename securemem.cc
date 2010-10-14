@@ -58,7 +58,8 @@ void SecureMem::lockSystemCall(const SyscallRequestInfo& rpc) {
 void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
                                        bool locked,
                                        void* arg1, void* arg2, void* arg3,
-                                       void* arg4, void* arg5, void* arg6) {
+                                       void* arg4, void* arg5, void* arg6,
+                                       Args* newSecureMem) {
   if (!locked) {
     asm volatile(
     #if defined(__x86_64__)
@@ -80,6 +81,7 @@ void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
   rpc.mem->arg4        = arg4;
   rpc.mem->arg5        = arg5;
   rpc.mem->arg6        = arg6;
+  rpc.mem->newSecureMem = newSecureMem;
   asm volatile(
   #if defined(__x86_64__)
       "lock; incq (%0)\n"

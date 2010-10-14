@@ -178,6 +178,11 @@ playground$runTrustedThread:
         movd %mm4, %edi
         movd %mm7, %ebp
 
+        // clone() has unusual calling conventions and must be handled
+        // specially
+        cmp  $__NR_clone, %eax
+        jz   19f
+
         // shmget() gets some special treatment. Whenever we return from this
         // system call, we remember the most recently returned SysV shm id.
         cmp  $__NR_ipc, %eax
@@ -260,11 +265,6 @@ playground$runTrustedThread:
         movd %mm5, %edi
         cmp  %ebp, 4(%edi)
         jne  fatal_error
-
-        // clone() has unusual calling conventions and must be handled
-        // specially
-        cmp  $__NR_clone, %eax
-        jz   19f
 
         // exit() terminates trusted thread
         cmp  $__NR_exit, %eax
@@ -401,20 +401,20 @@ playground$runTrustedThread:
         // resources with the caller (i.e. the previous trusted thread),
         // and by extension it shares all resources with the sandbox'd
         // threads.
-     19:movd %edi, %mm6          // %mm6  = old_shared_mem
+     19:movd %mm5, %edi
+        movd %edi, %mm6          // %mm6  = old_shared_mem
         movd %mm4, %edi          // child_tidptr
         mov  %ecx, %ebp          // remember child stack
         mov  $1, %ecx            // stack = 1
         int  $0x80               // calls NR_clone
         cmp  $-4095, %eax        // return codes -1..-4095 are errno values
         jae  7b                  // unlock mutex, return result
-        movd %mm2, %edi
-        add  $2, %edi
-        movd %edi, %mm2
         test %eax, %eax
         jne  15b                 // return result
 
         // In nascent thread, now.
+        // Undo sequence number increase that was made for the general case.
+        movd %mm2, %edi
         sub  $2, %edi
         movd %edi, %mm2
 
@@ -637,24 +637,6 @@ fatal_error:
         mov  %eax, 0x4C(%ecx)    // threadFd
         mov  $16, %ebx           // sendmsg()
         mov  $__NR_socketcall, %eax
-        int  $0x80
-
-        // Release syscall_mutex_. This signals the trusted process that
-        // it can write into the original thread's secure memory again.
-        mov  $__NR_mprotect, %eax
-        lea  playground$syscall_mutex, %ebx
-        mov  $4096, %ecx
-        mov  $3, %edx            // PROT_READ | PROT_WRITE
-        int  $0x80
-        CHECK_SYSCALL_ZERO
-        movd %mm2, %edx
-        cmp  %edx, 0x4(%edi)
-        jnz  fatal_error
-        lock; addl $0x80000000, (%ebx)
-        jz   30f                 // exit process (no error message)
-        mov  $1, %edx
-        mov  %edx, %ecx          // FUTEX_WAKE
-        mov  $__NR_futex, %eax
         int  $0x80
      30:xor  %ebx, %ebx
         jmp  27b                 // exit process (no error message)
