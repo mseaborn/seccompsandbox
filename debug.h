@@ -59,6 +59,8 @@ class Debug {
 
   // Turn on debugging, if it has not already been enabled.
   static void enable();
+  // Turn off debugging.
+  static void disable();
 
  private:
   #ifndef NDEBUG

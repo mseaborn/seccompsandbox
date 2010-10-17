@@ -125,33 +125,24 @@ void Debug::enable() {
   enabled_ = true;
 }
 
+void Debug::disable() {
+  enabled_ = false;
+}
+
 bool Debug::enter() {
   // Increment the recursion level in TLS storage. This allows us to
   // make system calls from within our debugging functions, without triggering
   // additional debugging output.
-  //
-  // This function can be called from both the sandboxed process and from the
-  // trusted process. Only the sandboxed process needs to worry about
-  // recursively calling system calls. The trusted process doesn't intercept
-  // system calls and thus doesn't have this problem. It also doesn't have
-  // a TLS. We explicitly set the segment selector to zero, when in the
-  // trusted process, so that we can avoid tracking recursion levels.
   int level;
   #if defined(__x86_64__)
-  asm volatile("mov  %%gs, %0\n"
-               "test %0, %0\n"
-               "jz   1f\n"
-               "movl %%gs:0x1050-0xE0, %0\n"
+  asm volatile("movl %%gs:0x1050-0xE0, %0\n"
                "incl %%gs:0x1050-0xE0\n"
              "1:\n"
                : "=r"(level)
                :
                : "memory");
   #elif defined(__i386__)
-  asm volatile("mov  %%fs, %0\n"
-               "test %0, %0\n"
-               "jz   1f\n"
-               "movl %%fs:0x1034-0x58, %0\n"
+  asm volatile("movl %%fs:0x1034-0x58, %0\n"
                "incl %%fs:0x1034-0x58\n"
              "1:\n"
                : "=r"(level)
@@ -167,29 +158,16 @@ bool Debug::leave() {
   // Decrement the recursion level in TLS storage. This allows us to
   // make system calls from within our debugging functions, without triggering
   // additional debugging output.
-  //
-  // This function can be called from both the sandboxed process and from the
-  // trusted process. Only the sandboxed process needs to worry about
-  // recursively calling system calls. The trusted process doesn't intercept
-  // system calls and thus doesn't have this problem. It also doesn't have
-  // a TLS. We explicitly set the segment selector to zero, when in the
-  // trusted process, so that we can avoid tracking recursion levels.
   int level;
   #if defined(__x86_64__)
-  asm volatile("mov  %%gs, %0\n"
-               "test %0, %0\n"
-               "jz   1f\n"
-               "decl %%gs:0x1050-0xE0\n"
+  asm volatile("decl %%gs:0x1050-0xE0\n"
                "movl %%gs:0x1050-0xE0, %0\n"
              "1:\n"
                : "=r"(level)
                :
                : "memory");
   #elif defined(__i386__)
-  asm volatile("mov  %%fs, %0\n"
-               "test %0, %0\n"
-               "jz   1f\n"
-               "decl %%fs:0x1034-0x58\n"
+  asm volatile("decl %%fs:0x1034-0x58\n"
                "movl %%fs:0x1034-0x58, %0\n"
              "1:\n"
                : "=r"(level)
@@ -221,10 +199,7 @@ void Debug::_message(const char* msg) {
 
 void Debug::message(const char* msg) {
   if (enabled_) {
-    if (enter()) {
-      _message(msg);
-    }
-    leave();
+    _message(msg);
   }
 }
 

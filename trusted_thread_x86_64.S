@@ -15,8 +15,6 @@ playground$runTrustedThread:
         mov  %rdi, %rbp          // %rbp = args
         xor  %rbx, %rbx          // initial sequence number
         lea  999f(%rip), %r15    // continue in same thread
-        xor  %rax, %rax
-        movw %ax, %gs            // invalidate %gs
 
         // Signal handlers are process-wide. This means that for security
         // reasons, we cannot allow that the trusted thread ever executes any

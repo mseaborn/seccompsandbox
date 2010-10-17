@@ -30,15 +30,9 @@ SecureMem::Args* Sandbox::getNewSecureMem() {
 
 void Sandbox::trustedProcess(int parentMapsFd, int processFdPub, int sandboxFd,
                              int cloneFd, SecureMem::Args* secureArena) {
-  // The trusted process doesn't have access to TLS. Zero out the segment
-  // registers so that we can later test that we are in the trusted process.
-  #if defined(__x86_64__)
-  asm volatile("mov %0, %%gs\n" : : "r"(0));
-  #elif defined(__i386__)
-  asm volatile("mov %0, %%fs\n" : : "r"(0));
-  #else
-  #error Unsupported target platform
-  #endif
+  // The trusted process doesn't have access to our custom TLS.
+  // Disable debugging because that relies on our custom TLS.
+  Debug::disable();
 
   std::map<long long, struct Thread> threads;
   SysCalls  sys;

@@ -11,13 +11,7 @@
         .global playground$runTrustedThread
 playground$runTrustedThread:
         mov  4(%esp), %edi       // 1st arg: SecureMem::Args*
-
-        // Prepare %fs for later use, but for now mark it as invalid. This
-        // allows us to call the debug logging functions from the int$0
-        // handler.
         mov  8(%esp), %esi       // 2nd arg: segment selector for %fs
-        xor  %eax, %eax
-        movw %ax, %fs
 
         push %ebx
         push %ebp
