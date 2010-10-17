@@ -8,6 +8,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <pty.h>
+#include <sys/param.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/shm.h>
@@ -1149,6 +1150,14 @@ static int run_test_by_name(const char *name) {
 int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
   setvbuf(stderr, NULL, _IONBF, 0);
+
+  // Set a modest limit on the stack size, so that if we trigger
+  // infinite recursion during the tests we do not trash the system by
+  // triggering the OOM killer.
+  struct rlimit limit;
+  CHECK_SUCCEEDS(getrlimit(RLIMIT_STACK, &limit) == 0);
+  limit.rlim_cur = MIN(limit.rlim_cur, 1024 * 1024);
+  CHECK_SUCCEEDS(setrlimit(RLIMIT_STACK, &limit) == 0);
 
   if (getenv("SECCOMP_SANDBOX_REFERENCE_IMPL")) {
     // Insecure version, for development purposes.
