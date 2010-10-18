@@ -1084,6 +1084,14 @@ TEST(test_backtrace) {
   }
 }
 
+TEST(test_fdatasync) {
+  StartSeccompSandbox();
+  int fds[2];
+  CHECK_SUCCEEDS(pipe(fds) == 0);
+  CHECK_ERRNO(fdatasync(fds[0]), EINVAL);
+  CHECK_ERRNO(fsync(fds[0]), ENOSYS);
+}
+
 struct testcase {
   const char *test_name;
   void (*test_func)();

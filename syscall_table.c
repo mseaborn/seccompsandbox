@@ -53,6 +53,7 @@ const struct SyscallTable syscallTable[] __attribute__((
   #if defined(__NR_fcntl64)
   [ __NR_fcntl64         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #endif
+  [ __NR_fdatasync       ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_fstat           ] = { UNRESTRICTED_SYSCALL,     0                   },
   #if defined(__NR_fstat64)
   [ __NR_fstat64         ] = { UNRESTRICTED_SYSCALL,     0                   },
