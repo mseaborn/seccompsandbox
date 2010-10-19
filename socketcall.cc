@@ -684,7 +684,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
   socklen_t numExtraData = 0;
   if (socketCallArgInfo[socketcall_req.call].lengthOff) {
     memcpy(&numExtraData,
-           reinterpret_cast<char *>(&socketcall_req) +
+           reinterpret_cast<char *>(&socketcall_req.args) +
            socketCallArgInfo[socketcall_req.call].lengthOff,
            sizeof(socklen_t));
   } else if (socketcall_req.call == SYS_SENDMSG) {

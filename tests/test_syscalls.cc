@@ -547,6 +547,54 @@ TEST(test_socket) {
               );
 }
 
+TEST(test_setsockopt) {
+  int sock_fd;
+  CHECK_SUCCEEDS((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+  StartSeccompSandbox();
+  // Check some allowed options.
+  int keepalive = 1;
+  CHECK_SUCCEEDS(setsockopt(sock_fd, SOL_SOCKET, SO_KEEPALIVE,
+			    &keepalive, sizeof(keepalive)) == 0);
+  int cork = 1;
+  CHECK_SUCCEEDS(setsockopt(sock_fd, IPPROTO_TCP, TCP_CORK,
+			    &cork, sizeof(cork)) == 0);
+  // Check some disallowed options.
+  int passcred = 1;
+  CHECK_ERRNO(setsockopt(sock_fd, SOL_SOCKET, SO_PASSCRED,
+  			 &passcred, sizeof(passcred)) == -1, EINVAL);
+  // All the documented TCP_* flags are allowed, so make up a number.
+  int unknown = 1;
+  CHECK_ERRNO(setsockopt(sock_fd, IPPROTO_TCP, 0x123456,
+  			 &unknown, sizeof(unknown)) == -1, EINVAL);
+}
+
+TEST(test_getsockopt) {
+  int sock_fd;
+  CHECK_SUCCEEDS((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) != -1);
+  StartSeccompSandbox();
+  // Pass a larger sized buffer than necessary to check that the
+  // actual size gets returned OK.
+  char buf[100];
+  socklen_t size;
+  // Check some allowed options.
+  size = sizeof(buf);
+  CHECK_SUCCEEDS(getsockopt(sock_fd, SOL_SOCKET, SO_KEEPALIVE,
+			    buf, &size) == 0);
+  CHECK(size == sizeof(int));
+  size = sizeof(buf);
+  CHECK_SUCCEEDS(getsockopt(sock_fd, IPPROTO_TCP, TCP_CORK,
+			    buf, &size) == 0);
+  CHECK(size == sizeof(int));
+  // Check some disallowed options.
+  size = sizeof(buf);
+  CHECK_ERRNO(getsockopt(sock_fd, SOL_SOCKET, SO_PASSCRED,
+  			 buf, &size) == -1, EINVAL);
+  // All the documented TCP_* flags are allowed, so make up a number.
+  size = sizeof(buf);
+  CHECK_ERRNO(getsockopt(sock_fd, IPPROTO_TCP, 0x123456,
+  			 buf, &size) == -1, EINVAL);
+}
+
 TEST(test_open_disabled) {
   StartSeccompSandbox();
   CHECK_ERRNO(open("/dev/null", O_RDONLY), EACCES);
