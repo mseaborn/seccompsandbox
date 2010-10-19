@@ -5,6 +5,91 @@
 #include "debug.h"
 #include "sandbox_impl.h"
 
+namespace {
+
+bool AllowedSetSockOpt(const Sandbox::SetSockOpt& setsockopt_req) {
+  switch (setsockopt_req.level) {
+    case SOL_SOCKET:
+      switch (setsockopt_req.optname) {
+        case SO_KEEPALIVE:
+        case SO_LINGER:
+        case SO_OOBINLINE:
+        case SO_RCVBUF:
+        case SO_RCVLOWAT:
+        case SO_SNDLOWAT:
+        case SO_RCVTIMEO:
+        case SO_SNDTIMEO:
+        case SO_REUSEADDR:
+        case SO_SNDBUF:
+        case SO_TIMESTAMP:
+          return true;
+      }
+      break;
+    case IPPROTO_TCP:
+      switch (setsockopt_req.optname) {
+        case TCP_CORK:
+        case TCP_DEFER_ACCEPT:
+        case TCP_INFO:
+        case TCP_KEEPCNT:
+        case TCP_KEEPIDLE:
+        case TCP_KEEPINTVL:
+        case TCP_LINGER2:
+        case TCP_MAXSEG:
+        case TCP_NODELAY:
+        case TCP_QUICKACK:
+        case TCP_SYNCNT:
+        case TCP_WINDOW_CLAMP:
+          return true;
+      }
+      break;
+  }
+  return false;
+}
+
+bool AllowedGetSockOpt(const Sandbox::GetSockOpt& getsockopt_req) {
+  switch (getsockopt_req.level) {
+    case SOL_SOCKET:
+      switch (getsockopt_req.optname) {
+        case SO_ACCEPTCONN:
+        case SO_ERROR:
+        case SO_KEEPALIVE:
+        case SO_LINGER:
+        case SO_OOBINLINE:
+        case SO_RCVBUF:
+        case SO_RCVLOWAT:
+        case SO_SNDLOWAT:
+        case SO_RCVTIMEO:
+        case SO_SNDTIMEO:
+        case SO_REUSEADDR:
+        case SO_SNDBUF:
+        case SO_TIMESTAMP:
+        case SO_TYPE:
+          return true;
+      }
+      break;
+    case IPPROTO_TCP:
+      switch (getsockopt_req.optname) {
+        case TCP_CORK:
+        case TCP_DEFER_ACCEPT:
+        case TCP_INFO:
+        case TCP_KEEPCNT:
+        case TCP_KEEPIDLE:
+        case TCP_KEEPINTVL:
+        case TCP_LINGER2:
+        case TCP_MAXSEG:
+        case TCP_NODELAY:
+        case TCP_QUICKACK:
+        case TCP_SYNCNT:
+        case TCP_WINDOW_CLAMP:
+          return true;
+      }
+      break;
+  }
+  return false;
+}
+
+} // namespace
+
 namespace playground {
 
 #if defined(__NR_socket)
@@ -335,52 +420,11 @@ bool Sandbox::process_setsockopt(const SyscallRequestInfo* info) {
     die("Failed to read parameters for setsockopt() [process]");
   }
 
-  switch (setsockopt_req.level) {
-    case SOL_SOCKET:
-      switch (setsockopt_req.optname) {
-        case SO_KEEPALIVE:
-        case SO_LINGER:
-        case SO_OOBINLINE:
-        case SO_RCVBUF:
-        case SO_RCVLOWAT:
-        case SO_SNDLOWAT:
-        case SO_RCVTIMEO:
-        case SO_SNDTIMEO:
-        case SO_REUSEADDR:
-        case SO_SNDBUF:
-        case SO_TIMESTAMP:
-          SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
-                                 setsockopt_req.level, setsockopt_req.optname,
-                                 setsockopt_req.optval, setsockopt_req.optlen);
-          return true;
-        default:
-          break;
-      }
-      break;
-    case IPPROTO_TCP:
-      switch (setsockopt_req.optname) {
-        case TCP_CORK:
-        case TCP_DEFER_ACCEPT:
-        case TCP_INFO:
-        case TCP_KEEPCNT:
-        case TCP_KEEPIDLE:
-        case TCP_KEEPINTVL:
-        case TCP_LINGER2:
-        case TCP_MAXSEG:
-        case TCP_NODELAY:
-        case TCP_QUICKACK:
-        case TCP_SYNCNT:
-        case TCP_WINDOW_CLAMP:
-          SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
-                                 setsockopt_req.level, setsockopt_req.optname,
-                                 setsockopt_req.optval, setsockopt_req.optlen);
-          return true;
-        default:
-          break;
-      }
-      break;
-    default:
-      break;
+  if (AllowedSetSockOpt(setsockopt_req)) {
+    SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
+                              setsockopt_req.level, setsockopt_req.optname,
+                              setsockopt_req.optval, setsockopt_req.optlen);
+    return true;
   }
   SecureMem::abandonSystemCall(*info, -EINVAL);
   return false;
@@ -395,55 +439,11 @@ bool Sandbox::process_getsockopt(const SyscallRequestInfo* info) {
     die("Failed to read parameters for getsockopt() [process]");
   }
 
-  switch (getsockopt_req.level) {
-    case SOL_SOCKET:
-      switch (getsockopt_req.optname) {
-        case SO_ACCEPTCONN:
-        case SO_ERROR:
-        case SO_KEEPALIVE:
-        case SO_LINGER:
-        case SO_OOBINLINE:
-        case SO_RCVBUF:
-        case SO_RCVLOWAT:
-        case SO_SNDLOWAT:
-        case SO_RCVTIMEO:
-        case SO_SNDTIMEO:
-        case SO_REUSEADDR:
-        case SO_SNDBUF:
-        case SO_TIMESTAMP:
-        case SO_TYPE:
-          SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
-                                 getsockopt_req.level, getsockopt_req.optname,
-                                 getsockopt_req.optval, getsockopt_req.optlen);
-          return true;
-        default:
-          break;
-      }
-      break;
-    case IPPROTO_TCP:
-      switch (getsockopt_req.optname) {
-        case TCP_CORK:
-        case TCP_DEFER_ACCEPT:
-        case TCP_INFO:
-        case TCP_KEEPCNT:
-        case TCP_KEEPIDLE:
-        case TCP_KEEPINTVL:
-        case TCP_LINGER2:
-        case TCP_MAXSEG:
-        case TCP_NODELAY:
-        case TCP_QUICKACK:
-        case TCP_SYNCNT:
-        case TCP_WINDOW_CLAMP:
-          SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
-                                 getsockopt_req.level, getsockopt_req.optname,
-                                 getsockopt_req.optval, getsockopt_req.optlen);
-          return true;
-        default:
-          break;
-      }
-      break;
-    default:
-      break;
+  if (AllowedGetSockOpt(getsockopt_req)) {
+    SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
+                              getsockopt_req.level, getsockopt_req.optname,
+                              getsockopt_req.optval, getsockopt_req.optlen);
+    return true;
   }
   SecureMem::abandonSystemCall(*info, -EINVAL);
   return false;
@@ -814,92 +814,13 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       // Shutting down a socket is always OK.
       goto accept_simple;
     case SYS_SETSOCKOPT:
-      switch (socketcall_req.args.setsockopt.level) {
-        case SOL_SOCKET:
-          switch (socketcall_req.args.setsockopt.optname) {
-            case SO_KEEPALIVE:
-            case SO_LINGER:
-            case SO_OOBINLINE:
-            case SO_RCVBUF:
-            case SO_RCVLOWAT:
-            case SO_SNDLOWAT:
-            case SO_RCVTIMEO:
-            case SO_SNDTIMEO:
-            case SO_REUSEADDR:
-            case SO_SNDBUF:
-            case SO_TIMESTAMP:
-              goto accept_complex;
-            default:
-              break;
-          }
-          break;
-        case IPPROTO_TCP:
-          switch (socketcall_req.args.setsockopt.optname) {
-            case TCP_CORK:
-            case TCP_DEFER_ACCEPT:
-            case TCP_INFO:
-            case TCP_KEEPCNT:
-            case TCP_KEEPIDLE:
-            case TCP_KEEPINTVL:
-            case TCP_LINGER2:
-            case TCP_MAXSEG:
-            case TCP_NODELAY:
-            case TCP_QUICKACK:
-            case TCP_SYNCNT:
-            case TCP_WINDOW_CLAMP:
-              goto accept_complex;
-            default:
-              break;
-          }
-          break;
-        default:
-          break;
+      if (AllowedSetSockOpt(socketcall_req.args.setsockopt)) {
+        goto accept_complex;
       }
       goto deny;
     case SYS_GETSOCKOPT:
-      switch (socketcall_req.args.getsockopt.level) {
-        case SOL_SOCKET:
-          switch (socketcall_req.args.getsockopt.optname) {
-            case SO_ACCEPTCONN:
-            case SO_ERROR:
-            case SO_KEEPALIVE:
-            case SO_LINGER:
-            case SO_OOBINLINE:
-            case SO_RCVBUF:
-            case SO_RCVLOWAT:
-            case SO_SNDLOWAT:
-            case SO_RCVTIMEO:
-            case SO_SNDTIMEO:
-            case SO_REUSEADDR:
-            case SO_SNDBUF:
-            case SO_TIMESTAMP:
-            case SO_TYPE:
-              goto accept_complex;
-            default:
-              break;
-          }
-          break;
-        case IPPROTO_TCP:
-          switch (socketcall_req.args.getsockopt.optname) {
-            case TCP_CORK:
-            case TCP_DEFER_ACCEPT:
-            case TCP_INFO:
-            case TCP_KEEPCNT:
-            case TCP_KEEPIDLE:
-            case TCP_KEEPINTVL:
-            case TCP_LINGER2:
-            case TCP_MAXSEG:
-            case TCP_NODELAY:
-            case TCP_QUICKACK:
-            case TCP_SYNCNT:
-            case TCP_WINDOW_CLAMP:
-              goto accept_complex;
-            default:
-              break;
-          }
-          break;
-        default:
-          break;
+      if (AllowedGetSockOpt(socketcall_req.args.getsockopt)) {
+        goto accept_complex;
       }
       goto deny;
     case SYS_SENDMSG: {
