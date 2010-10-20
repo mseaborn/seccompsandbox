@@ -58,9 +58,20 @@ class Debug {
   }
 
   // Turn on debugging, if it has not already been enabled.
-  static void enable();
+  static void enable()
+  #ifndef NDEBUG
+  ;
+  #else
+  { }
+  #endif
+
   // Turn off debugging.
-  static void disable();
+  static void disable()
+  #ifndef NDEBUG
+  ;
+  #else
+  { }
+  #endif
 
  private:
   #ifndef NDEBUG

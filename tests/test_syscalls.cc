@@ -901,6 +901,7 @@ TEST(test_trap_resethand) {
 }
 
 TEST(test_debugging) {
+#ifndef NDEBUG
   // We will be inspecting the debugging output that the sandbox writes to
   // stderr. But we still want to make sure that our CHECK() macro can
   // write messages that the user can read. Move glibc's stderr variable
@@ -920,6 +921,7 @@ TEST(test_debugging) {
   CHECK_SUCCEEDS((sz = read(pipe_fds[0], buf, sizeof(buf)-1)) > 0);
   buf[sz] = '\000';
   CHECK(strstr(buf, "close:"));
+#endif
 }
 
 TEST(test_prctl) {
