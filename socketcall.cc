@@ -814,7 +814,15 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       }
       // Receiving data on a connected socket is similar to calling read().
       // Allow it.
-      goto accept_complex;
+    accept_complex_async:
+      SecureMem::lockSystemCall(*info);
+      memcpy(info->mem->pathname, &socketcall_req.args,
+             sizeof(socketcall_req.args));
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_ASYNC,
+                                socketcall_req.call,
+                                info->mem->pathname - (char*)info->mem +
+                                (char*)info->mem->self);
+      return true;
     case SYS_SHUTDOWN:
       // Shutting down a socket is always OK.
       goto accept_simple;
@@ -901,7 +909,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
           ~(MSG_DONTWAIT|MSG_OOB|MSG_PEEK|MSG_TRUNC|MSG_WAITALL)) {
         goto deny;
       }
-      goto accept_complex;
+      goto accept_complex_async;
     default:
     deny:
       SecureMem::abandonSystemCall(*info, rc);

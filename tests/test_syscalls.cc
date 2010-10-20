@@ -1142,6 +1142,83 @@ TEST(test_fdatasync) {
   CHECK_ERRNO(fsync(fds[0]), ENOSYS);
 }
 
+void *recvmsg_thread(void *arg) {
+  int sock_fd = (long) arg;
+  struct iovec iovec;
+  struct msghdr msg;
+  char control_buf[CMSG_SPACE(sizeof(int))];
+  char data_buffer[100];
+  iovec.iov_base = data_buffer;
+  iovec.iov_len = sizeof(data_buffer);
+  msg.msg_iov = &iovec;
+  msg.msg_iovlen = 1;
+  msg.msg_name = NULL;
+  msg.msg_namelen = 0;
+  msg.msg_control = control_buf;
+  msg.msg_controllen = sizeof(control_buf);
+  msg.msg_flags = 0;
+  int received;
+  CHECK_SUCCEEDS((received = recvmsg(sock_fd, &msg, 0)) != -1);
+  CHECK(received == 1);
+  CHECK(data_buffer[0] == 'x');
+  return NULL;
+}
+
+TEST(test_concurrent_sendmsg_and_recvmsg) {
+  // This tests that blocking on recvmsg() in one thread does not
+  // produce a deadlock if another thread attempts to do sendmsg() to
+  // send a message that the first thread is waiting for.  The trusted
+  // process should not wait for recvmsg() to finish before processing
+  // more system calls.
+  StartSeccompSandbox();
+
+  int sock_pair[2];
+  CHECK_SUCCEEDS(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_pair) == 0);
+  pthread_t tid;
+  int err = pthread_create(&tid, NULL, recvmsg_thread, (void *) sock_pair[0]);
+  CHECK(err == 0);
+
+  // In order to test for the deadlock, we need to wait for the child
+  // thread to run long enough to block in recvmsg().  Unfortunately,
+  // there is no way to wait until another thread is blocked, so we
+  // need to use a sleep.  No value is correct here: On a heavily
+  // loaded machine, the child thread might not get scheduled in time.
+  // We pick a sleep time that is respectably large without slowing
+  // the tests down too much.
+  CHECK_SUCCEEDS(poll(NULL, 0, 200) == 0);
+
+  // Prevent this from being simplified into sendto() by sending an FD.
+  struct iovec iovec;
+  struct msghdr msg;
+  struct cmsghdr *cmsg;
+  char control_buf[CMSG_SPACE(sizeof(int))];
+  iovec.iov_base = (void *) "x";
+  iovec.iov_len = 1;
+  msg.msg_iov = &iovec;
+  msg.msg_iovlen = 1;
+  msg.msg_name = NULL;
+  msg.msg_namelen = 0;
+  msg.msg_control = control_buf;
+  msg.msg_controllen = sizeof(control_buf);
+  msg.msg_flags = 0;
+  cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  // We use memcpy() rather than assignment through a cast to avoid
+  // strict-aliasing warnings
+  memcpy(CMSG_DATA(cmsg), &sock_pair[0], sizeof(int));
+  // Some interpretations of the cmsg interface say that CMSG_SPACE
+  // and CMSG_LEN are different and we should assign to this again.
+  msg.msg_controllen = cmsg->cmsg_len;
+  int sent;
+  CHECK_SUCCEEDS((sent = sendmsg(sock_pair[1], &msg, 0)) != -1);
+  CHECK(sent == 1);
+
+  err = pthread_join(tid, NULL);
+  CHECK(err == 0);
+}
+
 struct testcase {
   const char *test_name;
   void (*test_func)();
