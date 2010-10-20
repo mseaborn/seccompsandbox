@@ -376,8 +376,7 @@ bool Sandbox::process_sendmsg(const SyscallRequestInfo* info) {
   memcpy(info->mem->pathname, &data.msg, sizeof(struct msghdr));
   SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
                             data.sendmsg_req.sockfd,
-                            info->mem->pathname - (char*)info->mem +
-                            (char*)info->mem->self,
+                            info->mem->pathname,
                             data.sendmsg_req.flags);
   return true;
 }
@@ -798,9 +797,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       memcpy(info->mem->pathname, &socketcall_req.args,
              sizeof(socketcall_req.args));
       SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
-                                socketcall_req.call,
-                                info->mem->pathname - (char*)info->mem +
-                                (char*)info->mem->self);
+                                socketcall_req.call, info->mem->pathname);
       return true;
     case SYS_RECVFROM:
       // While we do not anticipate any particular need to receive data on
@@ -819,9 +816,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       memcpy(info->mem->pathname, &socketcall_req.args,
              sizeof(socketcall_req.args));
       SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_ASYNC,
-                                socketcall_req.call,
-                                info->mem->pathname - (char*)info->mem +
-                                (char*)info->mem->self);
+                                socketcall_req.call, info->mem->pathname);
       return true;
     case SYS_SHUTDOWN:
       // Shutting down a socket is always OK.
@@ -876,8 +871,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       SecureMem::lockSystemCall(*info);
       socketcall_req.args.sendmsg.msg =
           reinterpret_cast<struct msghdr*>(info->mem->pathname +
-                                    CMSG_ALIGN(sizeof(socketcall_req.args)) -
-                                    (char*)info->mem + (char*)info->mem->self);
+                                    CMSG_ALIGN(sizeof(socketcall_req.args)));
       memcpy(info->mem->pathname, &socketcall_req.args,
              sizeof(socketcall_req.args));
       if (numSendmsgExtra) {
@@ -898,9 +892,7 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       memcpy(info->mem->pathname + CMSG_ALIGN(sizeof(socketcall_req.args)),
              msg, sizeof(*msg));
       SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
-                                socketcall_req.call,
-                                info->mem->pathname - (char*)info->mem +
-                                (char*)info->mem->self);
+                                socketcall_req.call, info->mem->pathname);
       return true;
     }
     case SYS_RECVMSG:

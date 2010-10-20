@@ -80,9 +80,7 @@ bool Sandbox::process_open(const SecureMem::SyscallRequestInfo* info) {
 
   // Tell trusted thread to open the file.
   SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
-                            info->mem->pathname - (char*)info->mem +
-                              (char*)info->mem->self,
-                            open_req.flags, open_req.mode);
+                            info->mem->pathname, open_req.flags, open_req.mode);
   return true;
 }
 
