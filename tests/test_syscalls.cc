@@ -510,6 +510,18 @@ TEST(test_mprotect_disallowed) {
   CHECK_ERRNO(mprotect(addr, 0x1000, PROT_READ | PROT_WRITE), EINVAL);
 }
 
+TEST(test_madvise_allowed) {
+  StartSeccompSandbox();
+  void *addr = map_something();
+  CHECK_SUCCEEDS(madvise(addr, 0x1000, MADV_DONTNEED) == 0);
+}
+
+TEST(test_madvise_disallowed) {
+  void *addr = map_something();
+  StartSeccompSandbox();
+  CHECK_ERRNO(madvise(addr, 0x1000, MADV_DONTNEED) == -1, EINVAL);
+}
+
 static int get_tty_fd() {
   int master_fd, tty_fd;
   CHECK_SUCCEEDS(openpty(&master_fd, &tty_fd, NULL, NULL, NULL) == 0);

@@ -31,7 +31,6 @@ bool Sandbox::process_madvise(const SecureMem::SyscallRequestInfo* info) {
       sizeof(madvise_req)) {
     die("Failed to read parameters for madvise() [process]");
   }
-  int rc = -EINVAL;
   switch (madvise_req.advice) {
     case MADV_NORMAL:
     case MADV_RANDOM:
@@ -46,20 +45,9 @@ bool Sandbox::process_madvise(const SecureMem::SyscallRequestInfo* info) {
       // All other flags to madvise() are potential dangerous (as opposed to
       // merely affecting overall performance). Do not allow them on memory
       // ranges that were part of the original mappings.
-      void *stop = reinterpret_cast<void *>(
-          (char *)madvise_req.start + madvise_req.len);
-      ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-          (void *)madvise_req.start);
-      if (iter != protectedMap_.begin()) {
-        --iter;
-      }
-      for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
-        if (madvise_req.start < reinterpret_cast<void *>(
-                reinterpret_cast<char *>(iter->first) + iter->second) &&
-            stop > iter->first) {
-          SecureMem::abandonSystemCall(*info, rc);
-          return false;
-        }
+      if (isRegionProtected((void *) madvise_req.start, madvise_req.len)) {
+        SecureMem::abandonSystemCall(*info, -EINVAL);
+        return false;
       }
 
       // Changing attributes on memory regions that were newly mapped inside of

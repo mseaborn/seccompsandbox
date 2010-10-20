@@ -34,21 +34,9 @@ bool Sandbox::process_mprotect(const SecureMem::SyscallRequestInfo* info) {
 
   // Cannot change permissions on any memory region that was part of the
   // original memory mappings.
-  int rc = -EINVAL;
-  void *stop = reinterpret_cast<void *>(
-      (char *)mprotect_req.addr + mprotect_req.len);
-  ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-      (void *)mprotect_req.addr);
-  if (iter != protectedMap_.begin()) {
-    --iter;
-  }
-  for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
-    if (mprotect_req.addr < reinterpret_cast<void *>(
-            reinterpret_cast<char *>(iter->first) + iter->second) &&
-        stop > iter->first) {
-      SecureMem::abandonSystemCall(*info, rc);
-      return false;
-    }
+  if (isRegionProtected((void *) mprotect_req.addr, mprotect_req.len)) {
+    SecureMem::abandonSystemCall(*info, -EINVAL);
+    return false;
   }
 
   // Changing permissions on memory regions that were newly mapped inside of

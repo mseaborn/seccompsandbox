@@ -690,6 +690,10 @@ class Sandbox {
   // mmap(), munmap(), and mprotect().
   static int   initializeProtectedMap(int fd);
 
+  // Returns whether the given memory range is protected and may not be
+  // modified by the sandboxed process.
+  static bool  isRegionProtected(void* addr, size_t size);
+
   // Helper functions that allows the trusted process to get access to
   // "/proc/self/maps" in the sandbox.
   static void  snapshotMemoryMappings(int processFd, int proc_self_maps);

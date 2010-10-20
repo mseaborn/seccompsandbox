@@ -177,6 +177,21 @@ int Sandbox::initializeProtectedMap(int fd) {
   return mapsFd;
 }
 
+bool Sandbox::isRegionProtected(void *addr, size_t size) {
+  void *stop = (char *) addr + size;
+  ProtectedMap::const_iterator iter = protectedMap_.lower_bound(addr);
+  if (iter != protectedMap_.begin()) {
+    --iter;
+  }
+  for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
+    if (addr < (char *) iter->first + iter->second &&
+        stop > iter->first) {
+      return true;
+    }
+  }
+  return false;
+}
+
 SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
                                                int cloneFdPub, int cloneFd) {
   // Allocate memory that will be used by an arena for storing the secure

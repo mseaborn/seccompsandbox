@@ -36,24 +36,11 @@ bool Sandbox::process_mmap(const SecureMem::SyscallRequestInfo* info) {
     die("Failed to read parameters for mmap() [process]");
   }
 
-  if (mmap_req.flags & MAP_FIXED) {
-    // Cannot map a memory area that was part of the original memory mappings.
-    void *stop = reinterpret_cast<void *>(
-        (char *)mmap_req.start + mmap_req.length);
-    ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-        (void *)mmap_req.start);
-    if (iter != protectedMap_.begin()) {
-      --iter;
-    }
-    for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
-      if (mmap_req.start < reinterpret_cast<void *>(
-              reinterpret_cast<char *>(iter->first) + iter->second) &&
-          stop > iter->first) {
-        int rc = -EINVAL;
-        SecureMem::abandonSystemCall(*info, rc);
-        return false;
-      }
-    }
+  // Cannot map a memory area that was part of the original memory mappings.
+  if ((mmap_req.flags & MAP_FIXED) != 0 &&
+      isRegionProtected(mmap_req.start, mmap_req.length)) {
+    SecureMem::abandonSystemCall(*info, -EINVAL);
+    return false;
   }
 
   // All other mmap() requests are OK

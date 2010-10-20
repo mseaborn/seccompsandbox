@@ -143,20 +143,10 @@ bool Sandbox::process_shmdt(const SecureMem::SyscallRequestInfo* info) {
   // Detaching shared memory segments it generally safe, but just in case
   // of a kernel bug, we make sure that the address does not fall into any
   // of the reserved memory regions.
-  ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-      (void *)shmdt_req.shmaddr);
-  if (iter != protectedMap_.begin()) {
-    --iter;
-  }
-  for (; iter != protectedMap_.end() && iter->first <= shmdt_req.shmaddr;
-       ++iter){
-    if (shmdt_req.shmaddr < reinterpret_cast<void *>(
-            reinterpret_cast<char *>(iter->first) + iter->second) &&
-        shmdt_req.shmaddr >= iter->first) {
-      info->mem->shmId = -1;
-      SecureMem::abandonSystemCall(*info, -EINVAL);
-      return false;
-    }
+  if (isRegionProtected((void *) shmdt_req.shmaddr, 0x1000)) {
+    info->mem->shmId = -1;
+    SecureMem::abandonSystemCall(*info, -EINVAL);
+    return false;
   }
 
   info->mem->shmId     = -1;
@@ -248,19 +238,11 @@ bool Sandbox::process_ipc(const SecureMem::SyscallRequestInfo* info) {
       // Detaching shared memory segments it generally safe, but just in case
       // of a kernel bug, we make sure that the address does not fall into any
       // of the reserved memory regions.
-      ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-          (void *)ipc_req.ptr);
-      if (iter != protectedMap_.begin()) {
-        --iter;
+      if (isRegionProtected(ipc_req.ptr, 0x1000)) {
+        goto deny;
+      } else {
+        goto accept;
       }
-      for (; iter != protectedMap_.end() && iter->first <=ipc_req.ptr; ++iter){
-        if (ipc_req.ptr < reinterpret_cast<void *>(
-                reinterpret_cast<char *>(iter->first) + iter->second) &&
-            ipc_req.ptr >= iter->first) {
-          goto deny;
-        }
-      }
-      goto accept;
     }
     case SHMGET:
       // We do not want to allow the sandboxed application to access arbitrary

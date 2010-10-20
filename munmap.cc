@@ -33,21 +33,9 @@ bool Sandbox::process_munmap(const SecureMem::SyscallRequestInfo* info) {
 
   // Cannot unmap any memory region that was part of the original memory
   // mappings.
-  int rc = -EINVAL;
-  void *stop = reinterpret_cast<void *>(
-      reinterpret_cast<char *>(munmap_req.start) + munmap_req.length);
-  ProtectedMap::const_iterator iter = protectedMap_.lower_bound(
-      munmap_req.start);
-  if (iter != protectedMap_.begin()) {
-    --iter;
-  }
-  for (; iter != protectedMap_.end() && iter->first < stop; ++iter) {
-    if (munmap_req.start < reinterpret_cast<void *>(
-            reinterpret_cast<char *>(iter->first) + iter->second) &&
-        stop > iter->first) {
-      SecureMem::abandonSystemCall(*info, rc);
-      return false;
-    }
+  if (isRegionProtected(munmap_req.start, munmap_req.length)) {
+    SecureMem::abandonSystemCall(*info, -EINVAL);
+    return false;
   }
 
   // Unmapping memory regions that were newly mapped inside of the sandbox
