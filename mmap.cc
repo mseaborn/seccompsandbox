@@ -57,9 +57,9 @@ bool Sandbox::process_mmap(const SecureMem::SyscallRequestInfo* info) {
   }
 
   // All other mmap() requests are OK
-  SecureMem::sendSystemCall(*info, false, mmap_req.start, mmap_req.length,
-                            mmap_req.prot, mmap_req.flags, mmap_req.fd,
-                            mmap_req.offset);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, mmap_req.start,
+                            mmap_req.length, mmap_req.prot, mmap_req.flags,
+                            mmap_req.fd, mmap_req.offset);
   return true;
 }
 

@@ -275,7 +275,8 @@ bool Sandbox::process_recvfrom(const SyscallRequestInfo* info) {
 
   // While we do not anticipate any particular need to receive data on
   // unconnected sockets, there is no particular risk in doing so.
-  SecureMem::sendSystemCall(*info, false, recvfrom_req.sockfd,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                            recvfrom_req.sockfd,
                             recvfrom_req.buf, recvfrom_req.len,
                             recvfrom_req.flags, recvfrom_req.from,
                             recvfrom_req.fromlen);
@@ -299,7 +300,7 @@ bool Sandbox::process_recvmsg(const SyscallRequestInfo* info) {
   }
 
   // Receiving messages is general not security critical.
-  SecureMem::sendSystemCall(*info, false, recvmsg_req.sockfd,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, recvmsg_req.sockfd,
                             recvmsg_req.msg, recvmsg_req.flags);
   return true;
 }
@@ -373,7 +374,8 @@ bool Sandbox::process_sendmsg(const SyscallRequestInfo* info) {
     }
   }
   memcpy(info->mem->pathname, &data.msg, sizeof(struct msghdr));
-  SecureMem::sendSystemCall(*info, true, data.sendmsg_req.sockfd,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
+                            data.sendmsg_req.sockfd,
                             info->mem->pathname - (char*)info->mem +
                             (char*)info->mem->self,
                             data.sendmsg_req.flags);
@@ -404,7 +406,7 @@ bool Sandbox::process_sendto(const SyscallRequestInfo* info) {
 
   // Sending data on a connected socket is similar to calling write().
   // Allow it.
-  SecureMem::sendSystemCall(*info, false, sendto_req.sockfd,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, sendto_req.sockfd,
                             sendto_req.buf, sendto_req.len,
                             sendto_req.flags, sendto_req.to,
                             sendto_req.tolen);
@@ -421,7 +423,8 @@ bool Sandbox::process_setsockopt(const SyscallRequestInfo* info) {
   }
 
   if (AllowedSetSockOpt(setsockopt_req)) {
-    SecureMem::sendSystemCall(*info, false, setsockopt_req.sockfd,
+    SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                              setsockopt_req.sockfd,
                               setsockopt_req.level, setsockopt_req.optname,
                               setsockopt_req.optval, setsockopt_req.optlen);
     return true;
@@ -440,7 +443,8 @@ bool Sandbox::process_getsockopt(const SyscallRequestInfo* info) {
   }
 
   if (AllowedGetSockOpt(getsockopt_req)) {
-    SecureMem::sendSystemCall(*info, false, getsockopt_req.sockfd,
+    SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                              getsockopt_req.sockfd,
                               getsockopt_req.level, getsockopt_req.optname,
                               getsockopt_req.optval, getsockopt_req.optlen);
     return true;
@@ -758,8 +762,8 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
     accept_simple:
       // None of the parameters need to be checked, so it is OK to refer
       // to the parameter block created by the untrusted code.
-      SecureMem::sendSystemCall(*info, false, socketcall_req.call,
-                                socketcall_req.arg_ptr);
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                                socketcall_req.call, socketcall_req.arg_ptr);
       return true;
     case SYS_GETSOCKNAME:
     case SYS_GETPEERNAME:
@@ -793,7 +797,8 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       SecureMem::lockSystemCall(*info);
       memcpy(info->mem->pathname, &socketcall_req.args,
              sizeof(socketcall_req.args));
-      SecureMem::sendSystemCall(*info, true, socketcall_req.call,
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
+                                socketcall_req.call,
                                 info->mem->pathname - (char*)info->mem +
                                 (char*)info->mem->self);
       return true;
@@ -884,7 +889,8 @@ bool Sandbox::process_socketcall(const SyscallRequestInfo* info) {
       }
       memcpy(info->mem->pathname + CMSG_ALIGN(sizeof(socketcall_req.args)),
              msg, sizeof(*msg));
-      SecureMem::sendSystemCall(*info, true, socketcall_req.call,
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
+                                socketcall_req.call,
                                 info->mem->pathname - (char*)info->mem +
                                 (char*)info->mem->self);
       return true;

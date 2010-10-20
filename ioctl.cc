@@ -35,8 +35,8 @@ bool Sandbox::process_ioctl(const SecureMem::SyscallRequestInfo* info) {
   switch (ioctl_req.req) {
     case TCGETS:
     case TIOCGWINSZ:
-      SecureMem::sendSystemCall(*info, false, ioctl_req.d, ioctl_req.req,
-                                ioctl_req.arg);
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, ioctl_req.d,
+                                ioctl_req.req, ioctl_req.arg);
       return true;
     default:
       if (Debug::isEnabled()) {

@@ -151,7 +151,8 @@ bool Sandbox::process_clone(const SecureMem::SyscallRequestInfo* info) {
       newMem->sequence       = 0;
       newMem->shmId          = -1;
 
-      SecureMem::sendSystemCall(*info, false, clone_req.flags, clone_req.stack,
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                                clone_req.flags, clone_req.stack,
                                 clone_req.pid, clone_req.arg4, clone_req.arg5,
                                 NULL, newMem);
       return true;

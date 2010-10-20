@@ -80,7 +80,7 @@ bool Sandbox::process_access(const SecureMem::SyscallRequestInfo* info) {
                   "\"").c_str());
 
   // Tell trusted thread to access the file.
-  SecureMem::sendSystemCall(*info, true,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
                             info->mem->pathname - (char*)info->mem +
                               (char*)info->mem->self,
                             access_req.mode);

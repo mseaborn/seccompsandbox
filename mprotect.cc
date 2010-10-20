@@ -53,8 +53,8 @@ bool Sandbox::process_mprotect(const SecureMem::SyscallRequestInfo* info) {
 
   // Changing permissions on memory regions that were newly mapped inside of
   // the sandbox is OK.
-  SecureMem::sendSystemCall(*info, false, mprotect_req.addr, mprotect_req.len,
-                            mprotect_req.prot);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, mprotect_req.addr,
+                            mprotect_req.len, mprotect_req.prot);
   return true;
 }
 

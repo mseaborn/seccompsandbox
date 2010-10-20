@@ -103,8 +103,8 @@ bool Sandbox::process_shmat(const SecureMem::SyscallRequestInfo* info) {
   }
 
   info->mem->shmId   = -1;
-  SecureMem::sendSystemCall(*info, false, shmat_req.shmid, shmat_req.shmaddr,
-                            shmat_req.shmflg);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmat_req.shmid,
+                            shmat_req.shmaddr, shmat_req.shmflg);
   return true;
 }
 
@@ -126,8 +126,8 @@ bool Sandbox::process_shmctl(const SecureMem::SyscallRequestInfo* info) {
   }
 
   info->mem->shmId   = -1;
-  SecureMem::sendSystemCall(*info, false, shmctl_req.shmid, shmctl_req.cmd,
-                            shmctl_req.buf);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmctl_req.shmid,
+                            shmctl_req.cmd, shmctl_req.buf);
   return true;
 }
 
@@ -160,7 +160,7 @@ bool Sandbox::process_shmdt(const SecureMem::SyscallRequestInfo* info) {
   }
 
   info->mem->shmId     = -1;
-  SecureMem::sendSystemCall(*info, false, shmdt_req.shmaddr);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmdt_req.shmaddr);
   return true;
 }
 
@@ -183,8 +183,8 @@ bool Sandbox::process_shmget(const SecureMem::SyscallRequestInfo* info) {
   }
 
   info->mem->shmId   = -1;
-  SecureMem::sendSystemCall(*info, false, shmget_req.key, shmget_req.size,
-                            shmget_req.shmflg);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmget_req.key,
+                            shmget_req.size, shmget_req.shmflg);
   return true;
 }
 #endif
@@ -231,9 +231,9 @@ bool Sandbox::process_ipc(const SecureMem::SyscallRequestInfo* info) {
       }
     accept:
       info->mem->shmId = -1;
-      SecureMem::sendSystemCall(*info, false, ipc_req.call, ipc_req.first,
-                                ipc_req.second, ipc_req.third, ipc_req.ptr,
-                                ipc_req.fifth);
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, ipc_req.call,
+                                ipc_req.first, ipc_req.second, ipc_req.third,
+                                ipc_req.ptr, ipc_req.fifth);
       return true;
     }
     case SHMCTL:

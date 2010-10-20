@@ -139,7 +139,7 @@ bool Sandbox::process_sigaction(const SyscallRequestInfo* info) {
     SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
   }
-  SecureMem::sendSystemCall(*info, false,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
                            sigaction_req.signum, sigaction_req.action,
                            sigaction_req.old_action, sigaction_req.sigsetsize);
   return true;

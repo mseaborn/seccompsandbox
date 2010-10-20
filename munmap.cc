@@ -52,7 +52,8 @@ bool Sandbox::process_munmap(const SecureMem::SyscallRequestInfo* info) {
 
   // Unmapping memory regions that were newly mapped inside of the sandbox
   // is OK.
-  SecureMem::sendSystemCall(*info, false, munmap_req.start, munmap_req.length);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, munmap_req.start,
+                            munmap_req.length);
   return true;
 }
 

@@ -37,8 +37,8 @@ bool Sandbox::process_prctl(const SecureMem::SyscallRequestInfo* info) {
   switch (prctl_req.option) {
   case PR_GET_DUMPABLE:
   case PR_SET_DUMPABLE:
-    SecureMem::sendSystemCall(*info, false, prctl_req.option, prctl_req.arg2,
-                              0, 0, 0);
+    SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, prctl_req.option,
+                              prctl_req.arg2, 0, 0, 0);
     return true;
   default:
     SecureMem::abandonSystemCall(*info, -EPERM);

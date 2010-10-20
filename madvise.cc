@@ -38,8 +38,9 @@ bool Sandbox::process_madvise(const SecureMem::SyscallRequestInfo* info) {
     case MADV_SEQUENTIAL:
     case MADV_WILLNEED:
     ok:
-      SecureMem::sendSystemCall(*info, false, madvise_req.start,
-                                madvise_req.len, madvise_req.advice);
+      SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                                madvise_req.start, madvise_req.len,
+                                madvise_req.advice);
       return true;
     default:
       // All other flags to madvise() are potential dangerous (as opposed to

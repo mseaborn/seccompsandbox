@@ -57,11 +57,11 @@ void SecureMem::lockSystemCall(const SyscallRequestInfo& rpc) {
 }
 
 void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
-                                       bool locked,
+                                       LockType type,
                                        void* arg1, void* arg2, void* arg3,
                                        void* arg4, void* arg5, void* arg6,
                                        Args* newSecureMem) {
-  if (!locked) {
+  if (type == SEND_UNLOCKED) {
     asm volatile(
     #if defined(__x86_64__)
         "lock; incq (%0)\n"
@@ -74,7 +74,7 @@ void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
         : "q"(&rpc.mem->sequence)
         : "memory");
   }
-  rpc.mem->callType    = locked ? -2 : -1;
+  rpc.mem->callType    = type == SEND_UNLOCKED ? -1 : -2;
   rpc.mem->syscallNum  = rpc.sysnum;
   rpc.mem->arg1        = arg1;
   rpc.mem->arg2        = arg2;
@@ -99,7 +99,7 @@ void SecureMem::sendSystemCallInternal(const SyscallRequestInfo& rpc,
                      sizeof(int)) != sizeof(int)) {
     Sandbox::die("Failed to send system call");
   }
-  if (locked) {
+  if (type == SEND_LOCKED_SYNC) {
     while (!Mutex::waitForUnlock(&rpc.mem->syscallMutex, 500)) {
       dieIfParentDied(rpc.parentMapsFd);
     }

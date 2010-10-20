@@ -139,45 +139,60 @@ class SecureMem {
   // call!
   static void lockSystemCall(const SyscallRequestInfo& rpc);
 
-  // Sends a system call to the trusted thread. If "locked" is true, the
-  // caller must first call lockSystemCall() and must also provide
-  // "parentProc". In locked mode, sendSystemCall() won't return until the
-  // trusted thread has completed processing.
-  // Use sparingly as it serializes the operation of the trusted process.
-  static void sendSystemCall(const SyscallRequestInfo& rpc, bool locked) {
-    sendSystemCallInternal(rpc, locked);
+  enum LockType {
+    // Sends a system call to the trusted thread without acquiring
+    // syscallMutex.  This is the cheapest option, but is only safe for
+    // system calls without in-memory arguments that require validation.
+    SEND_UNLOCKED = 1,
+    // Sends a system call after acquiring syscallMutex.  This is more
+    // expensive, because the trusted thread must fork() in order to
+    // release the mutex.  The caller must first call lockSystemCall().
+    // This does not wait for the syscall to complete, so this should
+    // be used for blocking syscalls, e.g. recvmsg().
+    SEND_LOCKED_ASYNC,
+    // Like SEND_LOCKED_ASYNC, but also waits for the system call to
+    // complete (i.e. for syscallMutex to be released).  This should be
+    // used if the trusted process relies on a side effect of the
+    // syscall, or if we want to synchronise in order to err on the side
+    // of safety, e.g. for thread exit.
+    SEND_LOCKED_SYNC,
+  };
+
+  // Sends a system call to the trusted thread for execution.
+  static void sendSystemCall(const SyscallRequestInfo& rpc, LockType type) {
+    sendSystemCallInternal(rpc, type);
   }
   template<class T1> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked, T1 arg1) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1);
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type, T1 arg1) {
+    sendSystemCallInternal(rpc, type, (void*)arg1);
   }
   template<class T1, class T2> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2);
+    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2);
   }
   template<class T1, class T2, class T3> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3);
+    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3);
   }
   template<class T1, class T2, class T3, class T4> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
                            (void*)arg4);
   }
   template<class T1, class T2, class T3, class T4, class T5> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
                            (void*)arg4, (void*)arg5);
   }
   template<class T1, class T2, class T3, class T4, class T5, class T6> static
-  void sendSystemCall(const SyscallRequestInfo& rpc, bool locked,
+  void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6,
                       Args* newSecureMem = 0) {
-    sendSystemCallInternal(rpc, locked, (void*)arg1, (void*)arg2, (void*)arg3,
+    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
                            (void*)arg4, (void*)arg5, (void*)arg6,
                            newSecureMem);
   }
@@ -188,7 +203,7 @@ class SecureMem {
   static void dieIfParentDied(int parentMapsFd);
 
   static void sendSystemCallInternal(const SyscallRequestInfo& rpc,
-                                     bool locked,
+                                     LockType type,
                                      void* arg1 = 0, void* arg2 = 0,
                                      void* arg3 = 0, void* arg4 = 0,
                                      void* arg5 = 0, void* arg6 = 0,

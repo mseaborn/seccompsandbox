@@ -139,7 +139,7 @@ bool Sandbox::process_stat(const SyscallRequestInfo* info) {
                   "\"").c_str());
 
   // Tell trusted thread to stat the file.
-  SecureMem::sendSystemCall(*info, true,
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_LOCKED_SYNC,
                             info->mem->pathname - (char*)info->mem +
                               (char*)info->mem->self,
                             stat_req.buf);
