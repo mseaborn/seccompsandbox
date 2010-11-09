@@ -148,6 +148,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
   asm volatile(
       "call 999f\n"
 #if defined(__x86_64__)
+//CUT_x86_64_START
       // Inspect instruction at the point where the segmentation fault
       // happened. If it is RDTSC, forward the request to the trusted
       // thread.
@@ -160,7 +161,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "cmpb $0xF9, 2(%%r15)\n"
       "jnz  8f\n"
       "mov  $-4, %%r14\n"          // request for RDTSCP
-    "0:"
+    "0:\n"
 #ifndef NDEBUG
       "lea  100f(%%rip), %%rdi\n"
       "call playground$debugMessage\n"
@@ -346,7 +347,9 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
    "22:mov  $0xF, %%rax\n"         // gdb looks for this signature when doing
       "syscall\n"                  //   backtraces
       ".popsection\n"
+//CUT_x86_64_END
 #elif defined(__i386__)
+//CUT_i386_START
       // Inspect instruction at the point where the segmentation fault
       // happened. If it is RDTSC, forward the request to the trusted
       // thread.
@@ -359,7 +362,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "cmpb $0xF9, 2(%%ebp)\n"
       "jnz  10f\n"
       "mov  $-4, %%ebx\n"          // request for RDTSCP
-    "0:"
+    "0:\n"
 #ifndef NDEBUG
       "lea  100f, %%eax\n"
       "push %%eax\n"
@@ -585,6 +588,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "jmp  6b\n"
    "28:decl %%fs:0x1040-0x58\n"
       "jmp  7b\n"
+//CUT_i386_END
 #else
 #error Unsupported target platform
 #endif
