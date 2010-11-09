@@ -18,6 +18,7 @@
         'clone.cc',
         'exit.cc',
         'debug.cc',
+        'fault_handler_asm.S',
         'getpid.cc',
         'gettid.cc',
         'ioctl.cc',

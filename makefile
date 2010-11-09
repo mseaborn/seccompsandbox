@@ -6,7 +6,8 @@ DEPFLAGS = -MMD -MF $@.d
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         syscall_entrypoint syscall_table                                      \
         trusted_thread trusted_thread_asm trusted_process                     \
-        access exit clone getpid gettid ioctl ipc madvise mmap mprotect       \
+        access exit fault_handler_asm clone                                   \
+        getpid gettid ioctl ipc madvise mmap mprotect                         \
         munmap open prctl reference_trusted_thread sigaction sigprocmask      \
         socketcall stat
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')

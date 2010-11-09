@@ -1,6 +1,9 @@
-// This has been automatically extracted from sandbox.cc.
-// It will be fixed up in the next commit.
+// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
+        .global playground$segvSignalHandler
+playground$segvSignalHandler:
         // Inspect instruction at the point where the segmentation fault
         // happened. If it is RDTSC, forward the request to the trusted
         // thread.
@@ -173,8 +176,9 @@
         //  - We have to always register our signal handler with SA_NODEFER so
         //    that the user's signal handler can make system calls which might
         //    require additional help from our SEGV handler.
-        //  - If the user's signal handler wasn't supposed to be SA_NODEFER, then
-        //    we emulate this behavior by keeping track of a recursion counter.
+        //  - If the user's signal handler wasn't supposed to be SA_NODEFER,
+        //    then we emulate this behavior by keeping track of a recursion
+        //    counter.
         //
         // TODO(markus): If/when we add support for sigaltstack(), we have to
         // handle SA_ONSTACK.
