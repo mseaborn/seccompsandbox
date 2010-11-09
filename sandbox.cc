@@ -355,9 +355,9 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "cmpw $0x310F, (%%ebp)\n"    // RDTSC
       "jz   0f\n"
       "cmpw $0x010F, (%%ebp)\n"    // RDTSCP
-      "jnz  9f\n"
+      "jnz  10f\n"
       "cmpb $0xF9, 2(%%ebp)\n"
-      "jnz  9f\n"
+      "jnz  10f\n"
       "mov  $-4, %%ebx\n"          // request for RDTSCP
     "0:"
 #ifndef NDEBUG
@@ -375,7 +375,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
     "1:mov  %%edx, %%eax\n"        // NR_write
       "int  $0x80\n"
       "cmp  %%eax, %%edx\n"
-      "jz   7f\n"
+      "jz   8f\n"
       "cmp  $-4, %%eax\n"          // EINTR
       "jz   1b\n"
     "2:add  $12, %%esp\n"          // remove temporary buffer from stack
@@ -390,7 +390,8 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "cmpw $0x010F, (%%ebp)\n"    // RDTSCP
       "jnz  5f\n"
       "addl $1, 0xDC(%%esp)\n"     // %eip at time of segmentation fault
-    "5:sub  $0x1C8, %%esp\n"       // a legacy signal stack is much larger
+    "5:add  $0x4, %%esp\n"
+    "6:sub  $0x1CC, %%esp\n"       // a legacy signal stack is much larger
       "mov  0x1CC(%%esp), %%eax\n" // push signal number
       "push %%eax\n"
       "lea  0x270(%%esp), %%esi\n" // copy siginfo register values
@@ -400,24 +401,14 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "rep movsl\n"
       "mov  0x2C8(%%esp), %%ebx\n" // copy first half of signal mask
       "mov  %%ebx, 0x54(%%esp)\n"
-      "lea  6f, %%esi\n"           // copy "magic" restorer function
-      "push %%esi\n"               // push restorer function
-      "lea  0x2D4(%%esp), %%edi\n" // patch up retcode magic numbers
-      "movb $2, %%cl\n"
-      "rep movsl\n"
-      "ret\n"                      // return to restorer function
-
-      // The restorer function is sometimes used by gdb as a magic marker to
-      // recognize signal stack frames. Don't change any of the next three
-      // instructions.
-    "6:pop  %%eax\n"               // remove dummy argument (signo)
+    "7:pop  %%eax\n"               // remove dummy argument (signo)
       "mov  $119, %%eax\n"         // NR_sigreturn
       "int  $0x80\n"
-    "7:mov  $12, %%edx\n"          // len = 3*sizeof(int)
-    "8:mov  $3, %%eax\n"           // NR_read
+    "8:mov  $12, %%edx\n"          // len = 3*sizeof(int)
+    "9:mov  $3, %%eax\n"           // NR_read
       "int  $0x80\n"
       "cmp  $-4, %%eax\n"          // EINTR
-      "jz   8b\n"
+      "jz   9b\n"
       "cmp  %%eax, %%edx\n"
       "jnz  2b\n"
       "pop  %%eax\n"
@@ -434,7 +425,7 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       // rewrite the system call instruction. Retrieve the CPU register
       // at the time of the segmentation fault and invoke
       // syscallEntryPointWithFrame().
-    "9:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
+   "10:cmpw $0x00CD, (%%ebp)\n"    // INT $0x0
       "jnz  20f\n"
 #ifndef NDEBUG
       "lea  200f, %%eax\n"
@@ -452,37 +443,37 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
 
       // Handle sigprocmask() and rt_sigprocmask()
       "cmp  $175, %%eax\n"         // NR_rt_sigprocmask
-      "jnz  10f\n"
+      "jnz  11f\n"
       "mov  $-22, %%eax\n"         // -EINVAL
       "cmp  $8, %%esi\n"           // %esi = sigsetsize (8 bytes = 64 signals)
       "jl   3b\n"
-      "jmp  11f\n"
-   "10:cmp  $126, %%eax\n"         // NR_sigprocmask
-      "jnz  15f\n"
+      "jmp  12f\n"
+   "11:cmp  $126, %%eax\n"         // NR_sigprocmask
+      "jnz  16f\n"
       "mov  $-22, %%eax\n"
-   "11:mov  0xFC(%%esp), %%edi\n"  // signal mask at time of segmentation fault
+   "12:mov  0xFC(%%esp), %%edi\n"  // signal mask at time of segmentation fault
       "mov  0x100(%%esp), %%ebp\n"
       "test %%ecx, %%ecx\n"        // only set mask, if set is non-NULL
-      "jz   14f\n"
+      "jz   15f\n"
       "mov  0(%%ecx), %%esi\n"
       "mov  4(%%ecx), %%ecx\n"
       "cmp  $0, %%ebx\n"           // %ebx = how (SIG_BLOCK)
-      "jnz  12f\n"
+      "jnz  13f\n"
       "or   %%esi, 0xFC(%%esp)\n"  // signal mask at time of segmentation fault
       "or   %%ecx, 0x100(%%esp)\n"
-      "jmp  14f\n"
-   "12:cmp  $1, %%ebx\n"           // %ebx = how (SIG_UNBLOCK)
-      "jnz  13f\n"
+      "jmp  15f\n"
+   "13:cmp  $1, %%ebx\n"           // %ebx = how (SIG_UNBLOCK)
+      "jnz  14f\n"
       "xor  $-1, %%esi\n"
       "xor  $-1, %%ecx\n"
       "and  %%esi, 0xFC(%%esp)\n"  // signal mask at time of segmentation fault
       "and  %%ecx, 0x100(%%esp)\n"
-      "jmp  14f\n"
-   "13:cmp  $2, %%ebx\n"           // %ebx = how (SIG_SETMASK)
+      "jmp  15f\n"
+   "14:cmp  $2, %%ebx\n"           // %ebx = how (SIG_SETMASK)
       "jnz  3b\n"
       "mov  %%esi, 0xFC(%%esp)\n"  // signal mask at time of segmentation fault
       "mov  %%ecx, 0x100(%%esp)\n"
-   "14:xor  %%eax, %%eax\n"
+   "15:xor  %%eax, %%eax\n"
       "test %%edx, %%edx\n"        // only return old mask, if set is non-NULL
       "jz   3b\n"
       "mov  %%edi, 0(%%edx)\n"     // old_set
@@ -492,10 +483,10 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       // Handle sigreturn() and rt_sigreturn()
       // See syscall.cc for a discussion on how we can emulate rt_sigreturn()
       // by calling sigreturn() with a suitably adjusted stack.
-   "15:cmp  $119, %%eax\n"         // NR_sigreturn
+   "16:cmp  $119, %%eax\n"         // NR_sigreturn
       "jnz  17f\n"
       "mov  0xC0(%%esp), %%esp\n"  // %esp at time of segmentation fault
-   "16:int  $0x80\n"               // sigreturn() is unrestricted
+      "int  $0x80\n"               // sigreturn() is unrestricted
    "17:cmp  $173, %%eax\n"         // NR_rt_sigreturn
       "jnz  18f\n"
       "mov  0xC0(%%esp), %%esp\n"  // %esp at time of segmentation fault
@@ -516,45 +507,29 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "push 0xE0(%%esp)\n"         // %eip at time of segmentation fault
       "jmp  playground$syscallEntryPointWithFrame\n"
 
+      // This was a genuine segmentation fault. Check Sandbox::sa_segv_ for
+      // what we are supposed to do.
       // In order to implement SA_NODEFER, we have to keep track of recursive
       // calls to SIGSEGV handlers. This means we have to increment a counter
       // before calling the user's signal handler, and decrement it on
       // leaving the user's signal handler.
-      // Some signal handlers look at the return address of the signal
-      // stack, and more importantly "gdb" uses the call to {,rt_}sigreturn()
-      // as a magic signature when doing stacktraces. So, we have to use
-      // a little more unusual code to regain control after the user's
-      // signal handler is done. We adjust the return address to point to
-      // non-executable memory. And when we trigger another SEGV we pop the
-      // extraneous signal frame and then call sigreturn().
       // N.B. We currently do not correctly adjust the SEGV counter, if the
       // user's signal handler exits in way other than by returning (e.g. by
       // directly calling {,rt_}sigreturn(), or by calling siglongjmp()).
-   "20:lea  30f, %%edi\n"          // rt-style restorer function
-      "lea  31f, %%esi\n"          // legacy restorer function
-      "cmp  %%ebp, %%edi\n"        // check if returning from user's handler
-      "jnz  21f\n"
-      "decl %%fs:0x1040-0x58\n"    // decrement SEGV recursion counter
-      "mov  0xC0(%%esp), %%esp\n"  // %esp at time of segmentation fault
-      "jmp  29f\n"
-   "21:cmp  %%ebp, %%esi\n"        // check if returning from user's handler
-      "jnz  22f\n"
-      "decl %%fs:0x1040-0x58\n"    // decrement SEGV recursion counter
-      "mov  0xC0(%%esp), %%esp\n"  // %esp at time of segmentation fault
-      "jmp  6b\n"
-
-      // This was a genuine segmentation fault. Check Sandbox::sa_segv_ for
-      // what we are supposed to do.
-   "22:lea  playground$sa_segv, %%eax\n"
+      // N.B. On i386, we don't have any guarantees that NX protection works.
+      // So, we don't even attempt to fake a correct restorer function. Some
+      // callers might be confused by this and will need fixing for running
+      // inside of the seccomp sandbox.
+   "20:lea  playground$sa_segv, %%eax\n"
       "cmp  $0, 0(%%eax)\n"        // SIG_DFL
-      "jz   23f\n"
+      "jz   21f\n"
       "cmp  $1, 0(%%eax)\n"        // SIG_IGN
-      "jnz  24f\n"                 // can't really ignore synchronous signals
+      "jnz  22f\n"                 // can't really ignore synchronous signals
 
       // Trigger the kernel's default signal disposition. The only way we can
       // do this from seccomp mode is by blocking the signal and retriggering
       // it.
-   "23:orb  $4, 0xFD(%%esp)\n"     // signal mask at time of segmentation fault
+   "21:orb  $4, 0xFD(%%esp)\n"     // signal mask at time of segmentation fault
       "jmp  5b\n"
 
       // Check sa_flags:
@@ -568,27 +543,27 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       //
       // TODO(markus): If/when we add support for sigaltstack(), we have to
       // handle SA_ONSTACK.
-   "24:cmpl $0, %%fs:0x1040-0x58\n"// check if we failed inside of SEGV handler
-      "jnz  23b\n"                 // if so, then terminate program
+   "22:cmpl $0, %%fs:0x1040-0x58\n"// check if we failed inside of SEGV handler
+      "jnz  21b\n"                 // if so, then terminate program
       "mov  0(%%eax), %%ebx\n"     // sa_segv_.sa_sigaction
       "mov  4(%%eax), %%ecx\n"     // sa_segv_.sa_flags
       "btl  $31, %%ecx\n"          // SA_RESETHAND
-      "jnc  25f\n"
+      "jnc  23f\n"
       "movl $0, 0(%%eax)\n"        // set handler to SIG_DFL
-   "25:btl  $30, %%ecx\n"          // SA_NODEFER
-      "jc   28f\n"
+   "23:btl  $30, %%ecx\n"          // SA_NODEFER
+      "jc   26f\n"
       "btl  $2, %%ecx\n"           // SA_SIGINFO
-      "jnc  26f\n"
-      "mov  %%edi, 0(%%esp)\n"     // trigger a SEGV on return
+      "jnc  24f\n"
+      "movl $27f, 0(%%esp)\n"      // set appropriate restorer function
       "incl %%fs:0x1040-0x58\n"    // increment recursion counter
       "jmp  *%%ebx\n"              // call user's signal handler
-   "26:mov  %%esi, 0(%%esp)\n"
+   "24:movl $28f, 0(%%esp)\n"
       "incl %%fs:0x1040-0x58\n"    // increment recursion counter
 
       // We always register the signal handler to give us rt-style signal
       // frames. But if the user asked for legacy signal frames, we must
       // convert the signal frame prior to calling the user's signal handler.
-   "27:sub  $0x1C8, %%esp\n"       // a legacy signal stack is much larger
+   "25:sub  $0x1C8, %%esp\n"       // a legacy signal stack is much larger
       "mov  0x1CC(%%esp), %%eax\n" // push signal number
       "push %%eax\n"
       "mov  0x1CC(%%esp), %%eax\n" // push restorer function
@@ -600,32 +575,16 @@ void (*Sandbox::segv())(int signo, SysCalls::siginfo *context, void *unused) {
       "rep movsl\n"
       "mov  0x2CC(%%esp), %%eax\n" // copy first half of signal mask
       "mov  %%eax, 0x58(%%esp)\n"
-      "lea  31f, %%esi\n"
-      "lea  0x2D4(%%esp), %%edi\n" // patch up retcode magic numbers
-      "movb $2, %%cl\n"
-      "rep movsl\n"
       "jmp  *%%ebx\n"              // call user's signal handler
-   "28:lea  6b, %%eax\n"           // set appropriate restorer function
-      "mov  %%eax, 0(%%esp)\n"
+   "26:movl $7b, 0(%%esp)\n"       // set appropriate restorer function
       "btl  $2, %%ecx\n"           // SA_SIGINFO
-      "jnc  27b\n"
-      "lea  29f, %%eax\n"
-      "mov  %%eax, 0(%%esp)\n"     // set appropriate restorer function
+      "jnc  25b\n"
+      "movl $6b, 0(%%esp)\n"       // set appropriate restorer function
       "jmp  *%%ebx\n"              // call user's signal handler
-   "29:pushl $30f\n"               // emulate rt_sigreturn()
-      "jmp  5b\n"
-
-      // Non-executable versions of the restorer function. We use these to
-      // trigger a SEGV upon returning from the user's signal handler, giving
-      // us an ability to clean up prior to returning from the SEGV handler.
-      ".pushsection .data\n"       // move code into non-executable section
-   "30:mov  $173, %%eax\n"         // NR_rt_sigreturn
-      "int  $0x80\n"               // gdb looks for this signature when doing
-      ".byte 0\n"                  //   backtraces
-   "31:pop  %%eax\n"
-      "mov  $119, %%eax\n"         // NR_sigreturn
-      "int  $0x80\n"
-      ".popsection\n"
+   "27:decl %%fs:0x1040-0x58\n"
+      "jmp  6b\n"
+   "28:decl %%fs:0x1040-0x58\n"
+      "jmp  7b\n"
 #else
 #error Unsupported target platform
 #endif
