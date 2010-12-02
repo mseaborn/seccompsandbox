@@ -143,7 +143,7 @@ Library* Maps::Iterator::operator*() const {
 }
 
 bool Maps::Iterator::operator==(const Maps::Iterator& iter) const {
-  return getIterator().operator==(iter.getIterator());
+  return getIterator() == iter.getIterator();
 }
 
 bool Maps::Iterator::operator!=(const Maps::Iterator& iter) const {

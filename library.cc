@@ -389,7 +389,9 @@ char* Library::getScratchSpace(const Maps* maps, char* near, int needed,
 void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
                                          char* start, char* end,
                                          char** extraSpace, int* extraLength) {
-  std::set<char *, std::less<char *>, SystemAllocator<char *> > branch_targets;
+  typedef std::set<char *, std::less<char *>, SystemAllocator<char *> >
+    BranchTargets;
+  BranchTargets branch_targets;
   for (char *ptr = start; ptr < end; ) {
     unsigned short insn = next_inst((const char **)&ptr, __WORDSIZE == 64);
     char *target;
@@ -475,7 +477,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       for (int idx = codeIdx;
            (idx = (idx + (sizeof(code) / sizeof(struct Code)) - 1) %
                   (sizeof(code) / sizeof(struct Code))) != codeIdx; ) {
-        std::set<char *>::const_iterator iter =
+        BranchTargets::const_iterator iter =
             std::upper_bound(branch_targets.begin(), branch_targets.end(),
                              code[idx].addr);
         if (iter != branch_targets.end() && *iter < ptr) {
