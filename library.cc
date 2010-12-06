@@ -625,7 +625,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
           goto findEndIdx;
         }
         #elif defined(__x86_64__)
-        std::set<char *>::const_iterator iter;
+        BranchTargets::const_iterator iter;
         #endif
         // If we cannot figure out any other way to intercept this system call,
         // we replace it with a call to INT0. This causes a SEGV which we then
