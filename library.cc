@@ -506,7 +506,7 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
            next < end &&
            (i = (i + 1) % (sizeof(code) / sizeof(struct Code))) != startIdx;
            ) {
-        std::set<char *>::const_iterator iter =
+        BranchTargets::const_iterator iter =
             std::lower_bound(branch_targets.begin(), branch_targets.end(),
                              next);
         if (iter != branch_targets.end() && *iter == next) {
