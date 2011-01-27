@@ -178,9 +178,9 @@ playground$segvSignalHandler:
         // callers might be confused by this and will need fixing for running
         // inside of the seccomp sandbox.
      20:lea  playground$sa_segv, %eax
-        cmp  $0, 0(%eax)         // SIG_DFL
+        cmpl $0, 0(%eax)         // SIG_DFL
         jz   21f
-        cmp  $1, 0(%eax)         // SIG_IGN
+        cmpl $1, 0(%eax)         // SIG_IGN
         jnz  22f                 // can't really ignore synchronous signals
 
         // Trigger the kernel's default signal disposition. The only way we can

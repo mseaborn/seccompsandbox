@@ -156,9 +156,9 @@ playground$segvSignalHandler:
         // This was a genuine segmentation fault. Check Sandbox::sa_segv_ for
         // what we are supposed to do.
      17:mov  playground$sa_segv@GOTPCREL(%rip), %rax
-        cmp  $0, 0(%rax)         // SIG_DFL
+        cmpq $0, 0(%rax)         // SIG_DFL
         jz   18f
-        cmp  $1, 0(%rax)         // SIG_IGN
+        cmpq $1, 0(%rax)         // SIG_IGN
         jnz  19f                 // can't really ignore synchronous signals
 
         // Trigger the kernel's default signal disposition. The only way we can
