@@ -108,6 +108,7 @@ const struct SyscallTable syscallTable[] __attribute__((
                              { (void*)&sandbox_mmap,     process_mmap        },
   [ __NR_mprotect        ] = { (void*)&sandbox_mprotect, process_mprotect    },
   [ __NR_munmap          ] = { (void*)&sandbox_munmap,   process_munmap      },
+  [ __NR_nanosleep       ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_open            ] = { (void*)&sandbox_open,     process_open        },
   [ __NR_pipe            ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,     0                   },

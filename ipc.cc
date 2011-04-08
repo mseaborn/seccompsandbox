@@ -95,8 +95,9 @@ bool Sandbox::process_shmat(const SecureMem::SyscallRequestInfo* info) {
 
   // We only allow attaching to the shm identifier that was returned by
   // the most recent call to shmget(IPC_PRIVATE)
-  if (shmat_req.shmaddr || shmat_req.shmflg ||
-      shmat_req.shmid != info->mem->shmId) {
+  if (!g_policy.unrestricted_sysv_mem &&
+      (shmat_req.shmaddr || shmat_req.shmflg ||
+       shmat_req.shmid != info->mem->shmId)) {
     info->mem->shmId = -1;
     SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
@@ -119,7 +120,8 @@ bool Sandbox::process_shmctl(const SecureMem::SyscallRequestInfo* info) {
 
   // The only shmctl() operation that we need to support is removal. This
   // operation is generally safe.
-  if ((shmctl_req.cmd & ~(IPC_64 | IPC_RMID)) || shmctl_req.buf) {
+  if (!g_policy.unrestricted_sysv_mem &&
+      ((shmctl_req.cmd & ~(IPC_64 | IPC_RMID)) || shmctl_req.buf)) {
     info->mem->shmId = -1;
     SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
@@ -143,7 +145,8 @@ bool Sandbox::process_shmdt(const SecureMem::SyscallRequestInfo* info) {
   // Detaching shared memory segments it generally safe, but just in case
   // of a kernel bug, we make sure that the address does not fall into any
   // of the reserved memory regions.
-  if (isRegionProtected((void *) shmdt_req.shmaddr, 0x1000)) {
+  if (!g_policy.unrestricted_sysv_mem &&
+      isRegionProtected((void *) shmdt_req.shmaddr, 0x1000)) {
     info->mem->shmId = -1;
     SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
@@ -166,7 +169,8 @@ bool Sandbox::process_shmget(const SecureMem::SyscallRequestInfo* info) {
   // We do not want to allow the sandboxed application to access arbitrary
   // shared memory regions. We only allow it to access regions that it
   // created itself.
-  if (shmget_req.key != IPC_PRIVATE || shmget_req.shmflg & ~0777) {
+  if (!g_policy.unrestricted_sysv_mem &&
+      (shmget_req.key != IPC_PRIVATE || shmget_req.shmflg & ~0777)) {
     info->mem->shmId = -1;
     SecureMem::abandonSystemCall(*info, -EINVAL);
     return false;
@@ -212,6 +216,9 @@ bool Sandbox::process_ipc(const SecureMem::SyscallRequestInfo* info) {
   // We do not support all of the SysV IPC calls. In fact, we only support
   // the minimum feature set necessary for Chrome's renderers to share memory
   // with the X server.
+  if (g_policy.unrestricted_sysv_mem) {
+    goto accept;
+  }
   switch (ipc_req.call) {
     case SHMAT: {
       // We only allow attaching to the shm identifier that was returned by

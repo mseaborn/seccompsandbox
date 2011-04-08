@@ -744,6 +744,7 @@ void CreateReferenceTrustedThread(SecureMem::Args* secureMem);
 // that the fork()'d trusted process sees.
 struct SandboxPolicy {
   bool allow_file_namespace;  // Allow filename-based system calls.
+  bool unrestricted_sysv_mem; // Do not place restrictions on SysV shared mem
 };
 
 extern struct SandboxPolicy g_policy;

@@ -654,10 +654,6 @@ TEST(test_stat_enabled) {
   CHECK_ERRNO(stat("path-that-does-not-exist", &st), ENOENT);
 }
 
-// TODO(mseaborn): It would be good to test the error cases for the
-// sandbox's treatment of SysV SHM.  However, that leads to leaks of
-// SysV shared memory segments, because the sandbox prevents us from
-// freeing a segment with shmctl() if it gets a SysV-related error.
 TEST(test_sysv_shared_memory) {
   StartSeccompSandbox();
   int shmid;
@@ -668,6 +664,60 @@ TEST(test_sysv_shared_memory) {
   memset(addr, 1, 0x1000);
   CHECK_SUCCEEDS(shmdt(addr) == 0);
   CHECK_SUCCEEDS(shmctl(shmid, IPC_RMID, NULL) == 0);
+}
+
+TEST(test_preallocated_sysv_shared_memory) {
+  int shmid;
+  CHECK_SUCCEEDS((shmid = shmget(IPC_PRIVATE, 0x1000, 0700)) != -1);
+  pid_t pid;
+  int status;
+  CHECK_SUCCEEDS((pid = fork()) != -1);
+
+  if (pid == 0) {
+    // The sandbox should disallow attaching to our segment, as it has no
+    // knowledge of this particular shmid.
+    CHECK_SUCCEEDS((pid = fork()) != -1);
+    if (pid == 0) {
+      StartSeccompSandbox();
+      void *addr;
+      CHECK_ERRNO((addr = shmat(shmid, NULL, 0)) == MAP_FAILED, EINVAL);
+      _exit(0);
+    }
+    CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+    CHECK(WIFEXITED(status) && !WEXITSTATUS(status));
+  
+    // Of course, without the sandbox, all of this should work. Even from a
+    // child process. SysV shared memory is accessible to any process owned
+    // by the correct uid/gid combination.
+    CHECK_SUCCEEDS((pid = fork()) != -1);
+    if (pid == 0) {
+      void *addr;
+      CHECK_SUCCEEDS((addr = shmat(shmid, NULL, 0)) != MAP_FAILED);
+      _exit(0);
+    }
+    CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+    CHECK(WIFEXITED(status) && !WEXITSTATUS(status));
+  
+    // And if we disable SysV checking, it should also work in the sandbox.
+    CHECK_SUCCEEDS((pid = fork()) != -1);
+    if (pid == 0) {
+      playground::g_policy.unrestricted_sysv_mem = true;
+      StartSeccompSandbox();
+      void *addr;
+      CHECK_SUCCEEDS((addr = shmat(shmid, NULL, 0)) != MAP_FAILED);
+      _exit(0);
+    }
+    CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+    CHECK(WIFEXITED(status) && !WEXITSTATUS(status));
+    _exit(0);
+  }
+
+  // We use child processes to make sure that we can clean up even in the
+  // presence of unittest failures. This way, we will not leak any SysV
+  // memory segments.
+  CHECK_SUCCEEDS(waitpid(pid, &status, 0) == pid);
+  CHECK_SUCCEEDS(shmctl(shmid, IPC_RMID, NULL) == 0);
+  CHECK(WIFEXITED(status) && !WEXITSTATUS(status));
 }
 
 static int g_value;
