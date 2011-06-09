@@ -124,7 +124,7 @@ class Mutex {
         #else
         #error Unsupported target platform
         #endif
-        NOINTR_SYS(sys.futex(mutex, FUTEX_WAKE, 1, 0));
+        (void)NOINTR_SYS(sys.futex(mutex, FUTEX_WAKE, 1, 0));
         return rc;
       }
 

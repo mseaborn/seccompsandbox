@@ -118,8 +118,8 @@ newThreadCreated:
       nextThread = currentThread->mem->newSecureMem;
       goto newThreadCreated;
     } else if (header.sysnum == __NR_exit) {
-      NOINTR_SYS(sys.close(iter->second.fdPub));
-      NOINTR_SYS(sys.close(iter->second.fd));
+      (void)NOINTR_SYS(sys.close(iter->second.fdPub));
+      (void)NOINTR_SYS(sys.close(iter->second.fd));
       SecureMem::Args* secureMem = currentThread->mem;
       threads.erase(iter);
       secureMemPool_.push_back(secureMem);

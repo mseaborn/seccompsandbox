@@ -244,8 +244,8 @@ int Sandbox::supportsSeccompSandbox(int proc_fd) {
         status_ = STATUS_AVAILABLE;
       }
       int rc;
-      NOINTR_SYS(sys.waitpid(pid, &rc, 0));
-      NOINTR_SYS(sys.close(fds[0]));
+      (void)NOINTR_SYS(sys.waitpid(pid, &rc, 0));
+      (void)NOINTR_SYS(sys.close(fds[0]));
       return status_ != STATUS_UNSUPPORTED;
   }
 }
@@ -349,7 +349,7 @@ void Sandbox::startSandbox() {
   // Take a snapshot of the current memory mappings. These mappings will be
   // off-limits to all future mmap(), munmap(), mremap(), and mprotect() calls.
   snapshotMemoryMappings(processFdPub_, proc_self_maps_);
-  NOINTR_SYS(sys.close(proc_self_maps_));
+  (void)NOINTR_SYS(sys.close(proc_self_maps_));
   proc_self_maps_ = -1;
 
   // Creating the trusted thread enables sandboxing

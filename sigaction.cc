@@ -94,7 +94,7 @@ long Sandbox::sandbox_rt_sigaction(int signum, const void* a_, void* oa_,
 #if defined(__NR_signal)
 void* Sandbox::sandbox_signal(int signum, const void* handler) {
   struct kernel_old_sigaction sa, osa;
-  sa.sa_handler_ = reinterpret_cast<void (*)(int)>(handler);
+  sa.sa_handler_ = (void (*)(int))(handler);
   sa.sa_flags    = SA_NODEFER | SA_RESETHAND | SA_RESTORER;
   sa.sa_mask     = 0;
   asm volatile(
