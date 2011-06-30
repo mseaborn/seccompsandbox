@@ -32,7 +32,7 @@ asm(
     #elif defined(__i386__)
     // As i386 passes function arguments on the stack, we need to skip a few
     // more values before we can get to the saved registers.
-    "lea 28(%esp), %eax\n"
+    "mov 28(%esp), %eax\n"
     "mov %eax, 24(%esp)\n"
     "jmp playground$sandbox__clone\n"
     #else
@@ -94,6 +94,11 @@ asm(
     "push %r13\n"
     "push %r14\n"
     "push %r15\n"
+
+    // TODO(markus): On x86-32 we have to explicitly align the stack. Do we
+    //               also have to do this on x86-64? Empirical evidence
+    //               suggests, we are OK -- but we might have to revisit this
+    //               decision.
 
     // Convert from syscall calling conventions to C calling conventions.
     // System calls have a subtly different register ordering than the user-
@@ -218,9 +223,18 @@ asm(
     "push %esi\n"
     "push %edi\n"
 
+    // Align stack pointer, so that called functions can push SSE registers
+    // onto stack. This apparently is a requirement of the x86-32 ABI.
+    "mov  %esp, %ebp\n"
+    "and  $-16, %esp\n"
+    "sub $4, %esp\n"
+    "push %ebp\n"                  // push old un-aligned stack pointer
+    "lea  0x14(%ebp), %ebp\n"      // frame pointer points to 0xDEADBEEF
+    "push %eax\n"
+    "mov  4(%ebp), %eax\n"         // push original value of %ebp
+    "xchg %eax, 0(%esp)\n"
+
     // Convert from syscall calling conventions to C calling conventions
-    "push %ebp\n"
-    "lea  0x18(%esp), %ebp\n"      // frame pointer points to 0xDEADBEEF
     "push %edi\n"
     "push %esi\n"
     "push %edx\n"
@@ -313,7 +327,8 @@ asm(
     "add  $24, %esp\n"
 
     // Restore CPU registers, except for %eax which was set by the system call.
-  "8:pop  %edi\n"
+  "8:pop  %esp\n"
+    "pop  %edi\n"
     "pop  %esi\n"
     "pop  %edx\n"
     "pop  %ecx\n"

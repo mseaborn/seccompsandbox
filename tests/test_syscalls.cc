@@ -31,6 +31,8 @@
 #define MSG(fmt, ...) do { } while (0)
 #endif
 
+#pragma GCC diagnostic ignored "-Wunused-value"
+
 // Checks that "expr" evaluates to "true". Returns value of "expr".
 #define CHECK(expr)                                                           \
   ({ typeof (expr) check_res = (expr);                                        \

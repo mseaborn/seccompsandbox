@@ -80,12 +80,12 @@ int main(int argc, char *argv[]) {
   pid_t pid = fork();
   if (pid > 0) {
     // puts("In parent");
-    NOINTR(close(fds[1]));
+    (void)NOINTR(close(fds[1]));
     if (NOINTR(read(fds[0], fds + 1, 1)) != 1) {
       puts("Failed to attach sandbox");
       return 1;
     }
-    NOINTR(close(fds[0]));
+    (void)NOINTR(close(fds[0]));
     // puts("Parent is being traced");
     char exe[80];
     snprintf(exe, sizeof(exe), "/proc/self/fd/%d", fd);
@@ -94,13 +94,13 @@ int main(int argc, char *argv[]) {
            (char *)"LD_PRELOAD=./preload64.so");
 #ifdef STRACE_HACK
     dup2(strace_fds[0], 39);
-    NOINTR(close(strace_fds[0]));
-    NOINTR(close(strace_fds[1]));
+    (void)NOINTR(close(strace_fds[0]));
+    (void)NOINTR(close(strace_fds[1]));
 #endif
     execv(exe, argv + 1);
   } else if (pid == 0) {
-    NOINTR(close(fds[0]));
-    NOINTR(close(fd));
+    (void)NOINTR(close(fds[0]));
+    (void)NOINTR(close(fd));
     int status;
     // puts("Attaching to parent");
     if (ptrace(PTRACE_ATTACH, parent, 0, 0) == -1) {
@@ -117,8 +117,8 @@ int main(int argc, char *argv[]) {
     ptrace(PTRACE_POKEDATA, parent, (unsigned long)&main,
            (long)0xCCCCCCCCCCCCCCCCll);
     // puts("Allowing parent to continue");
-    NOINTR(write(fds[1], "", 1));
-    NOINTR(close(fds[1]));
+    (void)NOINTR(write(fds[1], "", 1));
+    (void)NOINTR(close(fds[1]));
     do {
       // puts("Continuing parent");
       ptrace(PTRACE_SYSCALL, parent, 0, 0);
@@ -214,14 +214,14 @@ int main(int argc, char *argv[]) {
         if (signo != SIGCHLD) {
           printf("signal=%d, eip=0x%lx\n", signo,
                  hdr.e32.e_ident[EI_CLASS] == ELFCLASS32 ?
-                 (long)bp_regs.regs32.eip : bp_regs.regs64.rip);
+                 (unsigned long)bp_regs.regs32.eip : bp_regs.regs64.rip);
         }
         continue;
       }
       signo = 0;
       printf("Resetting program counter from 0x%lx to 0x%lx\n",
              hdr.e32.e_ident[EI_CLASS] == ELFCLASS32 ?
-             (long)bp_regs.regs32.eip : bp_regs.regs64.rip,
+             (unsigned long)bp_regs.regs32.eip : bp_regs.regs64.rip,
              entry);
       if (hdr.e32.e_ident[EI_CLASS] == ELFCLASS32) {
         regs.regs32.eip     = entry;
@@ -250,7 +250,7 @@ int main(int argc, char *argv[]) {
     ptrace(PTRACE_DETACH, parent, 0, 0);
 
 #ifdef STRACE_HACK
-    NOINTR(close(strace_fds[0]));
+    (void)NOINTR(close(strace_fds[0]));
 
   #if 0
     char strace_buf[80];
@@ -266,7 +266,7 @@ int main(int argc, char *argv[]) {
 
     sleep(1);
     write(strace_fds[1], &entry, sizeof(entry));
-    NOINTR(close(strace_fds[1]));
+    (void)NOINTR(close(strace_fds[1]));
 #endif
   } else {
     return 1;
