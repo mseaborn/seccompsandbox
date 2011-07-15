@@ -113,6 +113,10 @@ const struct SyscallTable syscallTable[] __attribute__((
   [ __NR_pipe            ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_poll            ] = { UNRESTRICTED_SYSCALL,     0                   },
   [ __NR_prctl           ] = { (void*)&sandbox_prctl,    process_prctl       },
+  [ __NR_pread64         ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_preadv          ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_pwrite64        ] = { UNRESTRICTED_SYSCALL,     0                   },
+  [ __NR_pwritev         ] = { UNRESTRICTED_SYSCALL,     0                   },
   #if defined(__NR_recvfrom)
   [ __NR_recvfrom        ] = { (void*)&sandbox_recvfrom, process_recvfrom    },
   [ __NR_recvmsg         ] = { (void*)&sandbox_recvmsg,  process_recvmsg     },
