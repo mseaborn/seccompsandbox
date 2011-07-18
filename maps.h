@@ -30,7 +30,7 @@ class Maps {
                             SystemAllocator<char> > string;
 
   Maps(int proc_self_maps);
-  ~Maps() { }
+  ~Maps();
 
  protected:
   // A map with all the libraries currently loaded into the application.

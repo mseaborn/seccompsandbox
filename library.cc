@@ -84,6 +84,15 @@ char* Library::__kernel_vsyscall;
 char* Library::__kernel_sigreturn;
 char* Library::__kernel_rt_sigreturn;
 
+Library::Library() :
+      valid_(false),
+      isVDSO_(false),
+      asr_offset_(0),
+      vsys_offset_(0),
+      image_(0),
+      image_size_(0) {
+}
+
 Library::~Library() {
   if (image_size_) {
     // We no longer need access to a full mapping of the underlying library

@@ -103,6 +103,9 @@ Maps::Maps(int proc_self_maps) :
   }
 }
 
+Maps::~Maps() {
+}
+
 Maps::Iterator::Iterator(Maps* maps, bool at_beginning, bool at_end)
     : maps_(maps),
       at_beginning_(at_beginning),

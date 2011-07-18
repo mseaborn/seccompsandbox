@@ -37,15 +37,7 @@ class Library {
  public:
   typedef Maps::string string;
 
-  Library() :
-      valid_(false),
-      isVDSO_(false),
-      asr_offset_(0),
-      vsys_offset_(0),
-      image_(0),
-      image_size_(0) {
-  }
-
+  Library();
   ~Library();
 
   void setLibraryInfo(Maps* maps) {
