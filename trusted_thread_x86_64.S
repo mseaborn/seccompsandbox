@@ -8,6 +8,7 @@
 #define CHECK_SYSCALL_ZERO  test %rax, %rax; jnz fatal_error
 
 
+        .internal playground$runTrustedThread
         .global playground$runTrustedThread
 playground$runTrustedThread:
         push %rbx
@@ -72,45 +73,47 @@ playground$runTrustedThread:
         //  %rbp: secure memory of previous thread
 
         // Layout of secure shared memory region (c.f. securemem.h):
-        //   0x00: pointer to the secure shared memory region (i.e. self)
-        //   0x08: sequence number; must match %rbx
-        //   0x10: call type; must match %eax, iff %eax == -1 || %eax == -2
-        //   0x18: system call number; passed to syscall in %rax
-        //   0x20: first argument; passed to syscall in %rdi
-        //   0x28: second argument; passed to syscall in %rsi
-        //   0x30: third argument; passed to syscall in %rdx
-        //   0x38: fourth argument; passed to syscall in %r10
-        //   0x40: fifth argument; passed to syscall in %r8
-        //   0x48: sixth argument; passed to syscall in %r9
+        //   0x00:  pointer to the secure shared memory region (i.e. self)
+        //   0x08:  sequence number; must match %rbx
+        //   0x10:  call type; must match %eax, iff %eax == -1 || %eax == -2
+        //   0x18:  system call number; passed to syscall in %rax
+        //   0x20:  first argument; passed to syscall in %rdi
+        //   0x28:  second argument; passed to syscall in %rsi
+        //   0x30:  third argument; passed to syscall in %rdx
+        //   0x38:  fourth argument; passed to syscall in %r10
+        //   0x40:  fifth argument; passed to syscall in %r8
+        //   0x48:  sixth argument; passed to syscall in %r9
         //   0x50-0xC0: no longer used
-        //   0xC8: new shared memory for clone()
-        //   0xD0: no longer used
-        //   0xD4: no longer used
-        //   0xD8: set to non-zero, if in debugging mode
-        //   0xDC: most recent SHM id returned by shmget(IPC_PRIVATE)
-        //   0xE0: cookie assigned to us by the trusted process (TLS_COOKIE)
-        //   0xE8: thread id (TLS_TID)
-        //   0xF0: threadFdPub (TLS_THREAD_FD)
-        //   0xF8: syscallMutex
+        //   0xC8:  new shared memory for clone()
+        //   0xD0:  no longer used
+        //   0xD4:  no longer used
+        //   0xD8:  set to non-zero, if in debugging mode
+        //   0xDC:  most recent SHM id returned by shmget(IPC_PRIVATE)
+        //   0xE0:  cookie assigned to us by the trusted process (TLS_COOKIE)
+        //   0xE8:  thread id (TLS_TID)
+        //   0xF0:  threadFdPub (TLS_THREAD_FD)
+        //   0xF8:  syscallMutex
+        //   0xFC:  maxSyscall
+        //   0x100: syscallTable
         //   0x200-0x1000: securely passed verified file name(s)
 
         // Layout of (untrusted) scratch space:
-        //   0x00: syscall number; passed in %rax
-        //   0x04: first argument; passed in %rdi
-        //   0x0C: second argument; passed in %rsi
-        //   0x14: third argument; passed in %rdx
-        //   0x1C: fourth argument; passed in %r10
-        //   0x24: fifth argument; passed in %r8
-        //   0x2C: sixth argument; passed in %r9
-        //   0x34: return value
-        //   0x3C: RDTSCP result (%eax)
-        //   0x40: RDTSCP result (%edx)
-        //   0x44: RDTSCP result (%ecx)
-        //   0x48: last system call (not used on x86-64)
-        //   0x4C: number of consecutive calls to a time fnc (unused on x86-64)
-        //   0x50: nesting level of system calls (for debugging purposes only)
-        //   0x54: signal mask
-        //   0x5C: in SEGV handler
+        //   0x00:  syscall number; passed in %rax
+        //   0x04:  first argument; passed in %rdi
+        //   0x0C:  second argument; passed in %rsi
+        //   0x14:  third argument; passed in %rdx
+        //   0x1C:  fourth argument; passed in %r10
+        //   0x24:  fifth argument; passed in %r8
+        //   0x2C:  sixth argument; passed in %r9
+        //   0x34:  return value
+        //   0x3C:  RDTSCP result (%eax)
+        //   0x40:  RDTSCP result (%edx)
+        //   0x44:  RDTSCP result (%ecx)
+        //   0x48:  last system call (not used on x86-64)
+        //   0x4C:  number of consecutive calls to a time fnc; unused on x86-64
+        //   0x50:  nesting level of system calls (for debugging purposes only)
+        //   0x54:  signal mask
+        //   0x5C:  in SEGV handler
 
         // We use the %fs register for accessing the secure read-only page, and
         // the untrusted scratch space immediately following it. The segment
@@ -289,10 +292,10 @@ playground$runTrustedThread:
         cmpw $0, %fs:0xD8        // debug mode
         jnz  13f
         #endif
-        cmp  playground$maxSyscall(%rip), %eax
+        cmp  %fs:0xFC, %eax      // maxSyscall
         ja   fatal_error
         shl  $4, %rax
-        lea  playground$syscallTable(%rip), %rdi
+        mov  %fs:0x100, %rdi     // syscallTable
         add  %rdi, %rax
         mov  0(%rax), %rax
         cmp  $1, %rax

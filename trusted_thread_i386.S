@@ -8,6 +8,7 @@
 #define CHECK_SYSCALL_ZERO  test %eax, %eax; jnz fatal_error
 
 
+        .internal playground$runTrustedThread
         .global playground$runTrustedThread
 playground$runTrustedThread:
         mov  4(%esp), %edi       // 1st arg: SecureMem::Args*
@@ -103,6 +104,8 @@ playground$runTrustedThread:
         //   0x60: thread id (TLS_TID)
         //   0x68: threadFdPub (TLS_THREAD_FD)
         //   0x70: syscallMutex
+        //   0x74: maxSyscall
+        //   0x78: syscallTable
         //   0x200-0x1000: securely passed verified file name(s)
 
         // Layout of (untrusted) scratch space:
@@ -319,10 +322,11 @@ playground$runTrustedThread:
         cmpw $0, 0x50-0x1000(%ecx)
         jnz  13f                 // debug mode
         #endif
-        cmp  playground$maxSyscall, %eax
+        movd %mm5, %ebx
+        cmp  0x74(%ebx), %eax    // maxSyscall
         ja   fatal_error
         shl  $3, %eax
-        add  $playground$syscallTable, %eax
+        add  0x78(%ebx), %eax    // syscallTable
         mov  0(%eax), %eax
         cmp  $1, %eax
         jne  fatal_error

@@ -26,7 +26,7 @@
 #include "debug.h"
 #include "sandbox_impl.h"
 #include "syscall_entrypoint.h"
-#include "syscall_table.h"
+#include "system_call_table.h"
 #include "x86_decode.h"
 
 #if defined(__x86_64__)

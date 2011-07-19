@@ -5,17 +5,16 @@
 #ifndef SYSCALL_ENTRYPOINT_H__
 #define SYSCALL_ENTRYPOINT_H__
 
-#ifdef __cplusplus
-extern "C" {
+#ifndef INTERNAL
+#define INTERNAL __attribute__((visibility("internal")))
 #endif
+
+extern "C" {
 
 // This is the entrypoint which is called by the untrusted code, trying to
 // make a system call.
-void syscallEntryPointWithFrame() asm("playground$syscallEntryPointWithFrame")
-#if defined(__x86_64__)
-                      __attribute__((visibility("internal")))
-#endif
-;
+void syscallEntryPointWithFrame()
+                         asm("playground$syscallEntryPointWithFrame") INTERNAL;
 
 // Normally, when we rewrite code to intercept a system call, we set up
 // a special call frame that can later help in identifying call stacks.
@@ -36,14 +35,9 @@ void syscallEntryPointWithFrame() asm("playground$syscallEntryPointWithFrame")
 // instructions). In that case, we call the syscallEntryPointNoFrame()
 // function. It sets up the extra return address in the stack frame prior to
 // falling through to the syscallEntryPointWithFrame() function.
-void syscallEntryPointNoFrame() asm("playground$syscallEntryPointNoFrame")
-#if defined(__x86_64__)
-                      __attribute__((visibility("internal")))
-#endif
-;
+void syscallEntryPointNoFrame()
+                           asm("playground$syscallEntryPointNoFrame") INTERNAL;
 
-#ifdef __cplusplus
 }
-#endif
 
 #endif // SYSCALL_ENTRYPOINT_H__

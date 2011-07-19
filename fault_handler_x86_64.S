@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+        .internal playground$segvSignalHandler
         .global playground$segvSignalHandler
 playground$segvSignalHandler:
         // Inspect instruction at the point where the segmentation fault

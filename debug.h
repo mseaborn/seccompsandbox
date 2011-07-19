@@ -15,16 +15,16 @@
 
 namespace playground {
 
+#ifndef INTERNAL
+#define INTERNAL __attribute__((visibility("internal")))
+#endif
+
 class Debug {
  public:
   // If debugging is enabled, write a message to stderr.
   static void message(const char* msg)
   #ifndef NDEBUG
-  asm("playground$debugMessage")
-  #if defined(__x86_64__)
-  __attribute__((visibility("internal")))
-  #endif
-  ;
+  asm("playground$debugMessage") INTERNAL;
   #else
   { }
   #endif

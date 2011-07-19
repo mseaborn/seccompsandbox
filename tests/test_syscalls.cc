@@ -8,6 +8,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <pty.h>
+#include <setjmp.h>
 #include <sys/param.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
@@ -815,6 +816,7 @@ TEST(test_signal_handler) {
 
 TEST(test_sigaction_handler) {
   struct sigaction act;
+  memset(&act, 0, sizeof(act));
   act.sa_sigaction = sigaction_handler;
   sigemptyset(&act.sa_mask);
   act.sa_flags = SA_SIGINFO;
@@ -1281,6 +1283,88 @@ TEST(test_concurrent_sendmsg_and_recvmsg) {
 
   err = pthread_join(tid, NULL);
   CHECK(err == 0);
+}
+
+static sigjmp_buf segv_env;
+static void segv_handler(int signo) {
+  siglongjmp(segv_env, 42);
+}
+
+TEST(test_syscall_table_is_readonly) {
+  playground::SyscallTable *entry =
+    (playground::SyscallTable *)&playground::SyscallTable::syscallTable[0];
+  StartSeccompSandbox();
+  struct sigaction act;
+  memset(&act, 0, sizeof(act));
+  act.sa_handler = segv_handler;
+  sigaction(SIGSEGV, &act, NULL);
+  int rc = sigsetjmp(segv_env, 1);
+  if (!rc) {
+    entry->handler = 0;
+    CHECK(0); // We should never get here
+  }
+  CHECK(rc == 42);
+}
+
+static void (*alignment_test_syscall_handler(void))(int *status) {
+  void (*fnc)(int *);
+#if !defined(__i386__) && !defined(__x86_64__)
+#error Unsupported target platform
+#else
+  asm(
+      // Verify that prior to pushing the return address, the stack was
+      // aligned to a 16 byte boundary. This is needed by clang when
+      // performing SSE operations on variables stored on the stack.
+      "lea  0f, %0\n"
+      "jmp  999f\n"
+#if defined(__i386__)
+    "0:movl 4(%%esp), %%eax\n"
+      "movl $0, 0(%%eax)\n"
+      "lea  4(%%esp), %%eax\n"
+      "and  $15, %%eax\n"
+      "test %%eax, %%eax\n"
+      "jne  1f\n"
+      "movl 4(%%esp), %%eax\n"
+      "movl $1, 0(%%eax)\n"
+    "1:xor  %%eax, %%eax\n"
+      "ret\n"
+#elif defined(__x86_64__)
+    "0:lea  8(%%rsp), %%rax\n"
+      "and  $15, %%rax\n"
+      "movl $0, 0(%%rdi)\n"
+      "test %%rax, %%rax\n"
+      "jne  1f\n"
+      "movl $1, 0(%%rdi)\n"
+    "1:xor  %%rax, %%rax\n"
+      "ret\n"
+#endif
+  "999:\n"
+      : "=r"(fnc));
+#endif
+  return fnc;
+}
+
+TEST(test_stack_alignment) {
+  // Temporarily install a handler for sched_yield() that checks stack
+  // alignment upon intercepting system calls. This makes sure we don't get
+  // segmentations faults in C code that is invoked as a system call wrapper.
+  playground::SyscallTable::initializeSyscallTable();
+  playground::SyscallTable *entry = (playground::SyscallTable *)
+    &playground::SyscallTable::syscallTable[__NR_sched_yield];
+  mprotect((void *)((uintptr_t)entry & -4096), 4096, PROT_READ|PROT_WRITE);
+  entry->handler = (void (*)())alignment_test_syscall_handler();
+
+  // TODO(markus): This should actually be PROT_READ, instead of
+  // PROT_READ|PROT_EXEC.
+  mprotect((void *)((uintptr_t)entry & -4096), 4096, PROT_READ|PROT_EXEC);
+
+  // In the seccomp sandbox, we should now be able to call sched_yield(&status)
+  // and if everything worked correctly, "status" will be set to "1"
+  int status = -1;
+  StartSeccompSandbox();
+  syscall(__NR_sched_yield, &status);
+  CHECK(status != -1); // syscall never got intercepted correctly
+  CHECK(status != 0);  // stack was unaligned
 }
 
 struct testcase {

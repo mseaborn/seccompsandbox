@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "sandbox_impl.h"
-#include "syscall_table.h"
+#include "system_call_table.h"
 
 void runTrustedThread(void* args, int segment_selector)
-  asm("playground$runTrustedThread");
+  asm("playground$runTrustedThread") INTERNAL;
 
 namespace playground {
 

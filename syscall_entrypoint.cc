@@ -6,7 +6,7 @@
 
 #include "debug.h"
 #include "sandbox_impl.h"
-#include "syscall_table.h"
+#include "system_call_table.h"
 
 namespace playground {
 
@@ -21,6 +21,7 @@ asm(
     // the child can start executing at the correct IP, instead of trying to
     // run in the trusted thread.
     "playground$sandbox_clone:"
+    ".internal playground$sandbox_clone\n"
     ".globl playground$sandbox_clone\n"
     ".type playground$sandbox_clone, @function\n"
     #if defined(__x86_64__)
@@ -100,30 +101,28 @@ asm(
     //               suggests, we are OK -- but we might have to revisit this
     //               decision.
 
-    // Convert from syscall calling conventions to C calling conventions.
-    // System calls have a subtly different register ordering than the user-
-    // space x86-64 ABI.
-    "mov %r10, %rcx\n"
-
     // Check range of system call
-    "cmp playground$maxSyscall(%rip), %eax\n"
+    "mov playground$maxSyscall@GOTPCREL(%rip), %rcx\n"
+    "cmp 0(%rcx), %eax\n"
     "ja  3f\n"
 
-    // Retrieve function call from system call table (c.f. syscall_table.c).
+    // Retrieve function call from system call table (c.f.system_call_table.cc)
     // We have three different types of entries; zero for denied system calls,
     // that should be handled by the defaultSystemCallHandler(); minus one
     // for unrestricted system calls that need to be forwarded to the trusted
     // thread; and function pointers to specific handler functions.
-    "mov %rax, %r10\n"
-    "shl $4, %r10\n"
-    "lea playground$syscallTable(%rip), %r11\n"
-    "add %r11, %r10\n"
-    "mov 0(%r10), %r10\n"
+    "mov %rax, %rcx\n"
+    "shl $4, %rcx\n"
+    "mov playground$syscallTable@GOTPCREL(%rip), %r11\n"
+    "mov 0(%r11), %r11\n"
+    "add %r11, %rcx\n"
+    "mov 0(%rcx), %rcx\n"
 
     // Jump to function if non-null and not UNRESTRICTED_SYSCALL, otherwise
     // jump to fallback handler.
-    "cmp $1, %r10\n"
+    "cmp $1, %rcx\n"
     "jbe 3f\n"
+    "xchg %r10, %rcx\n"            // Syscall to userspace calling conventions
     "call *%r10\n"
   "2:"
 
@@ -158,7 +157,7 @@ asm(
     // first function argument.
     "push %r9\n"
     "mov  %r8, %r9\n"
-    "mov  %rcx, %r8\n"
+    "mov  %r10, %r8\n"
     "mov  %rdx, %rcx\n"
     "mov  %rsi, %rdx\n"
     "mov  %rdi, %rsi\n"
@@ -308,13 +307,13 @@ asm(
     "jz  7f\n"
     "mov  %eax, %fs:0x102C-0x58\n" // remember syscall number
 
-    // Retrieve function call from system call table (c.f. syscall_table.c).
+    // Retrieve function call from system call table (c.f.system_call_table.cc)
     // We have three different types of entries; zero for denied system calls,
     // that should be handled by the defaultSystemCallHandler(); minus one
     // for unrestricted system calls that need to be forwarded to the trusted
     // thread; and function pointers to specific handler functions.
   "7:shl  $3, %eax\n"
-    "lea  playground$syscallTable, %ebx\n"
+    "mov  playground$syscallTable, %ebx\n"
     "add  %ebx, %eax\n"
     "mov  0(%eax), %eax\n"
 
@@ -391,8 +390,8 @@ void* Sandbox::defaultSystemCallHandler(int syscallNum, void* arg0, void* arg1,
           return 0;
       }
 
-      if ((unsigned)syscallNum <= maxSyscall &&
-          syscallTable[syscallNum].handler == UNRESTRICTED_SYSCALL) {
+      if ((unsigned)syscallNum <= SyscallTable::maxSyscall &&
+         SyscallTable::syscallTable[syscallNum].handler==UNRESTRICTED_SYSCALL){
         Debug::syscall(&tm, syscallNum, "Allowing unrestricted system call");
      perform_unrestricted:
         struct {

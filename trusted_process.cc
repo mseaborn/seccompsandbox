@@ -7,7 +7,7 @@
 
 #include "debug.h"
 #include "sandbox_impl.h"
-#include "syscall_table.h"
+#include "system_call_table.h"
 
 namespace playground {
 
@@ -99,8 +99,8 @@ newThreadCreated:
       die("Received request from unknown thread");
     }
     struct Thread* currentThread = &iter->second;
-    if (header.sysnum > maxSyscall ||
-        !syscallTable[header.sysnum].trustedProcess) {
+    if (header.sysnum > SyscallTable::maxSyscall ||
+        !SyscallTable::syscallTable[header.sysnum].trustedProcess) {
       die("Trusted process encountered unexpected system call");
     }
 
@@ -113,7 +113,7 @@ newThreadCreated:
     info.trustedThreadFd         = currentThread->fdPub;
     info.applicationFd           = currentThread->fd;
     info.parentMapsFd            = parentMapsFd;
-    if (syscallTable[header.sysnum].trustedProcess(&info) &&
+    if (SyscallTable::syscallTable[header.sysnum].trustedProcess(&info) &&
         header.sysnum == __NR_clone) {
       nextThread = currentThread->mem->newSecureMem;
       goto newThreadCreated;
@@ -248,6 +248,8 @@ SecureMem::Args* Sandbox::createTrustedProcess(int processFdPub, int sandboxFd,
       #ifndef NDEBUG
       args->allowAllSystemCalls= Debug::isEnabled();
       #endif
+      args->maxSyscall         = SyscallTable::maxSyscall;
+      args->syscallTable       = SyscallTable::syscallTable;
     }
 
     int parentMapsFd           = initializeProtectedMap(sandboxFd);

@@ -48,23 +48,17 @@
 # endif
 #endif
 
-#include "syscall_table.h"
+#include "system_call_table.h"
 
-// syscall_table.c has to be implemented in C, as C++ does not support
-// designated initializers for arrays. The only other alternative would be
-// to have a source code generator for this table.
-//
-// We would still like the C source file to include our header file. This
-// requires some define statements to transform C++ specific constructs to
-// something that is palatable to a C compiler.
-#ifdef __cplusplus
-  #define STATIC static
+#include <map>
+#include <vector>
+#include "sandbox.h"
+#include "securemem.h"
+#include "tls.h"
 
-  #include <map>
-  #include <vector>
-  #include "sandbox.h"
-  #include "securemem.h"
-  #include "tls.h"
+#ifndef INTERNAL
+#define INTERNAL __attribute__((visibility("internal")))
+#endif
 
 namespace playground {
 
@@ -108,178 +102,118 @@ class Sandbox {
   static long forwardSyscall(int sysnum, struct RequestHeader* request,
                              int size);
 
-  // Clone() is special as it has a wrapper in syscall_table.c. The wrapper
+  // Clone() is special as it has a wrapper in syscall_entrypoint.c. The wrapper
   // adds one extra argument (the pointer to the saved registers) and then
   // calls playground$sandbox__clone().
   // arg4 and arg5 are given non-specific names because their meanings
   // are reversed between i386 and x86-64.
   static long sandbox_clone(int flags, char* stack, int* pid, void* arg4,
-                            void* arg5, void* wrapper_sp)
-    asm("playground$sandbox__clone")
-  #if defined(__x86_64__)
-    __attribute__((visibility("internal")))
-  #endif
-    ;
-#else
-  #define STATIC
-
-  // This is the wrapper entry point that is found in the syscall_table.
-  long sandbox_clone(int flags, char* stack, int* pid, int* ctid, void* tls)
-                                         asm("playground$sandbox_clone");
-#endif
+                          void* arg5) asm("playground$sandbox_clone") INTERNAL;
+  static long sandbox__clone(int flags, char* stack, int* pid, void* arg4,
+                             void* arg5, void* wrapper_sp)
+                                     asm("playground$sandbox__clone") INTERNAL;
 
   // Entry points for sandboxed code that is attempting to make system calls
-  STATIC long sandbox_access(const char*, int)
-                                         asm("playground$sandbox_access");
-  STATIC long sandbox_exit(int status)    asm("playground$sandbox_exit");
-  STATIC long sandbox_getpid()            asm("playground$sandbox_getpid");
+  static long sandbox_access(const char*, int);
+  static long sandbox_exit(int status);
+  static long sandbox_getpid();
   #if defined(__NR_getsockopt)
-  STATIC long sandbox_getsockopt(int, int, int, void*, socklen_t*)
-                                         asm("playground$sandbox_getsockopt");
+  static long sandbox_getsockopt(int, int, int, void*, socklen_t*);
   #endif
-  STATIC long sandbox_gettid()            asm("playground$sandbox_gettid");
-  STATIC long sandbox_ioctl(int d, int req, void* arg)
-                                         asm("playground$sandbox_ioctl");
+  static long sandbox_gettid();
+  static long sandbox_ioctl(int d, int req, void* arg);
   #if defined(__NR_ipc)
-  STATIC long sandbox_ipc(unsigned, int, int, int, void*, long)
-                                         asm("playground$sandbox_ipc");
+  static long sandbox_ipc(unsigned, int, int, int, void*, long);
   #endif
-  STATIC long sandbox_lstat(const char* path, void* buf)
-                                         asm("playground$sandbox_lstat");
+  static long sandbox_lstat(const char* path, void* buf);
   #if defined(__NR_lstat64)
-  STATIC long sandbox_lstat64(const char *path, void* b)
-                                         asm("playground$sandbox_lstat64");
+  static long sandbox_lstat64(const char *path, void* b);
   #endif
-  STATIC long sandbox_madvise(void*, size_t, int)
-                                         asm("playground$sandbox_madvise");
-  STATIC void *sandbox_mmap(void* start, size_t length, int prot, int flags,
-                            int fd, off_t offset)
-                                         asm("playground$sandbox_mmap");
-  STATIC long sandbox_mprotect(const void*, size_t, int)
-                                         asm("playground$sandbox_mprotect");
-  STATIC long sandbox_munmap(void* start, size_t length)
-                                         asm("playground$sandbox_munmap");
-  STATIC long sandbox_open(const char*, int, mode_t)
-                                         asm("playground$sandbox_open");
-  STATIC long sandbox_prctl(int, unsigned long, unsigned long, unsigned long,
-                            unsigned long)asm("playground$sandbox_prctl");
+  static long sandbox_madvise(void*, size_t, int);
+  static void *sandbox_mmap(void* start, size_t length, int prot, int flags,
+                            int fd, off_t offset);
+  static long sandbox_mprotect(const void*, size_t, int);
+  static long sandbox_munmap(void* start, size_t length);
+  static long sandbox_open(const char*, int, mode_t);
+  static long sandbox_prctl(int, unsigned long, unsigned long, unsigned long,
+                            unsigned long);
   #if defined(__NR_recvfrom)
-  STATIC ssize_t sandbox_recvfrom(int, void*, size_t, int, void*, socklen_t*)
-                                         asm("playground$sandbox_recvfrom");
-  STATIC ssize_t sandbox_recvmsg(int, struct msghdr*, int)
-                                         asm("playground$sandbox_recvmsg");
+  static ssize_t sandbox_recvfrom(int, void*, size_t, int, void*, socklen_t*);
+  static ssize_t sandbox_recvmsg(int, struct msghdr*, int);
   #endif
   #if defined(__NR_rt_sigaction)
-  STATIC long sandbox_rt_sigaction(int, const void*, void*, size_t)
-                                        asm("playground$sandbox_rt_sigaction");
+  static long sandbox_rt_sigaction(int, const void*, void*, size_t);
   #endif
   #if defined(__NR_rt_sigprocmask)
-  STATIC long sandbox_rt_sigprocmask(int how, const void*, void*, size_t)
-                                      asm("playground$sandbox_rt_sigprocmask");
+  static long sandbox_rt_sigprocmask(int how, const void*, void*, size_t);
   #endif
   #if defined(__NR_sendmsg)
-  STATIC size_t sandbox_sendmsg(int, const struct msghdr*, int)
-                                         asm("playground$sandbox_sendmsg");
-  STATIC ssize_t sandbox_sendto(int, const void*, size_t, int, const void*,
-                                socklen_t)asm("playground$sandbox_sendto");
+  static size_t sandbox_sendmsg(int, const struct msghdr*, int);
+  static ssize_t sandbox_sendto(int, const void*, size_t, int, const void*,
+                                socklen_t);
   #endif
   #if defined(__NR_shmat)
-  STATIC void* sandbox_shmat(int, const void*, int)
-                                         asm("playground$sandbox_shmat");
-  STATIC long sandbox_shmctl(int, int, void*)
-                                         asm("playground$sandbox_shmctl");
-  STATIC long sandbox_shmdt(const void*)  asm("playground$sandbox_shmdt");
-  STATIC long sandbox_shmget(int, size_t, int)
-                                         asm("playground$sandbox_shmget");
+  static void* sandbox_shmat(int, const void*, int);
+  static long sandbox_shmctl(int, int, void*);
+  static long sandbox_shmdt(const void*);
+  static long sandbox_shmget(int, size_t, int);
   #endif
   #if defined(__NR_setsockopt)
-  STATIC long sandbox_setsockopt(int, int, int, const void*, socklen_t)
-                                         asm("playground$sandbox_setsockopt");
+  static long sandbox_setsockopt(int, int, int, const void*, socklen_t);
   #endif
   #if defined(__NR_sigaction)
-  STATIC long sandbox_sigaction(int, const void*, void*)
-                                         asm("playground$sandbox_sigaction");
+  static long sandbox_sigaction(int, const void*, void*);
   #endif
   #if defined(__NR_signal)
-  STATIC void* sandbox_signal(int, const void*)
-                                         asm("playground$sandbox_signal");
+  static void* sandbox_signal(int, const void*);
   #endif
   #if defined(__NR_sigprocmask)
-  STATIC long sandbox_sigprocmask(int how, const void*, void*)
-                                         asm("playground$sandbox_sigprocmask");
+  static long sandbox_sigprocmask(int how, const void*, void*);
   #endif
   #if defined(__NR_socketcall)
-  STATIC long sandbox_socketcall(int call, void* args)
-                                         asm("playground$sandbox_socketcall");
+  static long sandbox_socketcall(int call, void* args);
   #endif
-  STATIC long sandbox_stat(const char* path, void* buf)
-                                         asm("playground$sandbox_stat");
+  static long sandbox_stat(const char* path, void* buf);
   #if defined(__NR_stat64)
-  STATIC long sandbox_stat64(const char *path, void* b)
-                                         asm("playground$sandbox_stat64");
+  static long sandbox_stat64(const char *path, void* b);
   #endif
 
   // Functions for system calls that need to be handled in the trusted process
-  STATIC bool process_access(const SyscallRequestInfo* info)
-                                         asm("playground$process_access");
-  STATIC bool process_clone(const SyscallRequestInfo* info)
-                                         asm("playground$process_clone");
-  STATIC bool process_exit(const SyscallRequestInfo* info)
-                                         asm("playground$process_exit");
+  static bool process_access(const SyscallRequestInfo* info);
+  static bool process_clone(const SyscallRequestInfo* info);
+  static bool process_exit(const SyscallRequestInfo* info);
   #if defined(__NR_getsockopt)
-  STATIC bool process_getsockopt(const SyscallRequestInfo* info)
-                                         asm("playground$process_getsockopt");
+  static bool process_getsockopt(const SyscallRequestInfo* info);
   #endif
-  STATIC bool process_ioctl(const SyscallRequestInfo* info)
-                                         asm("playground$process_ioctl");
+  static bool process_ioctl(const SyscallRequestInfo* info);
   #if defined(__NR_ipc)
-  STATIC bool process_ipc(const SyscallRequestInfo* info)
-                                         asm("playground$process_ipc");
+  static bool process_ipc(const SyscallRequestInfo* info);
   #endif
-  STATIC bool process_madvise(const SyscallRequestInfo* info)
-                                         asm("playground$process_madvise");
-  STATIC bool process_mmap(const SyscallRequestInfo* info)
-                                         asm("playground$process_mmap");
-  STATIC bool process_mprotect(const SyscallRequestInfo* info)
-                                         asm("playground$process_mprotect");
-  STATIC bool process_munmap(const SyscallRequestInfo* info)
-                                         asm("playground$process_munmap");
-  STATIC bool process_open(const SyscallRequestInfo* info)
-                                         asm("playground$process_open");
-  STATIC bool process_prctl(const SyscallRequestInfo* info)
-                                         asm("playground$process_prctl");
+  static bool process_madvise(const SyscallRequestInfo* info);
+  static bool process_mmap(const SyscallRequestInfo* info);
+  static bool process_mprotect(const SyscallRequestInfo* info);
+  static bool process_munmap(const SyscallRequestInfo* info);
+  static bool process_open(const SyscallRequestInfo* info);
+  static bool process_prctl(const SyscallRequestInfo* info);
   #if defined(__NR_recvfrom)
-  STATIC bool process_recvfrom(const SyscallRequestInfo* info)
-                                         asm("playground$process_recvfrom");
-  STATIC bool process_recvmsg(const SyscallRequestInfo* info)
-                                         asm("playground$process_recvmsg");
-  STATIC bool process_sendmsg(const SyscallRequestInfo* info)
-                                         asm("playground$process_sendmsg");
-  STATIC bool process_sendto(const SyscallRequestInfo* info)
-                                         asm("playground$process_sendto");
-  STATIC bool process_setsockopt(const SyscallRequestInfo* info)
-                                         asm("playground$process_setsockopt");
+  static bool process_recvfrom(const SyscallRequestInfo* info);
+  static bool process_recvmsg(const SyscallRequestInfo* info);
+  static bool process_sendmsg(const SyscallRequestInfo* info);
+  static bool process_sendto(const SyscallRequestInfo* info);
+  static bool process_setsockopt(const SyscallRequestInfo* info);
   #endif
   #if defined(__NR_shmat)
-  STATIC bool process_shmat(const SyscallRequestInfo* info)
-                                         asm("playground$process_shmat");
-  STATIC bool process_shmctl(const SyscallRequestInfo* info)
-                                         asm("playground$process_shmctl");
-  STATIC bool process_shmdt(const SyscallRequestInfo* info)
-                                         asm("playground$process_shmdt");
-  STATIC bool process_shmget(const SyscallRequestInfo* info)
-                                         asm("playground$process_shmget");
+  static bool process_shmat(const SyscallRequestInfo* info);
+  static bool process_shmctl(const SyscallRequestInfo* info);
+  static bool process_shmdt(const SyscallRequestInfo* info);
+  static bool process_shmget(const SyscallRequestInfo* info);
   #endif
-  STATIC bool process_sigaction(const SyscallRequestInfo* info)
-                                         asm("playground$process_sigaction");
+  static bool process_sigaction(const SyscallRequestInfo* info);
   #if defined(__NR_socketcall)
-  STATIC bool process_socketcall(const SyscallRequestInfo* info)
-                                         asm("playground$process_socketcall");
+  static bool process_socketcall(const SyscallRequestInfo* info);
   #endif
-  STATIC bool process_stat(const SyscallRequestInfo* info)
-                                         asm("playground$process_stat");
+  static bool process_stat(const SyscallRequestInfo* info);
 
-#ifdef __cplusplus
   friend class Debug;
   friend class Library;
   friend class Maps;
@@ -671,11 +605,7 @@ class Sandbox {
   static void* defaultSystemCallHandler(int syscallNum, void* arg0,
                                         void* arg1, void* arg2, void* arg3,
                                         void* arg4, void* arg5)
-                                    asm("playground$defaultSystemCallHandler")
-  #if defined(__x86_64__)
-                                    __attribute__((visibility("internal")))
-  #endif
-  ;
+                           asm("playground$defaultSystemCallHandler") INTERNAL;
 
   // Return the current secure memory structure for this thread.
   static SecureMem::Args* getSecureMem();
@@ -718,7 +648,7 @@ class Sandbox {
   }            status_;
   static int   pid_;
   static int   processFdPub_;
-  static int   cloneFdPub_ asm("playground$cloneFdPub");
+  static int   cloneFdPub_ asm("playground$cloneFdPub") INTERNAL;
 
   #ifdef __i386__
   struct SocketCallArgInfo;
@@ -727,7 +657,7 @@ class Sandbox {
 
   // We always have to intercept SIGSEGV. If the application wants to set its
   // own SEGV handler, we forward to it whenever necessary.
-  static SysCalls::kernel_sigaction sa_segv_ asm("playground$sa_segv");
+  static SysCalls::kernel_sigaction sa_segv_ asm("playground$sa_segv")INTERNAL;
 
   // Available in trusted process, only
   typedef std::map<void *, long>       ProtectedMap;
@@ -755,6 +685,5 @@ extern CreateTrustedThreadFunc g_create_trusted_thread;
 } // namespace
 
 using playground::Sandbox;
-#endif // __cplusplus
 
 #endif // SANDBOX_IMPL_H__

@@ -32,6 +32,7 @@ void die(const char *msg) {
 extern "C" long DoSyscall(unsigned long regs[7]);
 asm(
     ".pushsection .text, \"ax\", @progbits\n"
+    ".internal DoSyscall\n"
     ".global DoSyscall\n"
     "DoSyscall:\n"
 #if defined(__x86_64__)

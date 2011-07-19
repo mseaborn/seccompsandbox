@@ -6,7 +6,7 @@
 
 #include "library.h"
 #include "syscall_entrypoint.h"
-#include "syscall_table.h"
+#include "system_call_table.h"
 
 namespace playground {
 
@@ -123,7 +123,7 @@ bool Sandbox::getFd(int transport, int* fd0, int* fd1, void* buf, size_t*len) {
 
 void segvSignalHandler(int signo, Sandbox::SysCalls::siginfo *context,
                        void *unused)
-  asm("playground$segvSignalHandler");
+  asm("playground$segvSignalHandler") INTERNAL;
 
 void Sandbox::setupSignalHandlers() {
   // Set SIGCHLD to SIG_DFL so that waitpid() can work
@@ -276,6 +276,9 @@ void Sandbox::startSandbox() {
   // Block all signals, except for the RDTSC handler
   setupSignalHandlers();
 
+  // Set up the system call policy
+  SyscallTable::initializeSyscallTable();
+
   // Get socketpairs for talking to the trusted process
   int pair[4];
   if (sys.socketpair(AF_UNIX, SOCK_STREAM, 0, pair) ||
@@ -348,6 +351,8 @@ void Sandbox::startSandbox() {
 
   // Take a snapshot of the current memory mappings. These mappings will be
   // off-limits to all future mmap(), munmap(), mremap(), and mprotect() calls.
+  // This also provides a synchronization point that ensures the trusted
+  // process has finished initialization.
   snapshotMemoryMappings(processFdPub_, proc_self_maps_);
   (void)NOINTR_SYS(sys.close(proc_self_maps_));
   proc_self_maps_ = -1;

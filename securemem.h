@@ -74,6 +74,10 @@ class SecureMem {
             // trusted thread is done processing (e.g. exit(), open(),
             // stat()).
             int          syscallMutex;
+
+            // The system call table is read-only after initial setup
+            int                 maxSyscall;
+            const struct SyscallTable *syscallTable;
           } __attribute__((packed));
           char           header[512];
         };

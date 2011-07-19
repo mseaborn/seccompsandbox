@@ -7,7 +7,7 @@
 
 namespace playground {
 
-long Sandbox::sandbox_clone(int flags, char* stack, int* pid, void* arg4,
+long Sandbox::sandbox__clone(int flags, char* stack, int* pid, void* arg4,
                             void* arg5, void *wrapper_sp) {
   long long tm;
   Debug::syscall(&tm, __NR_clone, "Executing handler");
