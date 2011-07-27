@@ -4,7 +4,7 @@ LDFLAGS = -g
 CPPFLAGS =
 DEPFLAGS = -MMD -MF $@.d
 MODS := allocator preload library debug maps x86_decode securemem sandbox     \
-        syscall_entrypoint syscall_table                                      \
+        syscall_entrypoint system_call_table                                  \
         trusted_thread trusted_thread_asm trusted_process                     \
         access exit fault_handler_asm clone                                   \
         getpid gettid ioctl ipc madvise mmap mprotect                         \
