@@ -9,7 +9,7 @@ MODS := allocator preload library debug maps x86_decode securemem sandbox     \
         access exit fault_handler_asm clone                                   \
         getpid gettid ioctl ipc madvise mmap mprotect                         \
         munmap open prctl reference_trusted_thread sigaction sigprocmask      \
-        socketcall stat
+        socketcall stat tls_setup tls_setup_helper
 OBJS64 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o64/')
 OBJS32 := $(shell echo ${MODS} | xargs -n 1 | sed -e 's/$$/.o32/')
 ALL_OBJS = $(OBJS32) $(OBJS64) tests/test_syscalls.o64 tests/test_syscalls.o32 \

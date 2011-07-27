@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/unistd.h>
+
+
         .internal playground$segvSignalHandler
         .global playground$segvSignalHandler
 playground$segvSignalHandler:
@@ -69,6 +72,8 @@ playground$segvSignalHandler:
         // syscallEntryPointWithFrame().
       8:cmpw $0x00CD, (%r15)     // INT $0x0
         jnz  16f
+        cmpq $__NR_clone + 0xF001, 0x98(%rsp)
+        jz   .L_handle_callback_request
   #ifndef NDEBUG
         lea  200f(%rip), %rdi
         call playground$debugMessage
@@ -204,3 +209,7 @@ playground$segvSignalHandler:
      22:mov  $0xF, %rax          // gdb looks for this signature when doing
         syscall                  //   backtraces
         .popsection
+
+.L_handle_callback_request:
+        mov  0x90(%rsp), %rax    // %rdx at time of segmentation fault
+        jmp  *%rax

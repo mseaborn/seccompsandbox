@@ -49,6 +49,8 @@
         'system_call_table.cc',
         'system_call_table.h',
         'tls.h',
+        'tls_setup.cc',
+        'tls_setup_helper.S',
         'trusted_process.cc',
         'trusted_thread.cc',
         'trusted_thread_asm.S',

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/unistd.h>
+
+
         .internal playground$segvSignalHandler
         .global playground$segvSignalHandler
 playground$segvSignalHandler:
@@ -85,6 +88,8 @@ playground$segvSignalHandler:
         // syscallEntryPointWithFrame().
      10:cmpw $0x00CD, (%ebp)     // INT $0x0
         jnz  20f
+        cmpl $__NR_clone + 0xF001, 0xD0(%esp)
+        jz   .L_handle_callback_request
   #ifndef NDEBUG
         lea  200f, %eax
         push %eax
@@ -244,3 +249,7 @@ playground$segvSignalHandler:
         jmp  6b
      28:decl %fs:0x1040-0x58
         jmp  7b
+
+.L_handle_callback_request:
+        mov  0xC8(%esp), %eax    // %edx at time of segmentation fault
+        jmp  *%eax

@@ -25,6 +25,10 @@ struct SyscallTable {
   // Initializes the system call table with the default policy
   static void initializeSyscallTable();
 
+  static size_t getSyscallTableSize();
+  static void protectSyscallTable();
+  static void unprotectSyscallTable();
+
   // The pointers to the system call table are r/w. This is OK, as we create
   // a r/o copy in the secure memory page(s) just prior to launching the
   // sandbox. The trusted thread then only ever access the table through

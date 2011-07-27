@@ -185,7 +185,7 @@ void SyscallTable::initializeSyscallTable() {
   }
 
   syscallTable = reinterpret_cast<SyscallTable *>(
-    mmap(NULL, ((sizeof(struct SyscallTable)*(maxSyscall + 1)) + 4095) & ~4095,
+    mmap(NULL, getSyscallTableSize(),
          PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0));
   if (syscallTable == MAP_FAILED) {
     Sandbox::die("Failed to allocate system call table");
@@ -197,9 +197,24 @@ void SyscallTable::initializeSyscallTable() {
     syscallTable[policy->syscallNum].handler        = policy->handler;
     syscallTable[policy->syscallNum].trustedProcess = policy->trustedProcess;
   }
-  mprotect(syscallTable,
-           ((sizeof(struct SyscallTable)*(maxSyscall + 1)) + 4095) & ~4095,
-           PROT_READ);
+  protectSyscallTable();
+}
+
+size_t SyscallTable::getSyscallTableSize() {
+  return ((sizeof(struct SyscallTable) * (maxSyscall + 1)) + 4095) & ~4095;
+}
+
+void SyscallTable::protectSyscallTable() {
+  if (mprotect(syscallTable, getSyscallTableSize(), PROT_READ) != 0) {
+    Sandbox::die("Failed to protect system call table");
+  }
+}
+
+void SyscallTable::unprotectSyscallTable() {
+  if (mprotect(syscallTable, getSyscallTableSize(),
+               PROT_READ | PROT_WRITE) != 0) {
+    Sandbox::die("Failed to unprotect system call table");
+  }
 }
 
 } //  namespace

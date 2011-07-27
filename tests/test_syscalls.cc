@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <asm/prctl.h>
 #include <asm/unistd.h>
 #include <dirent.h>
 #include <errno.h>
@@ -25,6 +26,7 @@
 
 #include "debug.h"
 #include "sandbox_impl.h"
+#include "tls_setup.h"
 
 #ifdef DEBUG
 #define MSG(fmt, ...) printf(fmt, ##__VA_ARGS__)
@@ -204,6 +206,10 @@ static int clone_func(void *x) {
 }
 
 #if defined(__i386__)
+static void set_gs(int gs) {
+  asm volatile("mov %0, %%gs" : : "r"(gs));
+}
+
 static int get_gs() {
   int gs;
   asm volatile("mov %%gs, %0" : "=r"(gs));
@@ -1283,6 +1289,52 @@ TEST(test_concurrent_sendmsg_and_recvmsg) {
 
   err = pthread_join(tid, NULL);
   CHECK(err == 0);
+}
+
+TEST(test_tls_setup_via_arch_prctl) {
+#if defined(__x86_64__)
+  playground::AddTlsSetupSyscall();
+  StartSeccompSandbox();
+  void *new_tls = (void *) &new_tls;
+  void *original = get_tls_base();
+  // If this call partly succeeds but still returns an error, we will
+  // probably get a segfault, because libc's syscall() sets errno on
+  // error.
+  CHECK_SUCCEEDS(syscall(__NR_arch_prctl, ARCH_SET_FS, &new_tls) == 0);
+  void *checked = get_tls_base();
+  // Restore libc's original TLS before making any further libc calls.
+  CHECK_SUCCEEDS(syscall(__NR_arch_prctl, ARCH_SET_FS, original) == 0);
+  CHECK(checked == new_tls);
+#endif
+}
+
+TEST(test_tls_setup_via_set_thread_area) {
+#if defined(__i386__)
+  playground::AddTlsSetupSyscall();
+  StartSeccompSandbox();
+  int orig_gs = get_gs();
+  void *new_tls = (void *) &new_tls;
+  struct user_desc tls_desc;
+  tls_desc.entry_number = -1; // Allocate new segment selector
+  tls_desc.base_addr = (long) &new_tls;
+  tls_desc.limit = 0xfffff;
+  tls_desc.seg_32bit = 1;
+  tls_desc.contents = 0;
+  tls_desc.read_exec_only = 0;
+  tls_desc.limit_in_pages = 1;
+  tls_desc.seg_not_present = 0;
+  tls_desc.useable = 1;
+  // If this call partly succeeds but still returns an error, we will
+  // probably get a segfault, because libc's syscall() sets errno on
+  // error.
+  CHECK_SUCCEEDS(syscall(__NR_set_thread_area, &tls_desc) == 0);
+  CHECK(tls_desc.entry_number != (unsigned) -1);
+
+  set_gs((tls_desc.entry_number << 3) | 3);
+  void *checked = get_tls_base();
+  set_gs(orig_gs);
+  CHECK(checked == new_tls);
+#endif
 }
 
 static sigjmp_buf segv_env;
