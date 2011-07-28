@@ -1162,8 +1162,21 @@ TEST(test_backtrace) {
           // of the child. We don't want to be confused if the sandbox tried
           // to rewrite the code (this shouldn't happen for
           // linux_syscall_support.h, but will happen for other system calls).
+          unsigned short insn = 0;
           #if defined(__x86_64__)
-          void *insn_addr = (void *)(ip + 2);
+          // Clang's built-in assembler can't generate short jumps. So, we need
+          // to inspect the instruction to tell whether it is a short or a long
+          // jump.
+          if (!safe_memcpy(&insn, (void *)ip, 1) ||
+              (insn != 0xEB /* jmp */ && insn != 0xE9 /* jmpq */)) {
+            break;
+          }
+          void *insn_addr;
+          if (insn == 0xEB /* jmp */) {
+            insn_addr = (void *)(ip + 2);
+          } else {
+            insn_addr = (void *)(ip + 5);
+          }
           unsigned short expected_insn = 0x050F; /* SYSCALL */
           #elif defined(__i386__)
           void *insn_addr = (void *)(ip - 2);
@@ -1171,7 +1184,6 @@ TEST(test_backtrace) {
           #else
           #error Unsupported target platform
           #endif
-          unsigned short insn = 0;
           if (!safe_memcpy(&insn, insn_addr, sizeof(insn)) ||
               insn != expected_insn) {
             break;
