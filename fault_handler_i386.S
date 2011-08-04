@@ -102,7 +102,7 @@ playground$segvSignalHandler:
         mov  0xC8(%esp), %edx    // %edx at time of segmentation fault
         mov  0xB8(%esp), %esi    // %esi at time of segmentation fault
         mov  0xB4(%esp), %edi    // %edi at time of segmentation fault
-        mov  0xB2(%esp), %ebp    // %ebp at time of segmentation fault
+        mov  0xBC(%esp), %ebp    // %ebp at time of segmentation fault
 
         // Handle sigprocmask() and rt_sigprocmask()
         cmp  $175, %eax          // NR_rt_sigprocmask
