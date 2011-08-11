@@ -124,6 +124,7 @@ void SyscallTable::initializeSyscallTable() {
     { __NR_preadv,          UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_pwrite64,        UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_pwritev,         UNRESTRICTED_SYSCALL,       NULL                 },
+    { __NR_readv,           UNRESTRICTED_SYSCALL,       NULL                 },
 #if defined(__NR_recvfrom)
     { __NR_recvfrom,        S(sandbox_recvfrom),        P(process_recvfrom)  },
     { __NR_recvmsg,         S(sandbox_recvmsg),         P(process_recvmsg)   },
@@ -172,6 +173,7 @@ void SyscallTable::initializeSyscallTable() {
 #endif
     { __NR_time,            UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_uname,           UNRESTRICTED_SYSCALL,       NULL                 },
+    { __NR_writev,          UNRESTRICTED_SYSCALL,       NULL                 },
   };
 
   // Find the highest used system call number
