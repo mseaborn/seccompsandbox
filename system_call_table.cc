@@ -64,6 +64,7 @@ void SyscallTable::initializeSyscallTable() {
 #if defined(__NR_fstat64)
     { __NR_fstat64,         UNRESTRICTED_SYSCALL,       NULL                 },
 #endif
+    { __NR_ftruncate,       UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_futex,           UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_getdents,        UNRESTRICTED_SYSCALL,       NULL                 },
     { __NR_getdents64,      UNRESTRICTED_SYSCALL,       NULL                 },
