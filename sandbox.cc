@@ -236,7 +236,7 @@ int Sandbox::supportsSeccompSandbox(int proc_fd) {
       sys._exit(0);
     }
     default:
-      NOINTR_SYS(sys.close(fds[1]));
+      (void)NOINTR_SYS(sys.close(fds[1]));
       char ch;
       if (read(sys, fds[0], &ch, 1) != 1) {
         status_ = STATUS_UNSUPPORTED;
