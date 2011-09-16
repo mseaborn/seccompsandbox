@@ -168,37 +168,48 @@ class SecureMem {
   }
   template<class T1> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type, T1 arg1) {
-    sendSystemCallInternal(rpc, type, (void*)arg1);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1));
   }
   template<class T1, class T2> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2) {
-    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1),
+                           reinterpret_cast<void*>(arg2));
   }
   template<class T1, class T2, class T3> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3) {
-    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1),
+                           reinterpret_cast<void*>(arg2),
+                           reinterpret_cast<void*>(arg3));
   }
   template<class T1, class T2, class T3, class T4> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4) {
-    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
-                           (void*)arg4);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1),
+                           reinterpret_cast<void*>(arg2),
+                           reinterpret_cast<void*>(arg3),
+                           reinterpret_cast<void*>(arg4));
   }
   template<class T1, class T2, class T3, class T4, class T5> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) {
-    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
-                           (void*)arg4, (void*)arg5);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1),
+                           reinterpret_cast<void*>(arg2),
+                           reinterpret_cast<void*>(arg3),
+                           reinterpret_cast<void*>(arg4),
+                           reinterpret_cast<void*>(arg5));
   }
   template<class T1, class T2, class T3, class T4, class T5, class T6> static
   void sendSystemCall(const SyscallRequestInfo& rpc, LockType type,
                       T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6,
                       Args* newSecureMem = 0) {
-    sendSystemCallInternal(rpc, type, (void*)arg1, (void*)arg2, (void*)arg3,
-                           (void*)arg4, (void*)arg5, (void*)arg6,
-                           newSecureMem);
+    sendSystemCallInternal(rpc, type, reinterpret_cast<void*>(arg1),
+                           reinterpret_cast<void*>(arg2),
+                           reinterpret_cast<void*>(arg3),
+                           reinterpret_cast<void*>(arg4),
+                           reinterpret_cast<void*>(arg5),
+                           reinterpret_cast<void*>(arg6), newSecureMem);
   }
 
  private:

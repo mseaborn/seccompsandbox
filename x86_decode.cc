@@ -303,6 +303,8 @@ no_more_prefixes:
     *is_group = found_group;
   }
   *ip = reinterpret_cast<const char *>(insn_ptr);
+  (void)found_mod_rm;
+  (void)found_sib;
   return insn;
 }
 #endif

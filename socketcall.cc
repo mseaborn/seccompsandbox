@@ -406,8 +406,8 @@ bool Sandbox::process_sendto(const SyscallRequestInfo* info) {
   // Sending data on a connected socket is similar to calling write().
   // Allow it.
   SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, sendto_req.sockfd,
-                            sendto_req.buf, sendto_req.len,
-                            sendto_req.flags, sendto_req.to,
+                            const_cast<void*>(sendto_req.buf), sendto_req.len,
+                            sendto_req.flags, const_cast<void*>(sendto_req.to),
                             sendto_req.tolen);
   return true;
 }
@@ -425,7 +425,8 @@ bool Sandbox::process_setsockopt(const SyscallRequestInfo* info) {
     SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
                               setsockopt_req.sockfd,
                               setsockopt_req.level, setsockopt_req.optname,
-                              setsockopt_req.optval, setsockopt_req.optlen);
+                              const_cast<void*>(setsockopt_req.optval),
+                              setsockopt_req.optlen);
     return true;
   }
   SecureMem::abandonSystemCall(*info, -EINVAL);

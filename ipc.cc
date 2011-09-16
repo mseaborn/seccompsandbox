@@ -105,7 +105,8 @@ bool Sandbox::process_shmat(const SecureMem::SyscallRequestInfo* info) {
 
   info->mem->shmId   = -1;
   SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmat_req.shmid,
-                            shmat_req.shmaddr, shmat_req.shmflg);
+                            const_cast<void*>(shmat_req.shmaddr),
+                            shmat_req.shmflg);
   return true;
 }
 
@@ -153,7 +154,8 @@ bool Sandbox::process_shmdt(const SecureMem::SyscallRequestInfo* info) {
   }
 
   info->mem->shmId     = -1;
-  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED, shmdt_req.shmaddr);
+  SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
+                            const_cast<void*>(shmdt_req.shmaddr));
   return true;
 }
 

@@ -481,7 +481,6 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
       // the code. We will need to overwrite a couple of instructions and,
       // of course, move these instructions somewhere else.
       int startIdx = codeIdx;
-      int endIdx = codeIdx;
       int length = code[codeIdx].len;
       for (int idx = codeIdx;
            (idx = (idx + (sizeof(code) / sizeof(struct Code)) - 1) %
@@ -529,7 +528,6 @@ void Library::patchSystemCallsInFunction(const Maps* maps, int vsys_offset,
         code[i].len = next - code[i].addr;
         code[i].is_ip_relative = tmp_rm && (*tmp_rm & 0xC7) == 0x5;
         if (!code[i].is_ip_relative && isSafeInsn(code[i].insn)) {
-          endIdx = i;
           length = next - code[startIdx].addr;
         } else {
           break;

@@ -140,8 +140,10 @@ bool Sandbox::process_sigaction(const SyscallRequestInfo* info) {
     return false;
   }
   SecureMem::sendSystemCall(*info, SecureMem::SEND_UNLOCKED,
-                           sigaction_req.signum, sigaction_req.action,
-                           sigaction_req.old_action, sigaction_req.sigsetsize);
+      sigaction_req.signum,
+      const_cast<SysCalls::kernel_sigaction*>(sigaction_req.action),
+      const_cast<SysCalls::kernel_sigaction*>(sigaction_req.old_action),
+      sigaction_req.sigsetsize);
   return true;
 }
 

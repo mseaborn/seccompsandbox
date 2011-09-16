@@ -1259,7 +1259,8 @@ TEST(test_concurrent_sendmsg_and_recvmsg) {
   int sock_pair[2];
   CHECK_SUCCEEDS(socketpair(AF_UNIX, SOCK_STREAM, 0, sock_pair) == 0);
   pthread_t tid;
-  int err = pthread_create(&tid, NULL, recvmsg_thread, (void *) sock_pair[0]);
+  int err = pthread_create(&tid, NULL, recvmsg_thread,
+                           reinterpret_cast<void*>(sock_pair[0]));
   CHECK(err == 0);
 
   // In order to test for the deadlock, we need to wait for the child
