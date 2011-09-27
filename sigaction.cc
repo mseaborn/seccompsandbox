@@ -98,12 +98,11 @@ void* Sandbox::sandbox_signal(int signum, const void* handler) {
   sa.sa_flags    = SA_NODEFER | SA_RESETHAND | SA_RESTORER;
   sa.sa_mask     = 0;
   asm volatile(
-      "lea  0f, %0\n"
-      "jmp  1f\n"
+      "call 1f\n"
     "0:pop  %%eax\n"
       "mov  $119, %%eax\n" // __NR_sigreturn
       "int  $0x80\n"
-    "1:\n"
+    "1:pop  %0\n"
       : "=r"(sa.sa_restorer));
   long rc = sandbox_sigaction(signum, &sa, &osa);
   if (rc < 0) {

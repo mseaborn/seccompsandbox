@@ -45,7 +45,14 @@ playground$runTrustedThread:
         movw %si, %fs
         mov  %esi, 0x4(%esp)     // set up %fs upon call to sigreturn()
         mov  %ebp, 0x1C(%esp)    // pop stack upon call to sigreturn()
-        lea  999f, %ebp
+        call 0f                  // determine %eip for PIC addressing
+      0:pop  %ebp
+        movd %ebp, %mm1
+        add  $(_GLOBAL_OFFSET_TABLE_+(.-0b)), %ebp
+        mov  playground$cloneFdPub@GOT(%ebp), %ebp
+        movd 0(%ebp), %mm3
+        movd %mm1, %ebp
+        add  $(999f-0b), %ebp
         mov  %ebp, 0x38(%esp)    // return address: continue in same thread
         mov  %esp, %ebp
         mov  $2, %ebx            // how     = SIG_SETMASK
@@ -71,6 +78,8 @@ playground$runTrustedThread:
 
         // Parameters:
         //   %mm0: thread's side of threadFd
+        //   %mm1: base address used for position independent code
+        //   %mm3: cloneFdPub
         //   %mm5: secure memory region
         //         the page following this one contains the scratch space
 
@@ -126,21 +135,21 @@ playground$runTrustedThread:
         //   0x38: signal mask
         //   0x40: in SEGV handler
 
-      0:xor  %esp, %esp
+      1:xor  %esp, %esp
         mov  $2, %eax            // %mm2 = initial sequence number
         movd %eax, %mm2
 
         // Read request from untrusted thread, or from trusted process. In
         // either case, the data that we read has to be considered untrusted.
         // read(threadFd, &scratch, 4)
-      1:mov  $__NR_read, %eax
+      2:mov  $__NR_read, %eax
         movd %mm0, %ebx          // fd  = threadFd
         movd %mm5, %ecx          // secure_mem
         add  $0x1000, %ecx       // buf = &scratch
         mov  $4, %edx            // len = 4
-      2:int  $0x80
+      3:int  $0x80
         cmp  $-4, %eax           // EINTR
-        jz   2b
+        jz   3b
         cmp  %edx, %eax
         jnz  fatal_error
 
@@ -153,7 +162,7 @@ playground$runTrustedThread:
         // secure memory area
         cmp  $-1, %eax
         jnz  5f
-      3:movd %mm2, %ebp
+        movd %mm2, %ebp
         cmp  %ebp, 0x4-0x1000(%ecx)
         jne  fatal_error
         cmp  0x08-0x1000(%ecx), %eax
@@ -211,16 +220,17 @@ playground$runTrustedThread:
         #ifndef NDEBUG
         movd %mm5, %ecx
         cmpw $0, 0x50(%ecx)      // debug mode
-        jz   27f
+        jz   26f
         mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
-        lea  101f, %ecx          // "This is an expensive system call"
+        movd %mm1, %ecx
+        add  $(101f-0b), %ecx    // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
         int  $0x80
         xor  %ebx, %ebx
         #endif
 
-        jmp  27f                 // exit program, no message
+        jmp  26f                 // exit program, no message
       4:int  $0x80
         jmp  15f                 // return result
 
@@ -243,7 +253,8 @@ playground$runTrustedThread:
         mov  %ecx, %ebp
         mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
-        lea  101f, %ecx          // "This is an expensive system call"
+        movd %mm1, %ecx
+        add  $(101f-0b), %ecx    // "This is an expensive system call"
         mov  $102f-101f, %edx    // len = strlen(msg)
         int  $0x80
         mov  %ebp, %ecx
@@ -350,7 +361,7 @@ playground$runTrustedThread:
         mov  0x14(%ecx), %ebp
         mov  0x04(%ecx), %ecx
         cmp  $__NR_exit_group, %eax
-        jz   27f                 // exit program, no message
+        jz   26f                 // exit program, no message
         int  $0x80
 
         // Return result of system call to sandboxed thread
@@ -362,7 +373,7 @@ playground$runTrustedThread:
         mov  $__NR_write, %eax
      17:int  $0x80
         cmp  %edx, %eax
-        jz   1b
+        jz   2b
         cmp  $-4, %eax           // EINTR
         jz   17b
         jmp  fatal_error
@@ -453,7 +464,7 @@ playground$runTrustedThread:
         lea  -0x10(%ebp), %ecx
         int  $0x80
         test %eax, %eax
-        jz   28f
+        jz   27f
 
         // If things went wrong, we don't have an (easy) way of signaling
         // the parent. For our purposes, it is sufficient to fail with a
@@ -486,15 +497,16 @@ playground$runTrustedThread:
 fatal_error:
         mov  $__NR_write, %eax
         mov  $2, %ebx            // fd = stderr
-        lea  100f, %ecx          // "Sandbox violation detected"
+        movd %mm1, %ecx
+        add  $(100f-0b), %ecx    // "Sandbox violation detected"
         mov  $101f-100f, %edx    // len = strlen(msg)
         int  $0x80
-     26:mov  $1, %ebx
-     27:mov  $__NR_exit_group, %eax
+     25:mov  $1, %ebx
+     26:mov  $__NR_exit_group, %eax
         jmp  24b
 
         // The first page is mapped read-only for use as securely shared memory
-     28:movd %mm6, %edi          // %edi = old_shared_mem
+     27:movd %mm6, %edi          // %edi = old_shared_mem
         mov  0x44(%edi), %ebx    // addr = secure_mem
         movd %ebx, %mm5          // %mm5 = secure_mem
         movd %mm2, %esi
@@ -527,7 +539,7 @@ fatal_error:
         int  $0x80
         test %eax, %eax
         js   fatal_error
-        jz   0b                  // invoke trustedThreadFnc()
+        jz   1b                  // invoke trustedThreadFnc()
 
         // Set up thread local storage
         mov  $0x51, %eax         // seg_32bit, limit_in_pages, useable
@@ -570,7 +582,7 @@ fatal_error:
         int  $0x80
         test %eax, %eax
         js   fatal_error
-        jne  31f
+        jne  28f
 
         // Use sendmsg() to send to the trusted process the file handles for
         // communicating with the new trusted thread. We also send the address
@@ -604,7 +616,8 @@ fatal_error:
         //   0x48 threadFdPub    (%esi)
         //   0x4C threadFd       (%mm0)
         // 0x50
-        lea  sendmsg_data, %ecx
+        movd %mm1, %ecx
+        add  $(sendmsg_data-0b), %ecx
         xor  %eax, %eax
         mov  %eax, 0x08(%ecx)    // flags
         mov  %eax, 0x0C(%ecx)    // msg_name
@@ -618,7 +631,7 @@ fatal_error:
         mov  $0x14, %eax
         mov  %eax, 0x20(%ecx)    // msg_controllen
         mov  %eax, 0x3C(%ecx)    // cmsg_len
-        mov  playground$cloneFdPub, %eax  // cloneFdPub
+        movd %mm3, %eax          // cloneFdPub
         mov  %eax, 0x00(%ecx)    // socket
         lea  0x0C(%ecx), %eax
         mov  %eax, 0x04(%ecx)    // msg
@@ -639,23 +652,23 @@ fatal_error:
         mov  $16, %ebx           // sendmsg()
         mov  $__NR_socketcall, %eax
         int  $0x80
-     30:xor  %ebx, %ebx
-        jmp  27b                 // exit process (no error message)
+        xor  %ebx, %ebx
+        jmp  26b                 // exit process (no error message)
 
         // Reap helper
-     31:mov  %eax, %ebx
-     32:lea  -4(%ebp), %ecx
+     28:mov  %eax, %ebx
+     29:lea  -4(%ebp), %ecx
         xor  %edx, %edx
         mov  $__NR_waitpid, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
-        jz   32b
+        jz   29b
         mov  -4(%ebp), %eax
         test %eax, %eax
-        jnz  26b                 // exit process (no error message)
+        jnz  25b                 // exit process (no error message)
 
         // Release privileges by entering seccomp mode.
-     33:mov  $__NR_prctl, %eax
+        mov  $__NR_prctl, %eax
         mov  $22, %ebx           // PR_SET_SECCOMP
         mov  $1, %ecx
         int  $0x80
@@ -674,10 +687,10 @@ fatal_error:
         mov  $1, %edx            // len       = 1
         mov  %esp, %ecx          // buf       = %esp
         mov  %esi, %ebx          // fd        = threadFdPub
-     34:mov  $__NR_read, %eax
+     30:mov  $__NR_read, %eax
         int  $0x80
         cmp  $-4, %eax           // EINTR
-        jz   34b
+        jz   30b
         cmp  %edx, %eax
         jne  fatal_error
         pop  %eax
